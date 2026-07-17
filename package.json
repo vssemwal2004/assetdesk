@@ -1,0 +1,43 @@
+{
+  "name": "assetdesk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile-first university material issue and return tracking system",
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12 <27",
+    "npm": ">=10"
+  },
+  "packageManager": "npm@10.9.2",
+  "scripts": {
+    "predev": "npm run build:contracts",
+    "dev": "concurrently --kill-others -n backend,frontend -c magenta,blue \"npm run dev --workspace @assetdesk/backend\" \"npm run dev --workspace @assetdesk/frontend\"",
+    "build": "npm run build --workspace @assetdesk/contracts && npm run build --workspace @assetdesk/backend && npm run build --workspace @assetdesk/frontend",
+    "build:contracts": "npm run build --workspace @assetdesk/contracts",
+    "worker:dev": "npm run worker:dev --workspace @assetdesk/backend",
+    "worker:start": "npm run worker:start --workspace @assetdesk/backend",
+    "pretypecheck": "npm run build:contracts",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "pretest": "npm run build:contracts",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "concurrently": "^9.0.0",
+    "eslint": "^9.0.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "eslint-plugin-react-refresh": "^0.4.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^6.0.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}
