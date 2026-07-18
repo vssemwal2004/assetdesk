@@ -314,6 +314,22 @@ function QuantityStat({ label, value }: { label: string; value: number }) {
   );
 }
 
+function editMaterialMessage(form: {
+  name: string;
+  category: string;
+  unitLabel: string;
+  longTerm: boolean;
+  shortTerm: boolean;
+}, material: Material): string | null {
+  if (form.name.trim().length < 2) return 'Enter a material name with at least 2 characters.';
+  if (form.category.trim().length < 2) return 'Choose a material group, or enter a custom group.';
+  if (!form.longTerm && !form.shortTerm) return 'Choose at least one assignment type.';
+  if (material.trackingMode === 'QUANTITY' && form.unitLabel.trim().length < 1) {
+    return 'Enter a unit label, for example units, boxes, meters, or pieces.';
+  }
+  return null;
+}
+
 function EditMaterialForm({
   material,
   onSaved,
@@ -341,6 +357,11 @@ function EditMaterialForm({
   });
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formMessage = editMaterialMessage(form, material);
+    if (formMessage) {
+      setMessage(formMessage);
+      return;
+    }
     const result = UpdateMaterialRequestSchema.safeParse({
       name: form.name,
       category: form.category,

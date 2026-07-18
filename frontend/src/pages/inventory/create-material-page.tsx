@@ -55,6 +55,16 @@ function firstIssueMessage(error: unknown): string {
   return issues?.[0]?.message ?? fallback;
 }
 
+function materialFormMessage(form: MaterialForm): string | null {
+  if (form.name.trim().length < 2) return 'Enter a material name with at least 2 characters.';
+  if (form.category.trim().length < 2) return 'Choose a material group, or enter a custom group.';
+  if (!form.longTerm && !form.shortTerm) return 'Choose at least one assignment type.';
+  if (form.trackingMode === 'QUANTITY' && form.unitLabel.trim().length < 1) {
+    return 'Enter a unit label, for example units, boxes, meters, or pieces.';
+  }
+  return null;
+}
+
 export function CreateMaterialPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -78,6 +88,11 @@ export function CreateMaterialPage() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
+    const formMessage = materialFormMessage(form);
+    if (formMessage) {
+      setMessage(formMessage);
+      return;
+    }
 
     const base = {
       name: form.name,

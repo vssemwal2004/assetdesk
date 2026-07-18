@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 const MATERIAL_CATEGORIES = [
   'Stationery',
   'Lab Equipment',
@@ -27,7 +29,8 @@ export function MaterialCategoryField({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const selectValue = categorySelectValue(value);
+  const [customOpen, setCustomOpen] = useState(() => categorySelectValue(value) === CUSTOM_CATEGORY);
+  const selectValue = customOpen ? CUSTOM_CATEGORY : categorySelectValue(value);
   const custom = selectValue === CUSTOM_CATEGORY;
   const customId = `${id}-custom`;
   const hintId = `${id}-hint`;
@@ -43,8 +46,13 @@ export function MaterialCategoryField({
         id={id}
         onChange={(event) => {
           const next = event.target.value;
-          if (next === CUSTOM_CATEGORY) onChange('');
-          else onChange(next);
+          if (next === CUSTOM_CATEGORY) {
+            setCustomOpen(true);
+            onChange('');
+            return;
+          }
+          setCustomOpen(false);
+          onChange(next);
         }}
         required
         value={selectValue}
