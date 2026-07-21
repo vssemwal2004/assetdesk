@@ -78,13 +78,19 @@ export async function getIssue(
 
 export async function updateIssue(
   issueId: string,
-  input: UpdateIssueRequest,
+  input: Partial<UpdateIssueRequest>,
 ): Promise<IssueResponse> {
   const payload = await apiRequest<unknown>(`/api/v1/issues/${encodeURIComponent(issueId)}`, {
     method: 'PATCH',
     json: input,
   });
   return IssueResponseSchema.parse(payload);
+}
+
+export async function deleteIssue(issueId: string): Promise<void> {
+  await apiRequest<unknown>(`/api/v1/issues/${encodeURIComponent(issueId)}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function getIssueNotifications(

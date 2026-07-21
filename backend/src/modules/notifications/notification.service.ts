@@ -51,7 +51,7 @@ function materialIssueLines(issue: IssueDocument): string[] {
 function returnLines(event: ReturnEventRecord): string[] {
   return event.items.map((item) =>
     item.trackingMode === 'QUANTITY'
-      ? `${item.materialName} (${item.materialCode}) — ${item.quantity} returned`
+      ? `${item.materialName} (${item.materialCode}) — ${item.quantity} returned — ${item.disposition}; ${item.condition}`
       : `${item.materialName} (${item.materialCode}) — ${item.assetTag}${item.serialNumber ? ` / ${item.serialNumber}` : ''} — ${item.disposition}; ${item.condition}`,
   );
 }
@@ -139,6 +139,7 @@ export async function enqueueIssueNotifications(
       : 'No return expected',
     materials: materialIssueLines(issue),
     viewUrl: `${env.APP_ORIGIN}/issues/${encodeURIComponent(issue.issueId)}`,
+    billUrl: `${env.APP_ORIGIN}/bills/${encodeURIComponent(issue.issueId)}`,
   };
   const now = new Date();
   await insertJobs(
@@ -204,6 +205,9 @@ export async function enqueueReturnNotifications(
     remainingOutstanding: String(event.remainingOutstandingQuantity),
     materials: returnLines(event),
     viewUrl: `${env.APP_ORIGIN}/issues/${encodeURIComponent(issue.issueId)}`,
+    billUrl: `${env.APP_ORIGIN}/bills/${encodeURIComponent(
+      issue.issueId,
+    )}?type=return&returnEventId=${encodeURIComponent(event.returnEventId)}`,
   };
   const now = new Date();
   await insertJobs(

@@ -2,7 +2,11 @@ import { ArrowLeft, Check, Clipboard, Mail, UserPlus } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 
-import { CreateWorkerRequestSchema, type CreateWorkerRequest } from '@assetdesk/contracts';
+import {
+  CreateWorkerRequestSchema,
+  DEFAULT_WORKER_PERMISSIONS,
+  type CreateWorkerRequest,
+} from '@assetdesk/contracts';
 
 import {
   AppCard,
@@ -15,7 +19,13 @@ import {
 import { isApiError } from '../../lib/api-client';
 import { createWorker, type WorkerCredentialResult } from '../../lib/workers-api';
 
-const emptyForm = { name: '', email: '', contact: '', department: '' };
+const emptyForm = {
+  name: '',
+  email: '',
+  contact: '',
+  department: '',
+  permissions: [...DEFAULT_WORKER_PERMISSIONS],
+};
 
 export function CreateWorkerPage() {
   const firstFieldRef = useRef<HTMLInputElement>(null);

@@ -401,6 +401,34 @@ export async function createIssue(
         },
         { session },
       );
+      for (const line of lines) {
+        await appendAuditEvent(
+          {
+            requestId: actor.requestId,
+            actorUserId: actor.userId,
+            actorWorkerId: actor.workerId,
+            actorRole: actor.role,
+            action:
+              line.material.returnPolicy === 'CONSUMABLE'
+                ? 'MATERIAL_STOCK_CONSUMED'
+                : 'MATERIAL_STOCK_ISSUED',
+            targetType: 'MATERIAL',
+            targetId: line.material.materialCode,
+            result: 'SUCCESS',
+            metadata: {
+              issueId,
+              materialName: line.material.name,
+              category: line.material.category,
+              trackingMode: line.material.trackingMode,
+              returnPolicy: line.material.returnPolicy,
+              issuedQuantity: line.issuedQuantity,
+              outstandingQuantity: line.outstandingQuantity,
+              assignmentType: input.assignmentType,
+            },
+          },
+          { session },
+        );
+      }
       await enqueueIssueNotifications(issue, session);
       result = { issue: toIssue(issue), idempotentReplay: false };
     });
@@ -651,6 +679,36 @@ export async function updateIssue(
     issue.set('notes', input.notes || undefined);
     changedFields.push('notes');
   }
+  if (input.expectedReturnAt !== undefined) {
+    const hasReusable = issue.lines.some((line) => line.material.returnPolicy === 'REUSABLE');
+    const nextExpectedReturnAt = new Date(input.expectedReturnAt);
+    if (actor.role !== 'ADMIN') {
+      throw new AppError(403, 'RETURN_DATE_ADMIN_ONLY', 'Only an Admin can extend a return date.');
+    }
+    if (
+      issue.assignmentType !== 'SHORT_TERM' ||
+      !hasReusable ||
+      issue.totalOutstandingQuantity <= 0 ||
+      !['ISSUED', 'PARTIALLY_RETURNED'].includes(issue.status)
+    ) {
+      throw new AppError(
+        409,
+        'RETURN_DATE_NOT_EXTENDABLE',
+        'Only active Short-Term reusable Issues can have the return date extended.',
+      );
+    }
+    if (nextExpectedReturnAt <= new Date()) {
+      throw new AppError(
+        400,
+        'RETURN_DATE_MUST_BE_FUTURE',
+        'Choose a future return date and time.',
+        { expectedReturnAt: 'Choose a future return date and time.' },
+      );
+    }
+    issue.expectedReturnAt = nextExpectedReturnAt;
+    issue.duePreset = 'CUSTOM';
+    changedFields.push('expectedReturnAt');
+  }
 
   await issue.save();
   await appendAuditEvent({
@@ -666,6 +724,78 @@ export async function updateIssue(
   });
 
   return toIssue(issue);
+}
+
+export async function deleteIssue(issueId: string, actor: IssueActorContext): Promise<Issue> {
+  const session = await mongoose.startSession();
+  let deletedIssue: Issue | undefined;
+
+  try {
+    await session.withTransaction(async () => {
+      const issue = await IssueModel.findOne({ issueId }).session(session);
+      if (!issue) throw issueNotFound();
+      deletedIssue = toIssue(issue);
+
+      for (const line of issue.lines) {
+        if (line.material.returnPolicy === 'CONSUMABLE') {
+          await MaterialModel.updateOne(
+            { _id: line.material.materialId, materialCode: line.material.materialCode },
+            { $inc: { totalQuantity: line.issuedQuantity, availableQuantity: line.issuedQuantity } },
+            { session },
+          );
+          continue;
+        }
+
+        if (line.outstandingQuantity <= 0) continue;
+        await MaterialModel.updateOne(
+          { _id: line.material.materialId, materialCode: line.material.materialCode },
+          {
+            $inc: {
+              availableQuantity: line.outstandingQuantity,
+              issuedQuantity: -line.outstandingQuantity,
+            },
+          },
+          { session },
+        );
+
+        if (line.material.trackingMode === 'SERIALIZED') {
+          const outstandingAssets = line.assets.filter((asset) => asset.outstanding);
+          for (const asset of outstandingAssets) {
+            await AssetUnitModel.updateOne(
+              { _id: asset.assetUnitId, assetTag: asset.assetTag, status: 'ISSUED' },
+              { $set: { status: 'AVAILABLE', condition: asset.conditionAtIssue } },
+              { session },
+            );
+          }
+        }
+      }
+
+      await IssueModel.deleteOne({ _id: issue._id }).session(session);
+      await appendAuditEvent(
+        {
+          requestId: actor.requestId,
+          actorUserId: actor.userId,
+          actorWorkerId: actor.workerId,
+          actorRole: actor.role,
+          action: 'ISSUE_DELETED',
+          targetType: 'ISSUE',
+          targetId: issue.issueId,
+          result: 'SUCCESS',
+          metadata: {
+            lineCount: issue.lines.length,
+            totalIssuedQuantity: issue.totalIssuedQuantity,
+            restoredOutstandingQuantity: issue.totalOutstandingQuantity,
+          },
+        },
+        { session },
+      );
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  if (!deletedIssue) throw new AppError(500, 'ISSUE_DELETE_FAILED', 'The Issue could not be deleted.');
+  return deletedIssue;
 }
 
 export async function getIssueRecordForReturn(

@@ -65,6 +65,8 @@ export interface ReturnEventQuantityItemRecord {
   materialCode: string;
   materialName: string;
   quantity: number;
+  disposition: ReturnDisposition;
+  condition: string;
 }
 
 export interface ReturnEventSerializedItemRecord {
@@ -291,8 +293,11 @@ ReturnEventItemSchema.pre('validate', function validateReturnItemSubtype() {
     if (!Number.isSafeInteger(quantity) || (quantity ?? 0) < 1) {
       this.invalidate('quantity', 'A quantity Return item requires a positive integer quantity.');
     }
-    if (assetTag !== undefined || disposition !== undefined || condition !== undefined) {
-      this.invalidate('trackingMode', 'A quantity Return item cannot contain asset fields.');
+    if (assetTag !== undefined) {
+      this.invalidate('trackingMode', 'A quantity Return item cannot contain asset tags.');
+    }
+    if (!disposition || !condition) {
+      this.invalidate('trackingMode', 'A quantity Return item requires disposition and condition.');
     }
     return;
   }

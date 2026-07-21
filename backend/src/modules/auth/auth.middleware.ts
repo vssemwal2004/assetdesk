@@ -2,16 +2,14 @@ import type { Request, RequestHandler } from 'express';
 
 import type { UserRole, WorkerPermission } from '@assetdesk/contracts';
 
-import { env } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
+import { isAllowedOrigin } from '../../config/origins.js';
 import { AppError } from '../../middleware/error-handler.js';
 import { appendAuditEvent } from '../audit/audit.service.js';
 import { UserModel } from '../users/user.model.js';
 import { AUTH_COOKIE, CSRF_COOKIE } from './cookies.js';
 import { getActiveSession, validateCsrfToken } from './session.service.js';
 import { verifyAccessToken } from './tokens.js';
-
-const trustedOrigin = new URL(env.APP_ORIGIN).origin;
 
 function cookieValue(request: Request, name: string): string | undefined {
   const cookies = request.cookies as Record<string, unknown> | undefined;
@@ -21,7 +19,7 @@ function cookieValue(request: Request, name: string): string | undefined {
 
 export const requireTrustedOrigin: RequestHandler = (request, _response, next) => {
   const origin = request.header('origin');
-  if (!origin || origin !== trustedOrigin) {
+  if (!isAllowedOrigin(origin)) {
     next(new AppError(403, 'UNTRUSTED_ORIGIN', 'The request origin is not allowed.'));
     return;
   }

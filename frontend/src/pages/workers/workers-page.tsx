@@ -1,19 +1,48 @@
-import { useQuery } from '@tanstack/react-query';
-import { FileUp, Plus, UserRound, UsersRound } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Eye,
+  FileUp,
+  MoreVertical,
+  Pencil,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  UserRound,
+  UsersRound,
+} from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
-import type { Worker } from '@assetdesk/contracts';
+import {
+  DEFAULT_WORKER_PERMISSIONS,
+  type Worker,
+  type WorkerPermission,
+} from '@assetdesk/contracts';
 
 import {
   Button,
   EmptyState,
   ErrorState,
+  ErrorSummary,
   LoadingPanel,
   PageHeader,
   SearchForm,
   WorkerStatusBadge,
 } from '../../components/ui';
-import { getWorkers } from '../../lib/workers-api';
+import { deleteWorker, getWorkers, updateWorker } from '../../lib/workers-api';
+import { isApiError } from '../../lib/api-client';
+
+const permissionLabels: Record<WorkerPermission, string> = {
+  DASHBOARD: 'Dashboard',
+  ISSUES_VIEW: 'View issues',
+  ASSIGNMENTS_CREATE: 'Create issues',
+  RETURNS_RECORD: 'Record returns',
+  INVENTORY_VIEW: 'View inventory',
+  INVENTORY_MANAGE: 'Manage inventory',
+  RECEIVERS_VIEW: 'View receivers',
+  RECEIVERS_MANAGE: 'Manage receivers',
+  REPORTS_VIEW: 'View reports',
+};
 
 function formatDate(value: string | null): string {
   if (!value) return 'Never';
@@ -25,7 +54,12 @@ function formatDate(value: string | null): string {
 }
 
 export function WorkersPage() {
+  const queryClient = useQueryClient();
   const [parameters, setParameters] = useSearchParams();
+  const [accessWorker, setAccessWorker] = useState<Worker | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Worker | null>(null);
+  const [viewWorker, setViewWorker] = useState<Worker | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const page = Math.max(1, Number(parameters.get('page')) || 1);
   const search = parameters.get('search') ?? '';
   const status = parameters.get('status') ?? '';
@@ -56,6 +90,15 @@ export function WorkersPage() {
   const response = query.data;
   const workers = response?.data ?? [];
   const filtered = Boolean(search || status);
+  const deleteMutation = useMutation({
+    mutationFn: (worker: Worker) => deleteWorker(worker.workerId),
+    onSuccess: async () => {
+      setDeleteTarget(null);
+      await queryClient.invalidateQueries({ queryKey: ['workers'] });
+    },
+    onError: (error) =>
+      setActionError(isApiError(error) ? error.message : 'The Worker could not be deleted.'),
+  });
 
   return (
     <div className="space-y-6">
@@ -114,6 +157,7 @@ export function WorkersPage() {
           </p>
         ) : null}
       </section>
+      {actionError ? <ErrorSummary message={actionError} title="Action failed" /> : null}
 
       {query.isPending ? (
         <LoadingPanel label="Loading workers" />
@@ -145,10 +189,15 @@ export function WorkersPage() {
         <>
           <div className="space-y-3 min-[840px]:hidden">
             {workers.map((worker) => (
-              <WorkerCard key={worker.workerId} worker={worker} />
+              <WorkerCard
+                key={worker.workerId}
+                onDelete={setDeleteTarget}
+                onManageAccess={setAccessWorker}
+                worker={worker}
+              />
             ))}
           </div>
-          <div className="hidden overflow-hidden rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
+          <div className="hidden overflow-visible rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
             <table className="w-full border-collapse text-left">
               <caption className="sr-only">Worker accounts</caption>
               <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
@@ -173,8 +222,10 @@ export function WorkersPage() {
               <tbody className="divide-y divide-[var(--color-border)]">
                 {workers.map((worker) => (
                   <tr
-                    className="h-[64px] hover:bg-[var(--color-surface-tint)]"
+                    className="h-[64px] cursor-pointer hover:bg-[var(--color-surface-tint)]"
                     key={worker.workerId}
+                    onClick={() => setViewWorker(worker)}
+                    tabIndex={0}
                   >
                     <td className="px-4">
                       <div className="flex items-center gap-3">
@@ -201,12 +252,13 @@ export function WorkersPage() {
                       {formatDate(worker.lastLoginAt)}
                     </td>
                     <td className="px-4 text-right">
-                      <Link
-                        className="inline-flex min-h-11 items-center rounded-[10px] px-3 text-sm font-bold text-[var(--color-primary)] hover:bg-[var(--color-primary-soft)] focus-visible:outline-2 focus-visible:outline-[var(--color-focus)]"
-                        to={`/workers/${worker.workerId}`}
-                      >
-                        View details
-                      </Link>
+                      <div onClick={(event) => event.stopPropagation()}>
+                        <WorkerActionsMenu
+                          onDelete={setDeleteTarget}
+                          onManageAccess={setAccessWorker}
+                          worker={worker}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -237,11 +289,97 @@ export function WorkersPage() {
           ) : null}
         </>
       )}
+      {accessWorker ? (
+        <ManageAccessDialog
+          onClose={() => setAccessWorker(null)}
+          onSaved={async () => {
+            setAccessWorker(null);
+            await queryClient.invalidateQueries({ queryKey: ['workers'] });
+          }}
+          worker={accessWorker}
+        />
+      ) : null}
+      {viewWorker ? (
+        <WorkerQuickViewDialog
+          onClose={() => setViewWorker(null)}
+          onDelete={(worker) => {
+            setViewWorker(null);
+            setDeleteTarget(worker);
+          }}
+          onManageAccess={(worker) => {
+            setViewWorker(null);
+            setAccessWorker(worker);
+          }}
+          worker={viewWorker}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <ConfirmDialog
+          confirmLabel="Delete worker"
+          danger
+          description={`${deleteTarget.name} will be permanently removed. Existing issue and return history will stay in records.`}
+          loading={deleteMutation.isPending}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => deleteMutation.mutate(deleteTarget)}
+          title="Delete this Worker?"
+        />
+      ) : null}
     </div>
   );
 }
 
-function WorkerCard({ worker }: { worker: Worker }) {
+function WorkerActionsMenu({
+  worker,
+  onManageAccess,
+  onDelete,
+}: {
+  worker: Worker;
+  onManageAccess: (worker: Worker) => void;
+  onDelete: (worker: Worker) => void;
+}) {
+  return (
+    <details className="relative inline-block text-left">
+      <summary
+        aria-label={`Actions for ${worker.name}`}
+        className="icon-button list-none marker:hidden"
+      >
+        <MoreVertical aria-hidden="true" size={18} />
+      </summary>
+      <div className="absolute right-0 top-full z-[80] mt-2 w-52 rounded-[12px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
+        <Link className="menu-item" to={`/workers/${worker.workerId}`}>
+          <Eye aria-hidden="true" size={17} />
+          View details
+        </Link>
+        <Link className="menu-item" to={`/workers/${worker.workerId}?edit=1`}>
+          <Pencil aria-hidden="true" size={17} />
+          Edit
+        </Link>
+        <button className="menu-item w-full" onClick={() => onManageAccess(worker)} type="button">
+          <ShieldCheck aria-hidden="true" size={17} />
+          Manage access
+        </button>
+        <button
+          className="menu-item w-full text-[var(--color-danger)]"
+          onClick={() => onDelete(worker)}
+          type="button"
+        >
+          <Trash2 aria-hidden="true" size={17} />
+          Delete
+        </button>
+      </div>
+    </details>
+  );
+}
+
+function WorkerCard({
+  worker,
+  onManageAccess,
+  onDelete,
+}: {
+  worker: Worker;
+  onManageAccess: (worker: Worker) => void;
+  onDelete: (worker: Worker) => void;
+}) {
   return (
     <article className="rounded-[14px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]">
       <div className="flex items-start gap-3">
@@ -265,6 +403,230 @@ function WorkerCard({ worker }: { worker: Worker }) {
       <Link className="button-secondary mt-4 w-full" to={`/workers/${worker.workerId}`}>
         View worker details
       </Link>
+      <div className="mt-3 flex justify-end">
+        <WorkerActionsMenu
+          onDelete={onDelete}
+          onManageAccess={onManageAccess}
+          worker={worker}
+        />
+      </div>
     </article>
+  );
+}
+
+function Dialog({
+  children,
+  onClose,
+  label,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+  label: string;
+}) {
+  const reference = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    reference.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      aria-label={label}
+      className="w-[min(92vw,560px)] rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
+      onCancel={onClose}
+      onClose={onClose}
+      ref={reference}
+    >
+      {children}
+    </dialog>
+  );
+}
+
+function DetailGrid({ children }: { children: ReactNode }) {
+  return <dl className="mt-5 grid gap-3 sm:grid-cols-2">{children}</dl>;
+}
+
+function DetailItem({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3">
+      <dt className="text-xs font-bold text-[var(--color-text-muted)]">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-extrabold text-[var(--color-text-strong)]">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function WorkerQuickViewDialog({
+  worker,
+  onClose,
+  onManageAccess,
+  onDelete,
+}: {
+  worker: Worker;
+  onClose: () => void;
+  onManageAccess: (worker: Worker) => void;
+  onDelete: (worker: Worker) => void;
+}) {
+  return (
+    <Dialog label={`${worker.name} details`} onClose={onClose}>
+      <div className="max-h-[86vh] overflow-y-auto p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-extrabold text-[var(--color-primary-strong)]">
+              {worker.name}
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              {worker.workerId} · {worker.email}
+            </p>
+          </div>
+          <WorkerStatusBadge status={worker.status} />
+        </div>
+        <DetailGrid>
+          <DetailItem label="Email" value={worker.email} />
+          <DetailItem label="Contact" value={worker.contact ?? 'Not provided'} />
+          <DetailItem label="Department" value={worker.department ?? 'Not provided'} />
+          <DetailItem label="Last login" value={formatDate(worker.lastLoginAt)} />
+          <DetailItem label="Invitation email" value={worker.invitationStatus} />
+          <DetailItem label="Permissions" value={`${worker.permissions.length} enabled`} />
+        </DetailGrid>
+        <div className="mt-5 rounded-[10px] border border-[var(--color-border)] p-3">
+          <p className="text-xs font-bold text-[var(--color-text-muted)]">Access enabled</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {worker.permissions.map((permission) => (
+              <span
+                className="rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-primary)]"
+                key={permission}
+              >
+                {permissionLabels[permission]}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button onClick={onClose} variant="secondary">
+            Close
+          </Button>
+          <Link className="button-secondary" to={`/workers/${worker.workerId}`}>
+            Full record
+          </Link>
+          <Link className="button-secondary" to={`/workers/${worker.workerId}?edit=1`}>
+            Edit
+          </Link>
+          <Button onClick={() => onManageAccess(worker)} variant="secondary">
+            Manage access
+          </Button>
+          <Button onClick={() => onDelete(worker)} variant="danger">
+            Delete
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function ManageAccessDialog({
+  worker,
+  onClose,
+  onSaved,
+}: {
+  worker: Worker;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<WorkerPermission[]>(worker.permissions);
+  const [message, setMessage] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: () => updateWorker(worker.workerId, { permissions: selected }),
+    onSuccess: () => void onSaved(),
+    onError: (error) =>
+      setMessage(isApiError(error) ? error.message : 'Access could not be saved.'),
+  });
+
+  function toggle(permission: WorkerPermission) {
+    setSelected((current) =>
+      current.includes(permission)
+        ? current.filter((item) => item !== permission)
+        : [...current, permission],
+    );
+  }
+
+  return (
+    <Dialog label={`Manage access for ${worker.name}`} onClose={onClose}>
+      <div className="p-5 sm:p-6">
+        <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+          Manage access
+        </h2>
+        <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
+          {worker.name} · {worker.workerId}
+        </p>
+        {message ? (
+          <div className="mt-4">
+            <ErrorSummary message={message} />
+          </div>
+        ) : null}
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          {DEFAULT_WORKER_PERMISSIONS.map((permission) => (
+            <label
+              className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-[10px] border border-[var(--color-border)] px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
+              key={permission}
+            >
+              <span>{permissionLabels[permission]}</span>
+              <input
+                checked={selected.includes(permission)}
+                className="size-5 accent-[var(--color-primary)]"
+                onChange={() => toggle(permission)}
+                type="checkbox"
+              />
+            </label>
+          ))}
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button disabled={mutation.isPending} onClick={onClose} variant="secondary">
+            Cancel
+          </Button>
+          <Button
+            disabled={selected.length === 0}
+            loading={mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            Save access
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  description,
+  confirmLabel,
+  danger = false,
+  loading,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  danger?: boolean;
+  loading: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Dialog label={title} onClose={onCancel}>
+      <div className="p-5 sm:p-6">
+        <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">{title}</h2>
+        <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">{description}</p>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button disabled={loading} onClick={onCancel} variant="secondary">
+            Cancel
+          </Button>
+          <Button loading={loading} onClick={onConfirm} variant={danger ? 'danger' : 'primary'}>
+            {loading ? 'Working...' : confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }

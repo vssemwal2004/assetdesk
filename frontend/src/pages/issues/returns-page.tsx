@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { ClipboardList, RotateCcw } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import {
   AssetTagSchema,
   IssueIdSchema,
+  type IssueSummary,
   type IssuePeriod,
   type ReturnEvent,
   type ReturnableIssue,
@@ -23,7 +24,7 @@ import {
   SearchForm,
 } from '../../components/ui';
 import { formatIstDateTime } from '../../lib/date-time';
-import { getReturns, searchReturnableIssues } from '../../lib/issues-api';
+import { getIssues, getReturns, searchReturnableIssues } from '../../lib/issues-api';
 
 export function ReturnsPage() {
   const { user } = useAuth();
@@ -35,12 +36,21 @@ export function ReturnsPage() {
   const [lookup, setLookup] = useState('');
   const [lookupPage, setLookupPage] = useState(1);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [viewReturn, setViewReturn] = useState<ReturnEvent | null>(null);
   const exactLookupRequired = user?.role === 'WORKER';
 
   const lookupQuery = useQuery({
     queryKey: ['return-search', lookup, lookupPage],
     queryFn: ({ signal }) => searchReturnableIssues(lookup, lookupPage, signal),
     enabled: lookup.length >= 2,
+  });
+  const matchingIssuesQuery = useQuery({
+    queryKey: ['return-issue-context', lookup],
+    queryFn: ({ signal }) => getIssues({ page: 1, pageSize: 5, search: lookup }, signal),
+    enabled:
+      lookup.length >= 2 &&
+      !exactLookupRequired &&
+      Boolean(lookupQuery.data && lookupQuery.data.data.length === 0),
   });
   const activityQuery = useQuery({
     queryKey: ['returns', { page, search: activitySearch, period: activityPeriod }],
@@ -137,13 +147,10 @@ export function ReturnsPage() {
               onRetry={() => void lookupQuery.refetch()}
             />
           ) : !lookupQuery.data?.data.length ? (
-            <EmptyState
-              message={
-                exactLookupRequired
-                  ? 'Check the complete Issue ID or asset tag and try again.'
-                  : 'Check the Issue ID, Receiver, asset tag, serial number or material.'
-              }
-              title="No outstanding Issue Record found"
+            <NoReturnableResults
+              exactLookupRequired={exactLookupRequired}
+              lookup={lookup}
+              query={matchingIssuesQuery}
             />
           ) : (
             <div className="space-y-3">
@@ -264,7 +271,7 @@ export function ReturnsPage() {
                 <ReturnEventCard event={event} key={event.returnEventId} />
               ))}
             </div>
-            <ReturnEventTable events={activityQuery.data.data} />
+            <ReturnEventTable events={activityQuery.data.data} onView={setViewReturn} />
             {activityQuery.data.meta.totalPages > 1 ? (
               <nav
                 aria-label="Return activity pages"
@@ -292,6 +299,9 @@ export function ReturnsPage() {
           </>
         )}
       </section>
+      {viewReturn ? (
+        <ReturnQuickViewDialog event={viewReturn} onClose={() => setViewReturn(null)} />
+      ) : null}
     </div>
   );
 }
@@ -315,6 +325,91 @@ function ReturnableIssueCard({ issue }: { issue: ReturnableIssue }) {
       <Link className="button-primary mt-4 w-full sm:w-auto" to={`/issues/${issue.issueId}/return`}>
         <RotateCcw aria-hidden="true" size={18} />
         Record Return
+      </Link>
+    </article>
+  );
+}
+
+function NoReturnableResults({
+  exactLookupRequired,
+  lookup,
+  query,
+}: {
+  exactLookupRequired: boolean;
+  lookup: string;
+  query: {
+    isPending: boolean;
+    isError: boolean;
+    data: { data: IssueSummary[]; meta: { total: number } } | undefined;
+  };
+}) {
+  if (exactLookupRequired) {
+    return (
+      <EmptyState
+        message="Check the complete Issue ID or asset tag and try again. Only records with reusable material pending return can be accepted here."
+        title="No outstanding Issue Record found"
+      />
+    );
+  }
+
+  if (query.isPending) return <LoadingPanel label="Checking matching Issue Records" />;
+  if (query.isError) {
+    return (
+      <EmptyState
+        message="No reusable material is pending return for this search."
+        title="No outstanding Issue Record found"
+      />
+    );
+  }
+
+  const matches = query.data?.data ?? [];
+  if (matches.length === 0) {
+    return (
+      <EmptyState
+        message={`No Issue Record or outstanding Return was found for "${lookup}". Try Issue ID, receiver name, asset tag or material name.`}
+        title="No matching Issue Record"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <EmptyState
+        message="Matching Issue Records were found, but none currently have reusable material pending return."
+        title="No return pending for these records"
+      />
+      <div className="grid gap-3 lg:grid-cols-2">
+        {matches.map((issue) => (
+          <IssueReturnContextCard issue={issue} key={issue.issueId} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IssueReturnContextCard({ issue }: { issue: IssueSummary }) {
+  const consumed = issue.status === 'ISSUED' && issue.totalOutstandingQuantity === 0;
+  return (
+    <article className="rounded-[12px] border border-[var(--color-border)] bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="font-extrabold text-[var(--color-primary-strong)]">{issue.issueId}</h3>
+          <p className="mt-1 text-sm font-bold text-[var(--color-text-strong)]">
+            {issue.receiver.fullName}
+          </p>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            {issue.materialNames.join(', ')}
+          </p>
+        </div>
+        <CatalogBadge value={consumed ? 'CONSUMED' : issue.status} />
+      </div>
+      <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
+        {consumed
+          ? 'Consumable material was deducted from stock at issue time. No return is required.'
+          : 'This record has no material currently pending return.'}
+      </p>
+      <Link className="button-secondary mt-4 w-full sm:w-auto" to={`/issues/${issue.issueId}`}>
+        View Issue Record
       </Link>
     </article>
   );
@@ -351,7 +446,13 @@ function ReturnEventCard({ event }: { event: ReturnEvent }) {
   );
 }
 
-function ReturnEventTable({ events }: { events: ReturnEvent[] }) {
+function ReturnEventTable({
+  events,
+  onView,
+}: {
+  events: ReturnEvent[];
+  onView: (event: ReturnEvent) => void;
+}) {
   return (
     <div className="hidden overflow-hidden rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
       <table className="w-full border-collapse text-left">
@@ -377,7 +478,12 @@ function ReturnEventTable({ events }: { events: ReturnEvent[] }) {
         </thead>
         <tbody className="divide-y divide-[var(--color-border)]">
           {events.map((event) => (
-            <tr className="h-[64px] hover:bg-[var(--color-surface-tint)]" key={event.returnEventId}>
+            <tr
+              className="h-[64px] cursor-pointer hover:bg-[var(--color-surface-tint)]"
+              key={event.returnEventId}
+              onClick={() => onView(event)}
+              tabIndex={0}
+            >
               <td className="px-4 text-sm font-bold text-[var(--color-primary-strong)]">
                 {event.issueId}
               </td>
@@ -396,14 +502,113 @@ function ReturnEventTable({ events }: { events: ReturnEvent[] }) {
                 {formatIstDateTime(event.returnedAt)}
               </td>
               <td className="px-4 text-right">
-                <Link className="button-quiet" to={`/issues/${event.issueId}`}>
-                  View details
-                </Link>
+                <div onClick={(clickEvent) => clickEvent.stopPropagation()}>
+                  <Link className="button-quiet" to={`/issues/${event.issueId}`}>
+                    View details
+                  </Link>
+                </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function Dialog({
+  children,
+  onClose,
+  label,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+  label: string;
+}) {
+  const reference = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    reference.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      aria-label={label}
+      className="w-[min(92vw,600px)] rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
+      onCancel={onClose}
+      onClose={onClose}
+      ref={reference}
+    >
+      {children}
+    </dialog>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3">
+      <dt className="text-xs font-bold text-[var(--color-text-muted)]">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-extrabold text-[var(--color-text-strong)]">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function ReturnQuickViewDialog({
+  event,
+  onClose,
+}: {
+  event: ReturnEvent;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog label={`${event.issueId} return details`} onClose={onClose}>
+      <div className="max-h-[86vh] overflow-y-auto p-5 sm:p-6">
+        <h2 className="text-xl font-extrabold text-[var(--color-primary-strong)]">
+          Return details
+        </h2>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          {event.issueId} · {formatIstDateTime(event.returnedAt)}
+        </p>
+        <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+          <DetailItem label="Returned by" value={event.performedBy.name} />
+          <DetailItem label="Worker ID" value={event.performedBy.workerId} />
+          <DetailItem label="Items returned" value={event.items.length} />
+          <DetailItem label="Return event ID" value={event.returnEventId} />
+        </dl>
+        <div className="mt-5 overflow-hidden rounded-[12px] border border-[var(--color-border)]">
+          <table className="w-full border-collapse text-left">
+            <caption className="sr-only">Returned items</caption>
+            <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
+              <tr>
+                <th className="h-10 px-3 font-bold">Material</th>
+                <th className="h-10 px-3 font-bold">Quantity</th>
+                <th className="h-10 px-3 font-bold">Condition</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)] text-sm">
+              {event.items.map((item, index) => (
+                <tr key={`${item.materialCode}-${index}`}>
+                  <td className="px-3 py-3 font-bold">{item.materialName}</td>
+                  <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                    {'quantity' in item ? item.quantity : item.assetTag}
+                  </td>
+                  <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                    {'condition' in item ? item.condition : 'Recorded'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button onClick={onClose} variant="secondary">
+            Close
+          </Button>
+          <Link className="button-secondary" to={`/issues/${event.issueId}`}>
+            Full Issue Record
+          </Link>
+        </div>
+      </div>
+    </Dialog>
   );
 }

@@ -7,6 +7,7 @@ import type { ZodError } from 'zod';
 
 import {
   CreateWorkerRequestSchema,
+  DEFAULT_WORKER_PERMISSIONS,
   type WorkerImportCommitResponse,
   type WorkerImportPreviewResponse,
 } from '@assetdesk/contracts';
@@ -151,6 +152,7 @@ export function parseWorkerImportTable(table: readonly (readonly unknown[])[]): 
     const parsed = CreateWorkerRequestSchema.safeParse({
       name,
       email,
+      permissions: DEFAULT_WORKER_PERMISSIONS,
       ...(contact ? { contact } : {}),
       ...(department ? { department } : {}),
     });
@@ -314,6 +316,7 @@ async function createValidRows(
           const input = CreateWorkerRequestSchema.parse({
             name: row.name,
             email: row.email,
+            permissions: DEFAULT_WORKER_PERMISSIONS,
             ...(row.contact ? { contact: row.contact } : {}),
             ...(row.department ? { department: row.department } : {}),
           });

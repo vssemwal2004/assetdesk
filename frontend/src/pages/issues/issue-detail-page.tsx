@@ -7,10 +7,11 @@ import {
   Pencil,
   Printer,
   RotateCcw,
+  Trash2,
   UserRound,
 } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { useEffect, useRef, type FormEvent, type ReactNode, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import {
   UpdateIssueRequestSchema,
@@ -22,16 +23,53 @@ import {
 
 import { CatalogBadge, DetailRow } from '../../components/catalog-ui';
 import { AppCard, Button, ErrorState, LoadingPanel, PageHeader } from '../../components/ui';
-import { formatIstDateTime } from '../../lib/date-time';
+import { isApiError } from '../../lib/api-client';
+import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import { returnedUnitCount } from '../../lib/issue-format';
-import { getIssue, updateIssue } from '../../lib/issues-api';
+import { deleteIssue, getIssue, updateIssue } from '../../lib/issues-api';
 import { NotificationStatusCard } from './notification-status-card';
+
+function canRecordReturn(issue: Pick<Issue, 'totalOutstandingQuantity'>): boolean {
+  return issue.totalOutstandingQuantity > 0;
+}
+
+function canExtendReturnDate(
+  issue: Pick<Issue, 'assignmentType' | 'expectedReturnAt' | 'status' | 'totalOutstandingQuantity'>,
+): boolean {
+  return (
+    issue.assignmentType === 'SHORT_TERM' &&
+    issue.expectedReturnAt !== null &&
+    issue.totalOutstandingQuantity > 0 &&
+    ['ISSUED', 'PARTIALLY_RETURNED'].includes(issue.status)
+  );
+}
+
+function displayIssueStatus(issue: Pick<Issue, 'status' | 'totalOutstandingQuantity'>): string {
+  if (issue.status === 'ISSUED' && issue.totalOutstandingQuantity === 0) return 'CONSUMED';
+  return issue.status;
+}
+
+function returnProgressText(
+  issue: Pick<Issue, 'status' | 'totalOutstandingQuantity'>,
+  totalIssued: number,
+): string {
+  if (issue.totalOutstandingQuantity > 0) {
+    return `${issue.totalOutstandingQuantity} of ${totalIssued} items outstanding`;
+  }
+  if (issue.status === 'ISSUED') return `${totalIssued} items consumed. No return is required.`;
+  return `0 of ${totalIssued} items outstanding`;
+}
 
 export function IssueDetailPage() {
   const { issueId = '' } = useParams();
   const [parameters] = useSearchParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(() => parameters.get('edit') === '1');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [extendDialogOpen, setExtendDialogOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [extendError, setExtendError] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ['issue', issueId],
     queryFn: ({ signal }) => getIssue(issueId, signal),
@@ -50,6 +88,43 @@ export function IssueDetailPage() {
   const response = query.data;
   const issue = response.data.issue;
   const full = response.accessScope === 'FULL' ? response.data.issue : null;
+  const returnable = canRecordReturn(issue);
+  const totalIssued =
+    full?.totalIssuedQuantity ?? issue.lines.reduce((sum, line) => sum + line.issuedQuantity, 0);
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteIssue(issue.issueId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['issues'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory'] }),
+        queryClient.invalidateQueries({ queryKey: ['returns'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+      ]);
+      navigate('/issues');
+    },
+    onError: (error) => {
+      setDeleteError(isApiError(error) ? error.message : 'This Issue Record could not be deleted.');
+    },
+  });
+  const extendMutation = useMutation({
+    mutationFn: (expectedReturnAt: string) => updateIssue(issue.issueId, { expectedReturnAt }),
+    onSuccess: async (response) => {
+      queryClient.setQueryData(['issue', issueId], {
+        accessScope: 'FULL',
+        data: { issue: response.data.issue },
+      });
+      setExtendDialogOpen(false);
+      setExtendError(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['issues'] }),
+        queryClient.invalidateQueries({ queryKey: ['overdue-assets'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+      ]);
+    },
+    onError: (error) => {
+      setExtendError(isApiError(error) ? error.message : 'The return date could not be extended.');
+    },
+  });
 
   return (
     <div className="space-y-6">
@@ -70,11 +145,23 @@ export function IssueDetailPage() {
                 Edit Issue
               </Button>
             ) : null}
-            {issue.totalOutstandingQuantity > 0 ? (
+            {returnable ? (
               <Link className="button-primary" to={`/issues/${issue.issueId}/return`}>
                 <RotateCcw aria-hidden="true" size={18} />
                 Record Return
               </Link>
+            ) : null}
+            {full && canExtendReturnDate(issue) ? (
+              <Button onClick={() => setExtendDialogOpen(true)} variant="secondary">
+                <CalendarClock aria-hidden="true" size={18} />
+                Extend date
+              </Button>
+            ) : null}
+            {full ? (
+              <Button onClick={() => setDeleteDialogOpen(true)} variant="danger">
+                <Trash2 aria-hidden="true" size={18} />
+                Delete
+              </Button>
             ) : null}
           </>
         }
@@ -115,14 +202,11 @@ export function IssueDetailPage() {
                   Issued materials
                 </h2>
                 <p className="text-sm text-[var(--color-text-muted)]">
-                  {issue.totalOutstandingQuantity} of{' '}
-                  {full?.totalIssuedQuantity ??
-                    issue.lines.reduce((sum, line) => sum + line.issuedQuantity, 0)}{' '}
-                  items outstanding
+                  {returnProgressText(issue, totalIssued)}
                 </p>
               </div>
             </div>
-            <CatalogBadge value={issue.status} />
+            <CatalogBadge value={displayIssueStatus(issue)} />
           </div>
           <div className="mt-5 space-y-3">
             {issue.lines.map((line) => (
@@ -188,7 +272,181 @@ export function IssueDetailPage() {
           <Timeline issuedAt={full.issuedAt} returns={full.returnEvents} />
         </>
       ) : null}
+      {deleteDialogOpen ? (
+        <DeleteIssueDialog
+          error={deleteError}
+          issue={issue}
+          loading={deleteMutation.isPending}
+          onCancel={() => {
+            setDeleteDialogOpen(false);
+            setDeleteError(null);
+          }}
+          onConfirm={() => deleteMutation.mutate()}
+        />
+      ) : null}
+      {extendDialogOpen ? (
+        <ExtendReturnDateDialog
+          error={extendError}
+          issue={issue}
+          loading={extendMutation.isPending}
+          onCancel={() => {
+            setExtendDialogOpen(false);
+            setExtendError(null);
+          }}
+          onConfirm={(expectedReturnAt) => extendMutation.mutate(expectedReturnAt)}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function Dialog({
+  children,
+  label,
+  onClose,
+}: {
+  children: ReactNode;
+  label: string;
+  onClose: () => void;
+}) {
+  const reference = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    reference.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      aria-label={label}
+      className="w-[min(92vw,560px)] rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
+      onCancel={onClose}
+      onClose={onClose}
+      ref={reference}
+    >
+      {children}
+    </dialog>
+  );
+}
+
+function DeleteIssueDialog({
+  error,
+  issue,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  error: string | null;
+  issue: Pick<Issue, 'issueId'>;
+  loading: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog label={`Delete ${issue.issueId}`} onClose={onCancel}>
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--color-danger-soft)] text-[var(--color-danger)]">
+            <Trash2 aria-hidden="true" size={22} />
+          </span>
+          <div>
+            <h2 className="text-xl font-extrabold text-[var(--color-danger)]">
+              Delete Issue Record?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+              This removes the Issue Record. Outstanding reusable stock will return to inventory;
+              consumable quantity will be restored.
+            </p>
+          </div>
+        </div>
+        {error ? (
+          <p className="mt-4 rounded-[10px] border border-red-200 bg-[var(--color-danger-soft)] p-3 text-sm font-semibold text-[var(--color-danger)]">
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button disabled={loading} onClick={onCancel} variant="secondary">
+            Cancel
+          </Button>
+          <Button loading={loading} onClick={onConfirm} variant="danger">
+            Delete Issue
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function ExtendReturnDateDialog({
+  error,
+  issue,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  error: string | null;
+  issue: Pick<Issue, 'expectedReturnAt' | 'issueId'>;
+  loading: boolean;
+  onCancel: () => void;
+  onConfirm: (expectedReturnAt: string) => void;
+}) {
+  const [value, setValue] = useState(() =>
+    issue.expectedReturnAt
+      ? toIstDateTimeInput(new Date(issue.expectedReturnAt))
+      : toIstDateTimeInput(new Date()),
+  );
+  const selected = value ? new Date(`${value}:00+05:30`) : null;
+  const invalid = !selected || selected <= new Date();
+
+  return (
+    <Dialog label={`Extend return date for ${issue.issueId}`} onClose={onCancel}>
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+            <CalendarClock aria-hidden="true" size={22} />
+          </span>
+          <div>
+            <h2 className="text-xl font-extrabold text-[var(--color-primary-strong)]">
+              Extend return date
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+              Update the expected return time. This controls overdue tracking and reminder
+              eligibility.
+            </p>
+          </div>
+        </div>
+        <label className="mt-5 block space-y-1.5">
+          <span className="field-label">New expected return (IST)</span>
+          <input
+            className="field-input"
+            onChange={(event) => setValue(event.target.value)}
+            type="datetime-local"
+            value={value}
+          />
+        </label>
+        {invalid ? (
+          <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">
+            Choose a future date and time.
+          </p>
+        ) : null}
+        {error ? (
+          <p className="mt-4 rounded-[10px] border border-red-200 bg-[var(--color-danger-soft)] p-3 text-sm font-semibold text-[var(--color-danger)]">
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button disabled={loading} onClick={onCancel} variant="secondary">
+            Cancel
+          </Button>
+          <Button
+            disabled={invalid}
+            loading={loading}
+            onClick={() => {
+              if (selected) onConfirm(selected.toISOString());
+            }}
+          >
+            Save new date
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -456,6 +714,12 @@ function Timeline({ issuedAt, returns }: { issuedAt: string; returns: ReturnEven
             {event.notes ? (
               <p className="mt-2 text-sm text-[var(--color-text-muted)]">{event.notes}</p>
             ) : null}
+            <Link
+              className="button-secondary mt-3 w-full sm:w-auto"
+              to={`/bills/${event.issueId}?type=return&returnEventId=${event.returnEventId}`}
+            >
+              Return bill
+            </Link>
           </li>
         ))}
       </ol>

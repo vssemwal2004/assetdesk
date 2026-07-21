@@ -26,6 +26,7 @@ import {
 } from './idempotency.js';
 import {
   createIssue,
+  deleteIssue,
   getIssueDetail,
   listIssues,
   searchReturnableIssues,
@@ -189,6 +190,30 @@ export function createIssuesRouter(): Router {
           requestId: request.requestId,
         });
         response.json({ data: { issue } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.delete(
+    '/:issueId',
+    requireAuth,
+    requireFullAccess,
+    requireRole('ADMIN'),
+    requirePermission('ASSIGNMENTS_CREATE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const actor = authenticated(request);
+        await deleteIssue(issueId(request), {
+          userId: actor.userId,
+          workerId: actor.workerId,
+          role: actor.role,
+          requestId: request.requestId,
+        });
+        response.status(204).send();
       } catch (error) {
         next(error);
       }

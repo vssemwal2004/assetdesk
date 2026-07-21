@@ -42,6 +42,12 @@ interface SelectedAssetReturn {
   condition: string;
 }
 
+interface SelectedQuantityReturn {
+  quantity: number;
+  disposition: ReturnDisposition;
+  condition: string;
+}
+
 const dispositions: ReturnDisposition[] = [
   'AVAILABLE',
   'RETURNED',
@@ -72,7 +78,7 @@ export function ReturnIssuePage() {
   const { issueId = '' } = useParams();
   const submissionStorageKey = returnSubmissionStorageKey(issueId);
   const queryClient = useQueryClient();
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [quantities, setQuantities] = useState<Record<string, SelectedQuantityReturn>>({});
   const [assets, setAssets] = useState<Record<string, SelectedAssetReturn>>({});
   const [notes, setNotes] = useState('');
   const [reviewing, setReviewing] = useState(false);
@@ -98,12 +104,18 @@ export function ReturnIssuePage() {
         event: response.data.returnEvent,
         remaining: response.data.issue.totalOutstandingQuantity,
       });
+      const materialCodes = new Set(
+        response.data.returnEvent.items.map((item) => item.materialCode),
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['issue', issueId] }),
         queryClient.invalidateQueries({ queryKey: ['issues'] }),
         queryClient.invalidateQueries({ queryKey: ['returns'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory'] }),
         queryClient.invalidateQueries({ queryKey: ['asset-units'] }),
+        ...Array.from(materialCodes).map((code) =>
+          queryClient.invalidateQueries({ queryKey: ['material', code] }),
+        ),
       ]);
     },
     onError: async (error) => {
@@ -177,6 +189,12 @@ export function ReturnIssuePage() {
             <Link className="button-primary" to={`/issues/${issue.issueId}`}>
               View Issue Record
             </Link>
+            <Link
+              className="button-secondary"
+              to={`/bills/${issue.issueId}?type=return&returnEventId=${saved.event.returnEventId}`}
+            >
+              Return bill
+            </Link>
             <Link className="button-secondary" to="/returns">
               <RotateCcw aria-hidden="true" size={18} />
               Return another
@@ -189,10 +207,36 @@ export function ReturnIssuePage() {
 
   if (issue.totalOutstandingQuantity <= 0 && !pendingSubmission) {
     return (
-      <ErrorState
-        message="All returnable material on this Issue Record has already been returned."
-        title="Nothing outstanding"
-      />
+      <div className="mx-auto max-w-2xl">
+        <AppCard>
+          <SuccessMark label="No return pending" />
+          <h1 className="mt-4 text-2xl font-extrabold text-[var(--color-primary-strong)]">
+            No return is pending
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+            {issue.lines.every((line) => line.material.returnPolicy === 'CONSUMABLE')
+              ? 'This Issue contains consumable material. It was deducted from stock at issue time, so the user does not need to return it.'
+              : 'All reusable material on this Issue Record has already been returned or closed.'}
+          </p>
+          <dl className="mt-5 divide-y divide-[var(--color-border)] rounded-[12px] border border-[var(--color-border)] px-4">
+            <SummaryRow label="Issue ID" value={issue.issueId} />
+            <SummaryRow label="Receiver" value={issue.receiver.fullName} />
+            <SummaryRow label="Issued at" value={formatIstDateTime(issue.issuedAt)} />
+            <SummaryRow label="Outstanding" value="0" />
+          </dl>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+            <Link className="button-primary" to={`/issues/${issue.issueId}`}>
+              View Issue Record
+            </Link>
+            <Link className="button-secondary" to={`/bills/${issue.issueId}`}>
+              Generate bill
+            </Link>
+            <Link className="button-secondary" to="/returns">
+              Find another return
+            </Link>
+          </div>
+        </AppCard>
+      </div>
     );
   }
 
@@ -350,16 +394,24 @@ export function ReturnIssuePage() {
 
 function buildReturnInput(
   lines: IssueLine[],
-  quantities: Record<string, number>,
+  quantities: Record<string, SelectedQuantityReturn>,
   assets: Record<string, SelectedAssetReturn>,
   notes: string,
 ) {
   return CreateReturnRequestSchema.safeParse({
     items: [
       ...lines.flatMap((line) => {
-        const quantity = quantities[line.lineId];
-        return line.material.trackingMode === 'QUANTITY' && quantity
-          ? [{ trackingMode: 'QUANTITY' as const, lineId: line.lineId, quantity }]
+        const selection = quantities[line.lineId];
+        return line.material.trackingMode === 'QUANTITY' && selection
+          ? [
+              {
+                trackingMode: 'QUANTITY' as const,
+                lineId: line.lineId,
+                quantity: selection.quantity,
+                disposition: selection.disposition,
+                condition: selection.condition,
+              },
+            ]
           : [];
       }),
       ...Object.entries(assets).map(([assetTag, selection]) => ({
@@ -382,13 +434,14 @@ function ReturnLine({
   onAssetsChange,
 }: {
   line: IssueLine;
-  quantities: Record<string, number>;
+  quantities: Record<string, SelectedQuantityReturn>;
   assets: Record<string, SelectedAssetReturn>;
-  onQuantitiesChange: (value: Record<string, number>) => void;
+  onQuantitiesChange: (value: Record<string, SelectedQuantityReturn>) => void;
   onAssetsChange: (value: Record<string, SelectedAssetReturn>) => void;
 }) {
   if (line.material.trackingMode === 'QUANTITY') {
-    const selected = quantities[line.lineId] !== undefined;
+    const selection = quantities[line.lineId];
+    const selected = selection !== undefined;
     return (
       <article className="rounded-[12px] border border-[var(--color-border)] p-4">
         <label className="flex min-h-11 cursor-pointer items-start gap-3">
@@ -397,7 +450,12 @@ function ReturnLine({
             className="mt-1 size-5 accent-[var(--color-primary)]"
             onChange={(event) => {
               const next = { ...quantities };
-              if (event.target.checked) next[line.lineId] = line.outstandingQuantity;
+              if (event.target.checked)
+                next[line.lineId] = {
+                  quantity: line.outstandingQuantity,
+                  disposition: 'AVAILABLE',
+                  condition: 'Accepted',
+                };
               else delete next[line.lineId];
               onQuantitiesChange(next);
             }}
@@ -412,8 +470,8 @@ function ReturnLine({
             </span>
           </span>
         </label>
-        {selected ? (
-          <div className="mt-4 max-w-xs">
+        {selection ? (
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
             <TextField
               inputMode="numeric"
               label="Return quantity"
@@ -422,14 +480,45 @@ function ReturnLine({
               onChange={(event) =>
                 onQuantitiesChange({
                   ...quantities,
-                  [line.lineId]: Math.max(
-                    1,
-                    Math.min(line.outstandingQuantity, Number(event.target.value) || 1),
-                  ),
+                  [line.lineId]: {
+                    ...selection,
+                    quantity: Math.max(
+                      1,
+                      Math.min(line.outstandingQuantity, Number(event.target.value) || 1),
+                    ),
+                  },
                 })
               }
               type="number"
-              value={quantities[line.lineId]}
+              value={selection.quantity}
+            />
+            <SelectField
+              id={`quantity-disposition-${line.lineId}`}
+              label="Return status"
+              onChange={(value) =>
+                onQuantitiesChange({
+                  ...quantities,
+                  [line.lineId]: { ...selection, disposition: value as ReturnDisposition },
+                })
+              }
+              value={selection.disposition}
+            >
+              {dispositions.map((value) => (
+                <option key={value} value={value}>
+                  {value.toLowerCase().replaceAll('_', ' ')}
+                </option>
+              ))}
+            </SelectField>
+            <TextField
+              label="Condition"
+              onChange={(event) =>
+                onQuantitiesChange({
+                  ...quantities,
+                  [line.lineId]: { ...selection, condition: event.target.value },
+                })
+              }
+              required
+              value={selection.condition}
             />
           </div>
         ) : null}
@@ -549,7 +638,7 @@ function ReturnReview({
             <p className="font-bold text-[var(--color-text-strong)]">{materialName(item.lineId)}</p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
               {item.trackingMode === 'QUANTITY'
-                ? `Return quantity: ${item.quantity}`
+                ? `Return quantity: ${item.quantity} · ${item.disposition.toLowerCase().replaceAll('_', ' ')} · ${item.condition}`
                 : `${item.assetTag} · ${item.disposition.toLowerCase().replaceAll('_', ' ')} · ${item.condition}`}
             </p>
           </li>

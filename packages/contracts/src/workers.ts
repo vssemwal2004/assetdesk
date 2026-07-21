@@ -16,6 +16,7 @@ export const WorkerPermissionSchema = z.enum([
 ]);
 
 export const WorkerPermissionsSchema = z.array(WorkerPermissionSchema).min(1);
+export const DEFAULT_WORKER_PERMISSIONS = WorkerPermissionSchema.options;
 
 const OptionalTrimmedTextSchema = z
   .string()

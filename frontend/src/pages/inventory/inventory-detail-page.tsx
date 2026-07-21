@@ -3,20 +3,25 @@ import {
   Archive,
   ArrowLeft,
   Boxes,
+  CheckCircle2,
+  FileClock,
   PackagePlus,
   Pencil,
   Plus,
   RotateCcw,
   SlidersHorizontal,
+  Trash2,
+  Workflow,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useLocation, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import {
   AdjustQuantityRequestSchema,
   CreateAssetUnitRequestSchema,
   UpdateAssetUnitRequestSchema,
   UpdateMaterialRequestSchema,
+  type AuditEvent,
   type AssignmentType,
   type AssetUnit,
   type AssetUnitsListResponse,
@@ -39,10 +44,13 @@ import {
   TextField,
 } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
+import { getAuditEvents } from '../../lib/audit-api';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
+import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import {
   addAssetUnit,
   adjustMaterialQuantity,
+  deleteMaterial,
   getAssetUnits,
   getMaterial,
   setMaterialStatus,
@@ -51,15 +59,20 @@ import {
 } from '../../lib/inventory-api';
 import { MaterialCategoryField } from './material-category-field';
 
+function dateDaysAgo(days: number): string {
+  return toIstDateTimeInput(new Date(Date.now() - days * 86_400_000)).slice(0, 10);
+}
+
 export function InventoryDetailPage() {
   const { materialCode = '' } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const [parameters, setParameters] = useSearchParams();
   const unitPage = Math.max(1, Number(parameters.get('unitPage')) || 1);
   const [editing, setEditing] = useState(parameters.get('edit') === '1');
-  const [dialog, setDialog] = useState<'status' | 'quantity' | 'add-unit' | null>(null);
+  const [dialog, setDialog] = useState<'status' | 'quantity' | 'add-unit' | 'delete' | null>(null);
   const [editUnit, setEditUnit] = useState<AssetUnit | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const notice = (location.state as { notice?: string } | null)?.notice;
@@ -76,6 +89,21 @@ export function InventoryDetailPage() {
     queryFn: ({ signal }) => getAssetUnits(materialCode, unitPage, signal),
     enabled: query.data?.trackingMode === 'SERIALIZED',
     placeholderData: (previous) => previous,
+  });
+
+  const activityQuery = useQuery({
+    queryKey: ['inventory-activity', materialCode],
+    queryFn: ({ signal }) =>
+      getAuditEvents(
+        {
+          page: 1,
+          from: dateDaysAgo(365),
+          to: dateDaysAgo(0),
+          search: materialCode,
+        },
+        signal,
+      ),
+    enabled: Boolean(materialCode),
   });
 
   async function updateCached(material: Material) {
@@ -97,6 +125,22 @@ export function InventoryDetailPage() {
       setDialog(null);
       setActionError(
         isApiError(error) ? error.message : 'The material status could not be changed.',
+      );
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (material: Material) => deleteMaterial(material.materialCode),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      navigate('/inventory', { replace: true });
+    },
+    onError: (error) => {
+      setDialog(null);
+      setActionError(
+        isApiError(error)
+          ? error.message
+          : 'This material could not be deleted. Archive it if it has history.',
       );
     },
   });
@@ -218,18 +262,24 @@ export function InventoryDetailPage() {
                 : 'This material is archived and retained for history.'}
             </p>
             {admin ? (
-              <Button
-                className="mt-4 w-full"
-                onClick={() => setDialog('status')}
-                variant={material.status === 'ACTIVE' ? 'danger' : 'secondary'}
-              >
-                {material.status === 'ACTIVE' ? (
-                  <Archive aria-hidden="true" size={18} />
-                ) : (
-                  <RotateCcw aria-hidden="true" size={18} />
-                )}
-                {material.status === 'ACTIVE' ? 'Archive material' : 'Restore material'}
-              </Button>
+              <div className="mt-4 space-y-2">
+                <Button
+                  className="w-full"
+                  onClick={() => setDialog('status')}
+                  variant={material.status === 'ACTIVE' ? 'danger' : 'secondary'}
+                >
+                  {material.status === 'ACTIVE' ? (
+                    <Archive aria-hidden="true" size={18} />
+                  ) : (
+                    <RotateCcw aria-hidden="true" size={18} />
+                  )}
+                  {material.status === 'ACTIVE' ? 'Archive material' : 'Restore material'}
+                </Button>
+                <Button className="w-full" onClick={() => setDialog('delete')} variant="danger">
+                  <Trash2 aria-hidden="true" size={18} />
+                  Delete material
+                </Button>
+              </div>
             ) : (
               <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-xs font-semibold text-[var(--color-text-muted)]">
                 Inventory records are read-only for Worker accounts.
@@ -238,6 +288,8 @@ export function InventoryDetailPage() {
           </AppCard>
         </div>
       </div>
+
+      <InventoryFlowPanel material={material} />
 
       {material.trackingMode === 'SERIALIZED' ? (
         <SerializedUnits
@@ -254,6 +306,13 @@ export function InventoryDetailPage() {
           query={unitsQuery}
         />
       ) : null}
+
+      <InventoryActivityPanel
+        events={activityQuery.data?.data ?? []}
+        loading={activityQuery.isPending}
+        onRetry={() => void activityQuery.refetch()}
+        unavailable={activityQuery.isError}
+      />
 
       {dialog === 'status' ? (
         <ConfirmStatusDialog
@@ -284,6 +343,14 @@ export function InventoryDetailPage() {
           }}
         />
       ) : null}
+      {dialog === 'delete' ? (
+        <DeleteMaterialDialog
+          loading={deleteMutation.isPending}
+          material={material}
+          onCancel={() => setDialog(null)}
+          onConfirm={() => deleteMutation.mutate(material)}
+        />
+      ) : null}
       {editUnit ? (
         <UnitDialog
           material={material}
@@ -311,6 +378,243 @@ function QuantityStat({ label, value }: { label: string; value: number }) {
       <dt className="text-[11px] font-bold text-[var(--color-text-muted)]">{label}</dt>
       <dd className="mt-1 text-lg font-extrabold text-[var(--color-primary-strong)]">{value}</dd>
     </div>
+  );
+}
+
+function stockHealth(material: Material): {
+  label: string;
+  description: string;
+  className: string;
+} {
+  if (material.status === 'ARCHIVED') {
+    return {
+      label: 'Archived',
+      description: 'Hidden from active issue workflows and retained for history.',
+      className: 'bg-[var(--color-warning-soft)] text-[var(--color-warning)]',
+    };
+  }
+  if (material.availableQuantity <= 0) {
+    return {
+      label: 'Out of stock',
+      description: 'No available stock can be issued right now.',
+      className: 'bg-[var(--color-danger-soft)] text-[var(--color-danger)]',
+    };
+  }
+  if (material.availableQuantity < Math.max(2, Math.ceil(material.totalQuantity * 0.2))) {
+    return {
+      label: 'Low stock',
+      description: 'Available stock is low compared with registered total.',
+      className: 'bg-[var(--color-warning-soft)] text-[var(--color-warning)]',
+    };
+  }
+  return {
+    label: 'Ready',
+    description: 'This material has available stock for issue workflows.',
+    className: 'bg-[var(--color-success-soft)] text-[var(--color-success)]',
+  };
+}
+
+function InventoryFlowPanel({ material }: { material: Material }) {
+  const health = stockHealth(material);
+  const inactiveQuantity =
+    material.totalQuantity - material.availableQuantity - material.issuedQuantity;
+  return (
+    <AppCard>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+            <Workflow aria-hidden="true" size={21} />
+          </span>
+          <div>
+            <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+              Inventory flow
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Full material lifecycle from registration to issue, return and closure.
+            </p>
+          </div>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${health.className}`}>
+          {health.label}
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-4">
+        <FlowStep
+          active
+          detail={`${material.trackingMode === 'SERIALIZED' ? 'Asset tags' : material.unitLabel ?? 'Units'} tracked`}
+          label="1. Register"
+        />
+        <FlowStep
+          active={material.availableQuantity > 0}
+          detail={`${material.availableQuantity} available`}
+          label="2. Available"
+        />
+        <FlowStep
+          active={material.issuedQuantity > 0}
+          detail={`${material.issuedQuantity} currently issued`}
+          label="3. Issued"
+        />
+        <FlowStep
+          active={material.status === 'ARCHIVED'}
+          detail={
+            material.status === 'ARCHIVED' ? 'Record closed' : 'Archive when no stock is issued'
+          }
+          label="4. Close"
+        />
+      </div>
+
+      <div className="mt-5 overflow-hidden rounded-[12px] border border-[var(--color-border)]">
+        <table className="w-full border-collapse text-left">
+          <caption className="sr-only">Inventory stock position</caption>
+          <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
+            <tr>
+              <th className="h-10 px-3 font-bold">Stock bucket</th>
+              <th className="h-10 px-3 font-bold">Quantity</th>
+              <th className="h-10 px-3 font-bold">Meaning</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--color-border)] text-sm">
+            <StockRow
+              label="Total registered"
+              note="All stock recorded in AssetDesk."
+              value={material.totalQuantity}
+            />
+            <StockRow
+              label="Available"
+              note="Can be issued right now."
+              value={material.availableQuantity}
+            />
+            <StockRow
+              label="Issued"
+              note="Currently with receivers."
+              value={material.issuedQuantity}
+            />
+            <StockRow
+              label="Repair/damaged/lost/scrapped"
+              note="Registered but not issue-ready."
+              value={Math.max(0, inactiveQuantity)}
+            />
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">{health.description}</p>
+    </AppCard>
+  );
+}
+
+function FlowStep({ label, detail, active }: { label: string; detail: string; active: boolean }) {
+  return (
+    <div className="rounded-[12px] border border-[var(--color-border)] bg-white p-3">
+      <p className="flex items-center gap-2 text-sm font-extrabold text-[var(--color-text-strong)]">
+        <CheckCircle2
+          aria-hidden="true"
+          className={active ? 'text-[var(--color-success)]' : 'text-[var(--color-text-muted)]'}
+          size={17}
+        />
+        {label}
+      </p>
+      <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">{detail}</p>
+    </div>
+  );
+}
+
+function StockRow({ label, value, note }: { label: string; value: number; note: string }) {
+  return (
+    <tr>
+      <td className="px-3 py-3 font-bold text-[var(--color-text-strong)]">{label}</td>
+      <td className="px-3 py-3 font-extrabold text-[var(--color-primary-strong)]">{value}</td>
+      <td className="px-3 py-3 text-[var(--color-text-muted)]">{note}</td>
+    </tr>
+  );
+}
+
+function actionLabel(value: string): string {
+  return value
+    .toLowerCase()
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function InventoryActivityPanel({
+  events,
+  loading,
+  unavailable,
+  onRetry,
+}: {
+  events: AuditEvent[];
+  loading: boolean;
+  unavailable: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <AppCard>
+      <div className="flex items-center gap-3">
+        <span className="grid size-10 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+          <FileClock aria-hidden="true" size={21} />
+        </span>
+        <div>
+          <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+            Inventory log
+          </h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Recent material changes, stock adjustments and protected actions.
+          </p>
+        </div>
+      </div>
+      <div className="mt-5">
+        {loading ? (
+          <LoadingPanel label="Loading inventory log" />
+        ) : unavailable ? (
+          <ErrorState message="Inventory log could not be loaded." onRetry={onRetry} />
+        ) : events.length === 0 ? (
+          <EmptyState
+            message="New material edits, stock changes and unit actions will appear here."
+            title="No inventory log entries"
+          />
+        ) : (
+          <div className="overflow-hidden rounded-[12px] border border-[var(--color-border)]">
+            <table className="w-full border-collapse text-left">
+              <caption className="sr-only">Material inventory activity log</caption>
+              <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
+                <tr>
+                  <th className="h-10 px-3 font-bold">Time</th>
+                  <th className="h-10 px-3 font-bold">Action</th>
+                  <th className="h-10 px-3 font-bold">Actor</th>
+                  <th className="h-10 px-3 font-bold">Evidence</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-border)] text-sm">
+                {events.slice(0, 10).map((event) => (
+                  <ActivityRow event={event} key={event.id} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </AppCard>
+  );
+}
+
+function ActivityRow({ event }: { event: AuditEvent }) {
+  return (
+    <tr className="align-top">
+      <td className="px-3 py-3 text-xs text-[var(--color-text-muted)]">
+        {formatIstDateTime(event.timestampUtc)}
+      </td>
+      <td className="px-3 py-3 font-bold text-[var(--color-text-strong)]">
+        {actionLabel(event.action)}
+      </td>
+      <td className="px-3 py-3 text-[var(--color-text-muted)]">
+        {event.actorWorkerId ?? 'System'}
+      </td>
+      <td className="px-3 py-3 text-xs text-[var(--color-text-muted)]">
+        {event.reasonCode ? <p className="font-bold">{event.reasonCode}</p> : null}
+        {event.metadata ? JSON.stringify(event.metadata) : event.requestId}
+      </td>
+    </tr>
   );
 }
 
@@ -713,6 +1017,55 @@ function ConfirmStatusDialog({
         </Button>
         <Button loading={loading} onClick={onConfirm} variant={active ? 'danger' : 'primary'}>
           {loading ? 'Working…' : active ? 'Archive material' : 'Restore material'}
+        </Button>
+      </div>
+    </Dialog>
+  );
+}
+
+function DeleteMaterialDialog({
+  material,
+  loading,
+  onConfirm,
+  onCancel,
+}: {
+  material: Material;
+  loading: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Dialog onClose={onCancel} title="Delete material?">
+      <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+        {material.name} will be permanently removed from Inventory. Delete is allowed only when
+        there is no issue history and no stock is currently issued.
+      </p>
+      <dl className="mt-5 grid gap-2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 text-sm">
+        <div className="flex justify-between gap-3">
+          <dt className="font-bold text-[var(--color-text-muted)]">Material code</dt>
+          <dd className="font-extrabold text-[var(--color-text-strong)]">
+            {material.materialCode}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="font-bold text-[var(--color-text-muted)]">Total stock</dt>
+          <dd className="font-extrabold text-[var(--color-text-strong)]">
+            {material.totalQuantity}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="font-bold text-[var(--color-text-muted)]">Issued stock</dt>
+          <dd className="font-extrabold text-[var(--color-text-strong)]">
+            {material.issuedQuantity}
+          </dd>
+        </div>
+      </dl>
+      <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button disabled={loading} onClick={onCancel} variant="secondary">
+          Cancel
+        </Button>
+        <Button loading={loading} onClick={onConfirm} variant="danger">
+          {loading ? 'Deleting...' : 'Delete material'}
         </Button>
       </div>
     </Dialog>

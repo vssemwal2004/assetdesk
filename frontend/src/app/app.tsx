@@ -87,6 +87,11 @@ const ReturnIssuePage = lazy(() =>
 const ReturnsPage = lazy(() =>
   import('../pages/issues/returns-page').then((module) => ({ default: module.ReturnsPage })),
 );
+const OverdueAssetsPage = lazy(() =>
+  import('../pages/issues/overdue-assets-page').then((module) => ({
+    default: module.OverdueAssetsPage,
+  })),
+);
 const BillsPage = lazy(() =>
   import('../pages/bills/bills-page').then((module) => ({ default: module.BillsPage })),
 );
@@ -179,6 +184,16 @@ export function App() {
                   }
                   path="/returns"
                 />
+                <Route element={<AdminRoute />}>
+                  <Route
+                    element={
+                      <Suspense fallback={<FeatureRouteFallback />}>
+                        <OverdueAssetsPage />
+                      </Suspense>
+                    }
+                    path="/overdue"
+                  />
+                </Route>
                 <Route
                   element={
                     <Suspense fallback={<FeatureRouteFallback />}>

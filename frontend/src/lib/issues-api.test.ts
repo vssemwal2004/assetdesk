@@ -63,6 +63,8 @@ describe('Issue and Return idempotency', () => {
               trackingMode: 'QUANTITY',
               lineId: '0f14c7d2-cf55-4f24-b7f8-39aca4b79ac9',
               quantity: 1,
+              disposition: 'AVAILABLE',
+              condition: 'Accepted',
             },
           ],
         },

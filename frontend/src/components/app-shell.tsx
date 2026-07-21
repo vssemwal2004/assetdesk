@@ -8,6 +8,7 @@ import {
   Menu,
   FileBarChart,
   FileClock,
+  ListChecks,
   ReceiptText,
   Boxes,
   PackagePlus,
@@ -34,8 +35,6 @@ interface NavigationItem {
 
 const navigation: NavigationItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: Home, end: true },
-  { label: 'Issues', to: '/issues', icon: ClipboardList, end: true },
-  { label: 'Issue material', to: '/issues/new', icon: PackagePlus },
   { label: 'Return', to: '/returns', icon: RotateCcw },
   { label: 'Bills', to: '/bills', icon: ReceiptText },
   { label: 'Inventory', to: '/inventory', icon: Boxes },
@@ -44,6 +43,12 @@ const navigation: NavigationItem[] = [
   { label: 'Audit logs', to: '/audit', icon: FileClock, adminOnly: true },
   { label: 'Reports', to: '/reports', icon: FileBarChart, adminOnly: true },
   { label: 'Profile', to: '/profile', icon: UserRound },
+];
+
+const issueNavigation: NavigationItem[] = [
+  { label: 'Issue material', to: '/issues/new', icon: PackagePlus },
+  { label: 'Issues data', to: '/issues', icon: ListChecks, end: true },
+  { label: 'Overdue assets', to: '/overdue', icon: FileClock, adminOnly: true },
 ];
 
 const mobileNavigation: NavigationItem[] = [
@@ -61,6 +66,7 @@ const adminMobileNavigation: NavigationItem[] = [
 ];
 
 function pageTitle(pathname: string): string {
+  if (pathname === '/overdue') return 'Overdue assets';
   if (pathname === '/issues/new') return 'Issue material';
   if (pathname.endsWith('/return') && pathname.startsWith('/issues/')) return 'Record Return';
   if (pathname.startsWith('/issues/')) return 'Issue details';
@@ -84,6 +90,55 @@ function pageTitle(pathname: string): string {
   if (pathname === '/profile') return 'Profile';
   if (pathname === '/access-denied') return 'Access denied';
   return 'Dashboard';
+}
+
+function IssueNavigationGroup({
+  compact = false,
+  onClick,
+}: {
+  compact?: boolean;
+  onClick?: () => void;
+}) {
+  const auth = useAuth();
+  const location = useLocation();
+  const children = issueNavigation.filter((item) => !item.adminOnly || auth.user?.role === 'ADMIN');
+  const active = location.pathname.startsWith('/issues') || location.pathname === '/overdue';
+
+  if (compact) {
+    return (
+      <>
+        {children.map((item) => (
+          <NavigationLink compact item={item} key={item.to} {...(onClick ? { onClick } : {})} />
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <details className="group" open={active}>
+      <summary
+        className={cn(
+          'flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] px-3 text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
+          active
+            ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]'
+            : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-tint)] hover:text-[var(--color-primary)]',
+        )}
+      >
+        <ClipboardList aria-hidden="true" className="shrink-0" size={20} />
+        <span className="min-w-0 flex-1">Issue</span>
+        <ChevronDown
+          aria-hidden="true"
+          className="shrink-0 transition-transform group-open:rotate-180"
+          size={16}
+        />
+      </summary>
+      <div className="mt-1 space-y-1 pl-4">
+        {children.map((item) => (
+          <NavigationLink item={item} key={item.to} {...(onClick ? { onClick } : {})} />
+        ))}
+      </div>
+    </details>
+  );
 }
 
 function NavigationLink({
@@ -240,7 +295,11 @@ export function AppShell() {
           <Brand />
         </div>
         <nav aria-label="Main navigation" className="mt-8 min-h-0 flex-1 space-y-1 overflow-y-auto">
-          {items.map((item) => (
+          {items.slice(0, 1).map((item) => (
+            <NavigationLink item={item} key={item.to} />
+          ))}
+          <IssueNavigationGroup />
+          {items.slice(1).map((item) => (
             <NavigationLink item={item} key={item.to} />
           ))}
         </nav>
@@ -257,7 +316,11 @@ export function AppShell() {
           <Brand compact />
         </div>
         <nav aria-label="Main navigation" className="mt-8 min-h-0 flex-1 space-y-2 overflow-y-auto">
-          {items.map((item) => (
+          {items.slice(0, 1).map((item) => (
+            <NavigationLink compact item={item} key={item.to} />
+          ))}
+          <IssueNavigationGroup compact />
+          {items.slice(1).map((item) => (
             <NavigationLink compact item={item} key={item.to} />
           ))}
         </nav>
@@ -303,7 +366,11 @@ export function AppShell() {
               </button>
             </div>
             <nav aria-label="Mobile menu" className="mt-8 min-h-0 flex-1 space-y-1 overflow-y-auto">
-              {items.map((item) => (
+              {items.slice(0, 1).map((item) => (
+                <NavigationLink item={item} key={item.to} onClick={() => setDrawerOpen(false)} />
+              ))}
+              <IssueNavigationGroup onClick={() => setDrawerOpen(false)} />
+              {items.slice(1).map((item) => (
                 <NavigationLink item={item} key={item.to} onClick={() => setDrawerOpen(false)} />
               ))}
             </nav>

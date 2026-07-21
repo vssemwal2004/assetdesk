@@ -13,7 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, useNavigate, useParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import type { TemporaryCredential, UpdateWorkerRequest, Worker } from '@assetdesk/contracts';
 
@@ -48,8 +48,9 @@ function formatDate(value: string | null): string {
 export function WorkerDetailPage() {
   const { workerId = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(searchParams.get('edit') === '1');
   const [confirmAction, setConfirmAction] = useState<'status' | 'credential' | 'delete' | null>(
     null,
   );
@@ -114,6 +115,12 @@ export function WorkerDetailPage() {
   }
   const worker = query.data;
 
+  function setEditingMode(enabled: boolean) {
+    setEditing(enabled);
+    if (enabled) setSearchParams({ edit: '1' });
+    else setSearchParams({});
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -143,7 +150,7 @@ export function WorkerDetailPage() {
               </div>
             </div>
             {!editing ? (
-              <Button onClick={() => setEditing(true)} variant="secondary">
+              <Button onClick={() => setEditingMode(true)} variant="secondary">
                 <Pencil aria-hidden="true" size={18} />
                 Edit details
               </Button>
@@ -151,10 +158,10 @@ export function WorkerDetailPage() {
           </div>
           {editing ? (
             <EditWorkerForm
-              onCancel={() => setEditing(false)}
+              onCancel={() => setEditingMode(false)}
               onSaved={async (updated) => {
                 await updateCached(updated);
-                setEditing(false);
+                setEditingMode(false);
               }}
               worker={worker}
             />

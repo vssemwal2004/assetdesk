@@ -1,4 +1,4 @@
-import type { Issue, ReturnableIssue } from '@assetdesk/contracts';
+import type { Issue, ReturnEvent, ReturnableIssue } from '@assetdesk/contracts';
 
 import { formatIstDateTime } from '../../lib/date-time';
 
@@ -26,7 +26,15 @@ function generatedAt(): string {
   return formatIstDateTime(new Date());
 }
 
-export function BillDocument({ issue }: { issue: BillIssue }) {
+export function BillDocument({
+  issue,
+  returnEvent = null,
+}: {
+  issue: BillIssue;
+  returnEvent?: ReturnEvent | null;
+}) {
+  if (returnEvent) return <ReturnBillDocument issue={issue} returnEvent={returnEvent} />;
+
   return (
     <article className="bill-sheet" aria-label={`Bill for ${issue.issueId}`}>
       <header className="bill-header">
@@ -178,6 +186,127 @@ export function BillDocument({ issue }: { issue: BillIssue }) {
         </p>
       </footer>
     </article>
+  );
+}
+
+function ReturnBillDocument({
+  issue,
+  returnEvent,
+}: {
+  issue: BillIssue;
+  returnEvent: ReturnEvent;
+}) {
+  return (
+    <article className="bill-sheet" aria-label={`Return bill for ${issue.issueId}`}>
+      <header className="bill-header">
+        <div>
+          <p className="bill-kicker">AssetDesk University Material Return Bill</p>
+          <h1>Material Return Bill</h1>
+          <p className="bill-muted">Official return receipt for university material handover.</p>
+        </div>
+        <div className="bill-id-box">
+          <span>Return / Issue No.</span>
+          <strong>{issue.issueId}</strong>
+        </div>
+      </header>
+
+      <section className="bill-grid bill-summary-grid">
+        <BillField label="Issue ID" value={issue.issueId} />
+        <BillField label="Return event" value={returnEvent.returnEventId} />
+        <BillField label="Return status" value={returnEvent.resultingIssueStatus.replaceAll('_', ' ')} />
+        <BillField label="Returned at" value={formatIstDateTime(returnEvent.returnedAt)} />
+        <BillField label="Returned units" value={String(returnedTotal(returnEvent))} />
+        <BillField label="Remaining outstanding" value={String(returnEvent.remainingOutstandingQuantity)} />
+      </section>
+
+      <section className="bill-two-column">
+        <div>
+          <h2>Receiver Details</h2>
+          <dl className="bill-detail-list">
+            <BillRow label="Name" value={issue.receiver.fullName} />
+            <BillRow label="Receiver code" value={issue.receiver.receiverCode} />
+            <BillRow label="University ID" value={optional(issue.receiver.universityId)} />
+            <BillRow label="Department" value={optional(issue.receiver.department)} />
+            <BillRow label="Email" value={issue.receiver.email} />
+          </dl>
+        </div>
+        <div>
+          <h2>Return Recorded By</h2>
+          <dl className="bill-detail-list">
+            <BillRow label="Name" value={returnEvent.performedBy.name} />
+            <BillRow label="Worker ID" value={returnEvent.performedBy.workerId} />
+            <BillRow label="Role" value={returnEvent.performedBy.role} />
+            <BillRow label="Notes" value={optional(returnEvent.notes)} />
+          </dl>
+        </div>
+      </section>
+
+      <section>
+        <h2>Returned Material Details</h2>
+        <div className="bill-table-wrap">
+          <table className="bill-table">
+            <thead>
+              <tr>
+                <th scope="col">S.No.</th>
+                <th scope="col">Material</th>
+                <th scope="col">Code</th>
+                <th scope="col">Returned</th>
+                <th scope="col">Asset / serial</th>
+                <th scope="col">Disposition</th>
+                <th scope="col">Condition</th>
+              </tr>
+            </thead>
+            <tbody>
+              {returnEvent.items.map((item, index) => (
+                <tr key={`${returnEvent.returnEventId}-${index}`}>
+                  <td>{index + 1}</td>
+                  <td>{item.materialName}</td>
+                  <td>{item.materialCode}</td>
+                  <td>{item.trackingMode === 'QUANTITY' ? item.quantity : 1}</td>
+                  <td>
+                    {item.trackingMode === 'SERIALIZED'
+                      ? `${item.assetTag}${item.serialNumber ? ` / ${item.serialNumber}` : ''}`
+                      : 'Quantity return'}
+                  </td>
+                  <td>{item.disposition}</td>
+                  <td>{item.condition}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={3}>Total returned</td>
+                <td>{returnedTotal(returnEvent)}</td>
+                <td colSpan={3}>Remaining outstanding: {returnEvent.remainingOutstandingQuantity}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section className="bill-two-column bill-signatures">
+        <div>
+          <span>Receiver / Returner signature</span>
+        </div>
+        <div>
+          <span>Store in-charge signature</span>
+        </div>
+      </section>
+
+      <footer className="bill-footer">
+        <p>
+          This bill confirms that the listed material was returned and recorded in AssetDesk.
+          Damaged, lost or repair outcomes remain visible in the Issue Record history.
+        </p>
+      </footer>
+    </article>
+  );
+}
+
+function returnedTotal(event: ReturnEvent): number {
+  return event.items.reduce(
+    (total, item) => total + (item.trackingMode === 'QUANTITY' ? item.quantity : 1),
+    0,
   );
 }
 

@@ -6,7 +6,7 @@ import { cn } from './ui';
 const badgeBase = 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold';
 
 export function CatalogBadge({ value }: { value: string }) {
-  const positive = ['ACTIVE', 'AVAILABLE', 'RETURNED'].includes(value);
+  const positive = ['ACTIVE', 'AVAILABLE', 'RETURNED', 'CONSUMED'].includes(value);
   const negative = [
     'ARCHIVED',
     'INACTIVE',

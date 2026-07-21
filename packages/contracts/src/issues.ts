@@ -170,7 +170,8 @@ export const UpdateIssueRequestSchema = z
       .max(240)
       .optional()
       .nullable()
-      .transform((value) => value || null),
+      .transform((value) => value || null)
+      .optional(),
     notes: z
       .string()
       .trim()
@@ -178,7 +179,9 @@ export const UpdateIssueRequestSchema = z
       .max(2_000)
       .optional()
       .nullable()
-      .transform((value) => value || null),
+      .transform((value) => value || null)
+      .optional(),
+    expectedReturnAt: z.string().datetime({ offset: true }).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'Provide at least one field to update.');
@@ -267,6 +270,8 @@ export const CreateReturnQuantityItemSchema = z
     trackingMode: z.literal('QUANTITY'),
     lineId: LineIdSchema,
     quantity: z.number().int().positive().max(1_000_000),
+    disposition: ReturnDispositionSchema.default('AVAILABLE'),
+    condition: z.string().trim().min(1).max(120).default('Accepted'),
   })
   .strict();
 
@@ -328,6 +333,8 @@ export const ReturnEventQuantityItemSchema = z
     materialCode: MaterialCodeSchema,
     materialName: z.string().min(1),
     quantity: z.number().int().positive(),
+    disposition: ReturnDispositionSchema.default('AVAILABLE'),
+    condition: z.string().min(1).default('Accepted'),
   })
   .strict();
 

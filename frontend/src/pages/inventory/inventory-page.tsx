@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, MoreVertical, PackagePlus, PackageSearch, Pencil, Search, Trash2 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import type {
@@ -62,6 +62,8 @@ export function InventoryPage() {
   const queryClient = useQueryClient();
   const [parameters, setParameters] = useSearchParams();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
+  const [viewMaterial, setViewMaterial] = useState<Material | null>(null);
   const page = Math.max(1, Number(parameters.get('page')) || 1);
   const search = parameters.get('search') ?? '';
   const category = parameters.get('category') ?? '';
@@ -106,6 +108,7 @@ export function InventoryPage() {
   const deleteMutation = useMutation({
     mutationFn: (material: Material) => deleteMaterial(material.materialCode),
     onSuccess: async () => {
+      setDeleteTarget(null);
       await queryClient.invalidateQueries({ queryKey: ['inventory'] });
     },
     onError: (error) => {
@@ -119,10 +122,7 @@ export function InventoryPage() {
 
   function confirmDelete(material: Material) {
     setActionError(null);
-    const confirmed = window.confirm(
-      `Delete ${material.name}? This is allowed only when there is no issue history.`,
-    );
-    if (confirmed) deleteMutation.mutate(material);
+    setDeleteTarget(material);
   }
 
   return (
@@ -251,7 +251,12 @@ export function InventoryPage() {
               />
             ))}
           </div>
-          <MaterialTable admin={admin} materials={materials} onDelete={confirmDelete} />
+          <MaterialTable
+            admin={admin}
+            materials={materials}
+            onDelete={confirmDelete}
+            onView={setViewMaterial}
+          />
           {query.data && query.data.meta.totalPages > 1 ? (
             <nav aria-label="Inventory pages" className="flex items-center justify-between gap-3">
               <Button
@@ -275,7 +280,186 @@ export function InventoryPage() {
           ) : null}
         </>
       )}
+      {deleteTarget ? (
+        <DeleteMaterialDialog
+          loading={deleteMutation.isPending}
+          material={deleteTarget}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => deleteMutation.mutate(deleteTarget)}
+        />
+      ) : null}
+      {viewMaterial ? (
+        <MaterialQuickViewDialog
+          admin={admin}
+          material={viewMaterial}
+          onClose={() => setViewMaterial(null)}
+          onDelete={(material) => {
+            setViewMaterial(null);
+            confirmDelete(material);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function Dialog({
+  children,
+  onClose,
+  label,
+}: {
+  children: ReactNode;
+  onClose: () => void;
+  label: string;
+}) {
+  const reference = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    reference.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      aria-label={label}
+      className="w-[min(92vw,520px)] rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
+      onCancel={onClose}
+      onClose={onClose}
+      ref={reference}
+    >
+      {children}
+    </dialog>
+  );
+}
+
+function DeleteMaterialDialog({
+  material,
+  loading,
+  onConfirm,
+  onCancel,
+}: {
+  material: Material;
+  loading: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Dialog label={`Delete ${material.name}`} onClose={onCancel}>
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-[12px] bg-[var(--color-danger-soft)] text-[var(--color-danger)]">
+            <Trash2 aria-hidden="true" size={22} />
+          </span>
+          <div>
+            <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+              Delete material?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+              {material.name} will be permanently removed from Inventory. Delete is allowed only
+              when there is no issue history and no stock is currently issued.
+            </p>
+          </div>
+        </div>
+        <dl className="mt-5 grid gap-2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 text-sm">
+          <div className="flex justify-between gap-3">
+            <dt className="font-bold text-[var(--color-text-muted)]">Material code</dt>
+            <dd className="font-extrabold text-[var(--color-text-strong)]">{material.materialCode}</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="font-bold text-[var(--color-text-muted)]">Total stock</dt>
+            <dd className="font-extrabold text-[var(--color-text-strong)]">{material.totalQuantity}</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="font-bold text-[var(--color-text-muted)]">Issued stock</dt>
+            <dd className="font-extrabold text-[var(--color-text-strong)]">{material.issuedQuantity}</dd>
+          </div>
+        </dl>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button disabled={loading} onClick={onCancel} variant="secondary">
+            Cancel
+          </Button>
+          <Button loading={loading} onClick={onConfirm} variant="danger">
+            {loading ? 'Deleting...' : 'Delete material'}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function DetailGrid({ children }: { children: ReactNode }) {
+  return <dl className="mt-5 grid gap-3 sm:grid-cols-2">{children}</dl>;
+}
+
+function DetailItem({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3">
+      <dt className="text-xs font-bold text-[var(--color-text-muted)]">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-extrabold text-[var(--color-text-strong)]">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function MaterialQuickViewDialog({
+  material,
+  admin,
+  onClose,
+  onDelete,
+}: {
+  material: Material;
+  admin: boolean;
+  onClose: () => void;
+  onDelete: (material: Material) => void;
+}) {
+  return (
+    <Dialog label={`${material.name} details`} onClose={onClose}>
+      <div className="max-h-[86vh] overflow-y-auto p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-extrabold text-[var(--color-primary-strong)]">
+              {material.name}
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              {material.materialCode} · {material.category}
+            </p>
+          </div>
+          <CatalogBadge value={material.status} />
+        </div>
+        <DetailGrid>
+          <DetailItem label="Tracking" value={humanizeCatalogValue(material.trackingMode)} />
+          <DetailItem label="Return policy" value={humanizeCatalogValue(material.returnPolicy)} />
+          <DetailItem label="Use" value={assignmentLabel(material)} />
+          <DetailItem label="Availability" value={quantityLabel(material)} />
+          <DetailItem label="Total stock" value={material.totalQuantity} />
+          <DetailItem label="Issued stock" value={material.issuedQuantity} />
+          <DetailItem label="Available stock" value={material.availableQuantity} />
+          <DetailItem label="Unit label" value={material.unitLabel ?? 'Not applicable'} />
+        </DetailGrid>
+        <div className="mt-5 rounded-[10px] border border-[var(--color-border)] p-3">
+          <p className="text-xs font-bold text-[var(--color-text-muted)]">Description</p>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-strong)]">
+            {material.description ?? 'Not provided'}
+          </p>
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button onClick={onClose} variant="secondary">
+            Close
+          </Button>
+          <Link className="button-secondary" to={`/inventory/${material.materialCode}`}>
+            Full record
+          </Link>
+          {admin ? (
+            <>
+              <Link className="button-secondary" to={`/inventory/${material.materialCode}?edit=1`}>
+                Edit
+              </Link>
+              <Button onClick={() => onDelete(material)} variant="danger">
+                Delete
+              </Button>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -383,7 +567,7 @@ function MaterialActions({
       >
         <MoreVertical aria-hidden="true" size={18} />
       </summary>
-      <div className="absolute bottom-full right-0 z-[80] mb-2 w-48 rounded-[12px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
+      <div className="absolute right-0 top-full z-[80] mt-2 w-52 rounded-[12px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
         <Link className="menu-item" to={`/inventory/${material.materialCode}`}>
           <Eye aria-hidden="true" size={17} />
           View details
@@ -457,13 +641,15 @@ function MaterialTable({
   materials,
   admin,
   onDelete,
+  onView,
 }: {
   materials: Material[];
   admin: boolean;
   onDelete: (material: Material) => void;
+  onView: (material: Material) => void;
 }) {
   return (
-    <div className="hidden overflow-hidden rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
+    <div className="hidden overflow-visible rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
       <table className="w-full border-collapse text-left">
         <caption className="sr-only">Inventory materials</caption>
         <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
@@ -491,8 +677,10 @@ function MaterialTable({
         <tbody className="divide-y divide-[var(--color-border)]">
           {materials.map((material) => (
             <tr
-              className="h-[64px] hover:bg-[var(--color-surface-tint)]"
+              className="h-[64px] cursor-pointer hover:bg-[var(--color-surface-tint)]"
               key={material.materialCode}
+              onClick={() => onView(material)}
+              tabIndex={0}
             >
               <td className="px-4">
                 <p className="text-sm font-bold text-[var(--color-text-strong)]">{material.name}</p>
@@ -513,7 +701,9 @@ function MaterialTable({
                 <CatalogBadge value={material.status} />
               </td>
               <td className="px-4 text-right">
-                <MaterialActions admin={admin} material={material} onDelete={onDelete} />
+                <div onClick={(event) => event.stopPropagation()}>
+                  <MaterialActions admin={admin} material={material} onDelete={onDelete} />
+                </div>
               </td>
             </tr>
           ))}

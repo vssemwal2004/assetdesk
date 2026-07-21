@@ -48,14 +48,15 @@ function renderIssued(params: Record<string, unknown>, receiverCopy: boolean): R
   const issuedAt = text(params.issuedAt);
   const expectedReturnAt = text(params.expectedReturnAt, 'No return expected');
   const viewUrl = text(params.viewUrl);
+  const billUrl = text(params.billUrl);
   const materials = materialSection(stringList(params.materials));
   const title = `Material issued · ${issueId}`;
   const greeting = receiverCopy ? `Hello ${receiverName},` : 'Issue Record created.';
-  const body = `<p>${escapeHtml(greeting)}</p>${paragraph('Issue ID', issueId)}${paragraph('Receiver', receiverName)}${paragraph('Issued by', issuedBy)}${paragraph('Issue time (IST)', issuedAt)}${paragraph('Expected Return (IST)', expectedReturnAt)}${materials.html}${viewUrl ? `<p><a href="${escapeHtml(viewUrl)}" style="color:#6336a3;font-weight:bold">View Issue Record</a></p>` : ''}<p>Please contact the university server room if any detail is incorrect.</p>`;
+  const body = `<p>${escapeHtml(greeting)}</p>${paragraph('Issue ID', issueId)}${paragraph('Receiver', receiverName)}${paragraph('Issued by', issuedBy)}${paragraph('Issue time (IST)', issuedAt)}${paragraph('Expected Return (IST)', expectedReturnAt)}${materials.html}${viewUrl ? `<p><a href="${escapeHtml(viewUrl)}" style="color:#6336a3;font-weight:bold">View Issue Record</a></p>` : ''}${billUrl ? `<p><a href="${escapeHtml(billUrl)}" style="color:#6336a3;font-weight:bold">Open Issue Bill</a></p>` : ''}<p>Please contact the university server room if any detail is incorrect.</p>`;
   return {
     subject: `[AssetDesk] Material issued · ${issueId}`,
     html: layout(title, body),
-    text: `${greeting}\n\nIssue ID: ${issueId}\nReceiver: ${receiverName}\nIssued by: ${issuedBy}\nIssue time (IST): ${issuedAt}\nExpected Return (IST): ${expectedReturnAt}\n\n${materials.text}${viewUrl ? `\n\nView Issue Record: ${viewUrl}` : ''}\n\nPlease contact the university server room if any detail is incorrect.`,
+    text: `${greeting}\n\nIssue ID: ${issueId}\nReceiver: ${receiverName}\nIssued by: ${issuedBy}\nIssue time (IST): ${issuedAt}\nExpected Return (IST): ${expectedReturnAt}\n\n${materials.text}${viewUrl ? `\n\nView Issue Record: ${viewUrl}` : ''}${billUrl ? `\nIssue Bill: ${billUrl}` : ''}\n\nPlease contact the university server room if any detail is incorrect.`,
   };
 }
 
@@ -66,14 +67,15 @@ function renderReturned(params: Record<string, unknown>, receiverCopy: boolean):
   const returnedAt = text(params.returnedAt);
   const remaining = text(params.remainingOutstanding, '0');
   const viewUrl = text(params.viewUrl);
+  const billUrl = text(params.billUrl);
   const materials = materialSection(stringList(params.materials));
   const title = `Material Return recorded · ${issueId}`;
   const greeting = receiverCopy ? `Hello ${receiverName},` : 'A Return was recorded.';
-  const body = `<p>${escapeHtml(greeting)}</p>${paragraph('Issue ID', issueId)}${paragraph('Recorded by', returnedBy)}${paragraph('Return time (IST)', returnedAt)}${paragraph('Items still outstanding', remaining)}${materials.html}${viewUrl ? `<p><a href="${escapeHtml(viewUrl)}" style="color:#6336a3;font-weight:bold">View Issue Record</a></p>` : ''}<p>This message confirms the digital Return record.</p>`;
+  const body = `<p>${escapeHtml(greeting)}</p>${paragraph('Issue ID', issueId)}${paragraph('Recorded by', returnedBy)}${paragraph('Return time (IST)', returnedAt)}${paragraph('Items still outstanding', remaining)}${materials.html}${viewUrl ? `<p><a href="${escapeHtml(viewUrl)}" style="color:#6336a3;font-weight:bold">View Issue Record</a></p>` : ''}${billUrl ? `<p><a href="${escapeHtml(billUrl)}" style="color:#6336a3;font-weight:bold">Open Return Bill</a></p>` : ''}<p>This message confirms the digital Return record.</p>`;
   return {
     subject: `[AssetDesk] Material Return recorded · ${issueId}`,
     html: layout(title, body),
-    text: `${greeting}\n\nIssue ID: ${issueId}\nRecorded by: ${returnedBy}\nReturn time (IST): ${returnedAt}\nItems still outstanding: ${remaining}\n\n${materials.text}${viewUrl ? `\n\nView Issue Record: ${viewUrl}` : ''}\n\nThis message confirms the digital Return record.`,
+    text: `${greeting}\n\nIssue ID: ${issueId}\nRecorded by: ${returnedBy}\nReturn time (IST): ${returnedAt}\nItems still outstanding: ${remaining}\n\n${materials.text}${viewUrl ? `\n\nView Issue Record: ${viewUrl}` : ''}${billUrl ? `\nReturn Bill: ${billUrl}` : ''}\n\nThis message confirms the digital Return record.`,
   };
 }
 

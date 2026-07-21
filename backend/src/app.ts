@@ -4,6 +4,7 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 
 import { env } from './config/env.js';
+import { isAllowedOrigin } from './config/origins.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { notFoundHandler } from './middleware/not-found.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
@@ -29,7 +30,13 @@ export function createApp(): Express {
   app.use(helmet());
   app.use(
     cors({
-      origin: env.APP_ORIGIN,
+      origin: (origin, callback) => {
+        if (!origin || isAllowedOrigin(origin)) {
+          callback(null, true);
+          return;
+        }
+        callback(null, false);
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-Request-ID', 'Idempotency-Key'],

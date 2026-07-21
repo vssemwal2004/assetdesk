@@ -17,6 +17,10 @@ const service = vi.hoisted(() => ({
   updateMaterialStatus: vi.fn(),
 }));
 
+const authState = vi.hoisted(() => ({
+  role: 'WORKER' as UserRole,
+}));
+
 vi.mock('./inventory.service.js', () => service);
 vi.mock('../audit/audit.service.js', () => ({ appendAuditEvent: vi.fn() }));
 vi.mock('../auth/auth.middleware.js', () => {
@@ -24,7 +28,7 @@ vi.mock('../auth/auth.middleware.js', () => {
     request.auth = {
       userId: '507f1f77bcf86cd799439011',
       workerId: 'GEU-WRK-ABCD',
-      role: 'WORKER',
+      role: authState.role,
       sid: 'a'.repeat(32),
       authVersion: 1,
       mustChangePassword: false,
@@ -61,6 +65,7 @@ function testApp() {
 describe('inventory route authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authState.role = 'WORKER';
     service.listMaterials.mockResolvedValue({
       materials: [],
       page: 1,
@@ -92,5 +97,35 @@ describe('inventory route authorization', () => {
 
     expect(response.body.code).toBe('PERMISSION_DENIED');
     expect(service.createMaterial).not.toHaveBeenCalled();
+  });
+
+  it('allows Admin material deletion and records the deleted material', async () => {
+    authState.role = 'ADMIN';
+    service.deleteMaterial.mockResolvedValue({
+      id: 'material-id',
+      materialCode: 'GEU-MAT-000001',
+      name: 'Network switch',
+      category: 'Networking',
+      description: null,
+      trackingMode: 'SERIALIZED',
+      returnPolicy: 'REUSABLE',
+      assignmentTypes: ['LONG_TERM'],
+      status: 'ACTIVE',
+      totalQuantity: 0,
+      availableQuantity: 0,
+      issuedQuantity: 0,
+      unitLabel: null,
+      createdAt: new Date().toISOString(),
+    });
+
+    await request(testApp()).delete('/api/v1/inventory/GEU-MAT-000001').expect(204);
+
+    expect(service.deleteMaterial).toHaveBeenCalledWith('GEU-MAT-000001');
+  });
+
+  it('blocks Worker material deletion', async () => {
+    await request(testApp()).delete('/api/v1/inventory/GEU-MAT-000001').expect(403);
+
+    expect(service.deleteMaterial).not.toHaveBeenCalled();
   });
 });

@@ -12,6 +12,7 @@ const labels: Record<string, string> = {
   QUANTITY: 'Quantity tracked',
   REUSABLE: 'Reusable',
   CONSUMABLE: 'Consumable',
+  CONSUMED: 'Consumed',
   FACULTY: 'Faculty',
   STAFF: 'Staff',
   STUDENT: 'Student',

@@ -21,6 +21,17 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(4000),
   APP_ORIGIN: z.string().url().default('http://localhost:5173'),
+  ADDITIONAL_APP_ORIGINS: z
+    .string()
+    .optional()
+    .transform((value) =>
+      value
+        ? value
+            .split(',')
+            .map((origin) => origin.trim())
+            .filter(Boolean)
+        : [],
+    ),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   MONGODB_URI: z.string().regex(/^mongodb(?:\+srv)?:\/\//, 'MONGODB_URI must be a MongoDB URI'),
   MONGODB_DB_NAME: z

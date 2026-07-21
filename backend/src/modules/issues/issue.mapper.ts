@@ -65,6 +65,8 @@ export function toReturnEvent(event: ReturnEventRecord): ReturnEvent {
             materialCode: item.materialCode,
             materialName: item.materialName,
             quantity: item.quantity,
+            disposition: item.disposition,
+            condition: item.condition,
           }
         : {
             trackingMode: 'SERIALIZED' as const,

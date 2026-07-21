@@ -8,6 +8,9 @@ import { BillDocument } from './bill-document';
 
 export function BillPage() {
   const { issueId = '' } = useParams();
+  const parameters = new URLSearchParams(window.location.search);
+  const billType = parameters.get('type') === 'return' ? 'return' : 'issue';
+  const returnEventId = parameters.get('returnEventId');
   const query = useQuery({
     queryKey: ['bill', issueId],
     queryFn: ({ signal }) => getIssue(issueId, signal),
@@ -26,6 +29,20 @@ export function BillPage() {
   }
 
   const issue = query.data.data.issue;
+  const returnEvent =
+    billType === 'return' && 'returnEvents' in issue
+      ? issue.returnEvents.find((event) => event.returnEventId === returnEventId)
+      : null;
+
+  if (billType === 'return' && !returnEvent) {
+    return (
+      <ErrorState
+        message="This Return bill could not be generated because the selected Return event was not found."
+        onRetry={() => void query.refetch()}
+        title="Return bill not available"
+      />
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -42,11 +59,15 @@ export function BillPage() {
             </Button>
           </>
         }
-        description="Black and white printable material issue bill."
-        title={`Bill ${issue.issueId}`}
+        description={
+          billType === 'return'
+            ? 'Black and white printable material return bill.'
+            : 'Black and white printable material issue bill.'
+        }
+        title={`${billType === 'return' ? 'Return bill' : 'Issue bill'} ${issue.issueId}`}
       />
 
-      <BillDocument issue={issue} />
+      <BillDocument issue={issue} {...(returnEvent ? { returnEvent } : {})} />
     </div>
   );
 }

@@ -94,17 +94,26 @@ export function CreateIssuePage() {
     () => new Map(materials.map((material) => [material.materialCode, material])),
     [materials],
   );
+  const selectedHasReusable = lines.some(
+    (line) => materialByCode.get(line.materialCode)?.returnPolicy === 'REUSABLE',
+  );
 
   const mutation = useMutation({
     mutationFn: ({ input, key }: { input: CreateIssueRequest; key: string }) =>
       createIssue(input, key),
     onSuccess: async (response) => {
       setCreated(response.data.issue);
+      const materialCodes = new Set(
+        response.data.issue.lines.map((line) => line.material.materialCode),
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['issues'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory'] }),
         queryClient.invalidateQueries({ queryKey: ['asset-units'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        ...Array.from(materialCodes).map((code) =>
+          queryClient.invalidateQueries({ queryKey: ['material', code] }),
+        ),
       ]);
     },
     onError: (error) =>
@@ -112,7 +121,7 @@ export function CreateIssuePage() {
   });
 
   function expectedReturn(): Date | null {
-    if (assignmentType === 'LONG_TERM') return null;
+    if (assignmentType === 'LONG_TERM' || !selectedHasReusable) return null;
     if (duePreset === 'CUSTOM') {
       return customReturnAt ? new Date(`${customReturnAt}:00+05:30`) : null;
     }
@@ -126,9 +135,10 @@ function buildInput(): CreateIssueRequest | null {
       setMessage(stockIssue);
       return null;
     }
+    const effectiveAssignmentType: AssignmentType = selectedHasReusable ? assignmentType : 'LONG_TERM';
     const candidate = {
       mode: 'CATALOG' as const,
-      assignmentType,
+      assignmentType: effectiveAssignmentType,
       receiver: {
         fullName: issuedTo.fullName,
         ...(issuedTo.universityId.trim() ? { universityId: issuedTo.universityId } : {}),
@@ -152,7 +162,7 @@ function buildInput(): CreateIssueRequest | null {
           quantity: Number(line.quantity),
         };
       }),
-      ...(assignmentType === 'SHORT_TERM'
+      ...(effectiveAssignmentType === 'SHORT_TERM'
         ? {
             due:
               duePreset === 'CUSTOM'
@@ -168,7 +178,7 @@ function buildInput(): CreateIssueRequest | null {
       setMessage(parsed.error.issues[0]?.message ?? 'Check the assignment details.');
       return null;
     }
-    if (assignmentType === 'SHORT_TERM' && (!expected || expected <= new Date())) {
+    if (effectiveAssignmentType === 'SHORT_TERM' && (!expected || expected <= new Date())) {
       setMessage('Choose a future expected return date and time.');
       return null;
     }
@@ -317,7 +327,7 @@ function buildInput(): CreateIssueRequest | null {
         </div>
       </AppCard>
 
-      {assignmentType === 'SHORT_TERM' ? (
+      {assignmentType === 'SHORT_TERM' && selectedHasReusable ? (
         <AppCard className="issue-panel">
           <SectionTitle number="3" title="Return schedule" />
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -341,6 +351,15 @@ function buildInput(): CreateIssueRequest | null {
               </div>
             )}
           </div>
+        </AppCard>
+      ) : null}
+      {assignmentType === 'SHORT_TERM' && !selectedHasReusable ? (
+        <AppCard className="issue-panel">
+          <SectionTitle number="3" title="Return schedule" />
+          <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
+            Selected material is consumable-only, so no return date is needed. Stock will be
+            deducted immediately when the Issue Record is created.
+          </p>
         </AppCard>
       ) : null}
 

@@ -289,7 +289,7 @@ async function applyQuantityItem(
   material: MaterialDocument,
 ): Promise<ReturnEventItemRecord> {
   assertQuantityWithinOutstanding(line, item.quantity);
-  applyMaterialReturn(material, item.quantity, item.quantity);
+  applyMaterialReturn(material, item.quantity, item.disposition === 'AVAILABLE' ? item.quantity : 0);
   line.outstandingQuantity -= item.quantity;
   return {
     trackingMode: 'QUANTITY',
@@ -297,6 +297,8 @@ async function applyQuantityItem(
     materialCode: line.material.materialCode,
     materialName: line.material.name,
     quantity: item.quantity,
+    disposition: item.disposition,
+    condition: item.condition,
   };
 }
 
@@ -408,6 +410,8 @@ export async function recordReturn(
 
         if (item.trackingMode === 'QUANTITY') {
           eventItems.push(await applyQuantityItem(item, line, material));
+          if (item.disposition === 'LOST') lostInEvent = true;
+          if (isDamagedOutcome(item.disposition)) damagedInEvent = true;
           continue;
         }
 
@@ -476,6 +480,36 @@ export async function recordReturn(
         },
         { session },
       );
+      for (const [materialId, material] of materials) {
+        const returnedQuantity = eventItems
+          .filter((item) => item.materialCode === material.materialCode)
+          .reduce((sum, item) => sum + (item.trackingMode === 'QUANTITY' ? item.quantity : 1), 0);
+        if (returnedQuantity === 0) continue;
+        await appendAuditEvent(
+          {
+            requestId: actor.requestId,
+            actorUserId: actor.userId,
+            actorWorkerId: actor.workerId,
+            actorRole: actor.role,
+            action: 'MATERIAL_STOCK_RETURNED',
+            targetType: 'MATERIAL',
+            targetId: material.materialCode,
+            result: 'SUCCESS',
+            metadata: {
+              issueId: issue.issueId,
+              returnEventId,
+              materialId,
+              materialName: material.name,
+              trackingMode: material.trackingMode,
+              returnPolicy: material.returnPolicy,
+              returnedQuantity,
+              remainingOutstandingQuantity,
+              resultingIssueStatus: issue.status,
+            },
+          },
+          { session },
+        );
+      }
       await enqueueReturnNotifications(issue, event, session);
 
       result = {
