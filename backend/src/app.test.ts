@@ -30,6 +30,13 @@ describe('AssetDesk API foundation', () => {
     });
   });
 
+  it('mounts the overdue assets endpoint under the API root', async () => {
+    const response = await request(createApp()).get('/api/v1/overdue?page=1&pageSize=20').expect(401);
+
+    expect(response.type).toBe('application/problem+json');
+    expect(response.body.code).toBe('AUTH_REQUIRED');
+  });
+
   it('reports readiness separately when the database is disconnected in tests', async () => {
     const response = await request(createApp()).get('/api/v1/health/ready').expect(503);
 

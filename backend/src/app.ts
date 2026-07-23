@@ -15,6 +15,7 @@ import { createInventoryRouter } from './modules/inventory/inventory.routes.js';
 import { createIssuesRouter } from './modules/issues/issue.routes.js';
 import { createNotificationRouter } from './modules/notifications/notification.routes.js';
 import { createReceiversRouter } from './modules/receivers/receiver.routes.js';
+import { createReminderRouter } from './modules/reminders/reminder.routes.js';
 import { createReportRouter } from './modules/reports/report.routes.js';
 import { createIssueReturnsRouter, createReturnsRouter } from './modules/returns/return.routes.js';
 import { createWorkerImportsRouter, createWorkersRouter } from './modules/workers/worker.routes.js';
@@ -57,6 +58,7 @@ export function createApp(): Express {
   app.use('/api/v1/issues', createIssueReturnsRouter());
   app.use('/api/v1/issues', createIssuesRouter());
   app.use('/api/v1', createNotificationRouter());
+  app.use('/api/v1', createReminderRouter());
   app.use('/api/v1/returns', createReturnsRouter());
   app.use('/api/v1/workers', createWorkersRouter());
   app.use('/api/v1/worker-imports', createWorkerImportsRouter());
