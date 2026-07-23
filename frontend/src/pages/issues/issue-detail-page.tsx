@@ -137,7 +137,7 @@ export function IssueDetailPage() {
             </Link>
             <Link className="button-secondary" to={`/bills/${issue.issueId}`}>
               <Printer aria-hidden="true" size={18} />
-              Generate bill
+              Generate receipt
             </Link>
             {full ? (
               <Button onClick={() => setEditing(true)} variant="secondary">
@@ -723,7 +723,7 @@ function Timeline({ issuedAt, returns }: { issuedAt: string; returns: ReturnEven
               className="button-secondary mt-3 w-full sm:w-auto"
               to={`/bills/${event.issueId}?type=return&returnEventId=${event.returnEventId}`}
             >
-              Return bill
+              Return receipt
             </Link>
           </li>
         ))}

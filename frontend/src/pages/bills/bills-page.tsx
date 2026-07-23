@@ -21,7 +21,7 @@ export function BillsPage() {
   const page = Math.max(1, Number(parameters.get('page')) || 1);
   const search = parameters.get('search') ?? '';
   const query = useQuery({
-    queryKey: ['bills', { page, search }],
+    queryKey: ['receipts', { page, search }],
     queryFn: ({ signal }) =>
       getIssues({ page, pageSize: 20, ...(search ? { search } : {}) }, signal),
     placeholderData: (previous) => previous,
@@ -42,26 +42,26 @@ export function BillsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        description="Generate and print professional material issue bills from Issue Records."
-        title="Bills"
+        description="Generate and print professional material issue receipts from Issue Records."
+        title="Receipts"
       />
 
       <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)] sm:p-4">
         <SearchForm
           id="bill-search"
           key={search}
-          label="Search bills"
+          label="Search receipts"
           onSearch={(value) => update({ search: value })}
           placeholder="Issue ID, Receiver or material"
           value={search}
         />
-        {query.data ? <PageCount count={query.data.meta.total} noun="bill" /> : null}
+        {query.data ? <PageCount count={query.data.meta.total} noun="receipt" /> : null}
       </section>
 
       {query.isPending ? (
-        <LoadingPanel label="Loading bills" />
+        <LoadingPanel label="Loading receipts" />
       ) : query.isError ? (
-        <ErrorState message="Bills could not be loaded." onRetry={() => void query.refetch()} />
+        <ErrorState message="Receipts could not be loaded." onRetry={() => void query.refetch()} />
       ) : issues.length === 0 ? (
         <EmptyState
           action={
@@ -74,9 +74,9 @@ export function BillsPage() {
           message={
             search
               ? 'Try another Issue ID, Receiver or material name.'
-              : 'Bills will appear after material is issued.'
+              : 'Receipts will appear after material is issued.'
           }
-          title={search ? 'No bills match' : 'No bills yet'}
+          title={search ? 'No receipts match' : 'No receipts yet'}
         />
       ) : (
         <>
@@ -86,7 +86,7 @@ export function BillsPage() {
             ))}
           </div>
           {query.data && query.data.meta.totalPages > 1 ? (
-            <nav aria-label="Bill pages" className="flex items-center justify-between gap-3">
+            <nav aria-label="Receipt pages" className="flex items-center justify-between gap-3">
               <Button
                 disabled={page <= 1}
                 onClick={() => update({ page: String(page - 1) })}
@@ -146,7 +146,7 @@ function BillListItem({ issue }: { issue: IssueSummary }) {
         </Link>
         <Link className="button-primary" to={`/bills/${issue.issueId}`}>
           <Printer aria-hidden="true" size={17} />
-          Generate bill
+          Generate receipt
         </Link>
       </div>
     </article>

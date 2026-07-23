@@ -251,7 +251,7 @@ function OverdueActions({
         </Link>
         <Link className="menu-item" to={`/bills/${issue.issueId}`}>
           <Printer aria-hidden="true" size={16} />
-          Issue bill
+          Issue receipt
         </Link>
         <button className="menu-item w-full" onClick={() => onRemind(issue)} type="button">
           <Bell aria-hidden="true" size={16} />

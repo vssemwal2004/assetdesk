@@ -222,7 +222,7 @@ export function CreateIssuePage() {
             </Link>
             <Link className="button-secondary" to={`/bills/${created.issueId}`}>
               <Printer aria-hidden="true" size={18} />
-              Generate bill
+              Generate receipt
             </Link>
             <Button onClick={() => window.location.reload()} variant="secondary">
               <PackagePlus aria-hidden="true" size={18} />
@@ -249,29 +249,21 @@ export function CreateIssuePage() {
       {message ? <ErrorSummary message={message} /> : null}
 
       <AppCard className="issue-panel">
-        <h2 className="text-base font-extrabold text-[var(--color-primary-strong)]">
-          Material type
-        </h2>
-        <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-[10px] bg-[var(--color-surface-tint)] p-1">
-          <TypeButton
-            active={materialType === 'SERIALIZED'}
-            label="IT Assets"
-            onClick={() => {
-              setMaterialType('SERIALIZED');
+        <label className="block max-w-xl space-y-1.5">
+          <span className="field-label">Material type</span>
+          <select
+            className="field-input field-input-compact"
+            onChange={(event) => {
+              setMaterialType(event.target.value as TrackingMode);
               setLines([blankLine()]);
               setMessage(null);
             }}
-          />
-          <TypeButton
-            active={materialType === 'QUANTITY'}
-            label="IT Consumables"
-            onClick={() => {
-              setMaterialType('QUANTITY');
-              setLines([blankLine()]);
-              setMessage(null);
-            }}
-          />
-        </div>
+            value={materialType}
+          >
+            <option value="SERIALIZED">IT Assets</option>
+            <option value="QUANTITY">IT Consumables</option>
+          </select>
+        </label>
       </AppCard>
 
       <AppCard className="issue-panel">

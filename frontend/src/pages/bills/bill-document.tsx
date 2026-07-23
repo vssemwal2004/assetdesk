@@ -36,18 +36,13 @@ export function BillDocument({
   if (returnEvent) return <ReturnBillDocument issue={issue} returnEvent={returnEvent} />;
 
   return (
-    <article className="bill-sheet" aria-label={`Bill for ${issue.issueId}`}>
-      <header className="bill-header">
-        <div>
-          <p className="bill-kicker">AssetDesk University Material Issue Bill</p>
-          <h1>Material Issue Bill</h1>
-          <p className="bill-muted">Official issue record for university material handover.</p>
-        </div>
-        <div className="bill-id-box">
-          <span>Bill / Issue No.</span>
-          <strong>{issue.issueId}</strong>
-        </div>
-      </header>
+    <article className="bill-sheet" aria-label={`Receipt for ${issue.issueId}`}>
+      <ReceiptHeader
+        documentLabel="Material Issue Receipt"
+        documentNumberLabel="Receipt / Issue No."
+        documentNumber={issue.issueId}
+        note="Official issue record for university material handover."
+      />
 
       <section className="bill-grid bill-summary-grid">
         <BillField label="Issue ID" value={issue.issueId} />
@@ -197,9 +192,9 @@ export function BillDocument({
 
       <footer className="bill-footer">
         <p>
-          This bill confirms that the listed material was issued to the receiver above. Returnable
-          material must be returned in acceptable condition by the expected return date where
-          applicable.
+          This receipt confirms that the listed material was issued to the receiver above.
+          Returnable material must be returned in acceptable condition by the expected return date
+          where applicable.
         </p>
       </footer>
     </article>
@@ -214,18 +209,13 @@ function ReturnBillDocument({
   returnEvent: ReturnEvent;
 }) {
   return (
-    <article className="bill-sheet" aria-label={`Return bill for ${issue.issueId}`}>
-      <header className="bill-header">
-        <div>
-          <p className="bill-kicker">AssetDesk University Material Return Bill</p>
-          <h1>Material Return Bill</h1>
-          <p className="bill-muted">Official return receipt for university material handover.</p>
-        </div>
-        <div className="bill-id-box">
-          <span>Return / Issue No.</span>
-          <strong>{issue.issueId}</strong>
-        </div>
-      </header>
+    <article className="bill-sheet" aria-label={`Return receipt for ${issue.issueId}`}>
+      <ReceiptHeader
+        documentLabel="Material Return Receipt"
+        documentNumberLabel="Return / Issue No."
+        documentNumber={issue.issueId}
+        note="Official return receipt for university material handover."
+      />
 
       <section className="bill-grid bill-summary-grid">
         <BillField label="Issue ID" value={issue.issueId} />
@@ -320,7 +310,7 @@ function ReturnBillDocument({
 
       <footer className="bill-footer">
         <p>
-          This bill confirms that the listed material was returned and recorded in AssetDesk.
+          This receipt confirms that the listed material was returned and recorded in AssetDesk.
           Damaged, lost or repair outcomes remain visible in the Issue Record history.
         </p>
       </footer>
@@ -332,6 +322,38 @@ function returnedTotal(event: ReturnEvent): number {
   return event.items.reduce(
     (total, item) => total + (item.trackingMode === 'QUANTITY' ? item.quantity : 1),
     0,
+  );
+}
+
+function ReceiptHeader({
+  documentLabel,
+  documentNumberLabel,
+  documentNumber,
+  note,
+}: {
+  documentLabel: string;
+  documentNumberLabel: string;
+  documentNumber: string;
+  note: string;
+}) {
+  return (
+    <header className="bill-header">
+      <div className="bill-brand-block">
+        <img alt="AssetDesk logo" className="bill-logo" src="/logo.webp" />
+        <div className="bill-brand-text">
+          <p className="bill-brand-name">AssetDesk</p>
+          <p className="bill-brand-tagline">Graphic Era Asset Management System</p>
+        </div>
+      </div>
+      <div className="bill-title-block">
+        <h1>{documentLabel}</h1>
+        <p className="bill-muted">{note}</p>
+      </div>
+      <div className="bill-id-box">
+        <span>{documentNumberLabel}</span>
+        <strong>{documentNumber}</strong>
+      </div>
+    </header>
   );
 }
 

@@ -456,7 +456,7 @@ function IssueActionsMenu({
           to={`/bills/${issue.issueId}`}
         >
           <Printer aria-hidden="true" size={16} />
-          Generate bill
+          Generate receipt
         </Link>
         {canRecordReturn(issue) ? (
           <Link
@@ -671,7 +671,7 @@ function IssueQuickViewDialog({
             Edit
           </Link>
           <Link className="button-secondary" to={`/bills/${issue.issueId}`}>
-            Generate bill
+            Generate receipt
           </Link>
           {canRecordReturn(issue) ? (
             <Link className="button-primary" to={`/issues/${issue.issueId}/return`}>

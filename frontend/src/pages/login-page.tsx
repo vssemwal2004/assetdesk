@@ -124,12 +124,14 @@ export function LoginPage() {
 function BrandOnPurple() {
   return (
     <div className="flex items-center gap-3">
-      <span className="grid size-11 place-items-center rounded-xl bg-white text-lg font-extrabold text-[var(--color-primary-strong)]">
-        A
+      <span className="grid size-14 place-items-center rounded-xl bg-white/95 p-1 shadow-lg">
+        <img alt="AssetDesk logo" className="block size-full object-contain" src="/logo.webp" />
       </span>
       <span>
-        <span className="block text-xl font-extrabold leading-5">AssetDesk</span>
-        <span className="block text-xs font-semibold text-purple-100">University materials</span>
+        <span className="block text-2xl font-extrabold leading-6">AssetDesk</span>
+        <span className="mt-1 block text-[10px] font-extrabold uppercase leading-3 text-purple-100">
+          Graphic Era Asset Management System
+        </span>
       </span>
     </div>
   );

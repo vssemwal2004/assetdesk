@@ -146,17 +146,17 @@ export const PasswordField = forwardRef<HTMLInputElement, FieldProps>(function P
 
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <div className="flex items-center gap-3">
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--color-primary)] text-lg font-extrabold text-white shadow-sm">
-        A
+    <div className="brand-lockup flex min-w-0 items-center gap-3">
+      <span className="brand-mark grid shrink-0 place-items-center">
+        <img alt="AssetDesk logo" className="block size-full object-contain" src="/logo.webp" />
       </span>
       {!compact ? (
-        <span>
-          <span className="block text-lg font-extrabold leading-5 text-[var(--color-primary-strong)]">
+        <span className="brand-copy min-w-0">
+          <span className="brand-title block truncate font-extrabold leading-none text-[var(--color-primary-strong)]">
             AssetDesk
           </span>
-          <span className="block text-xs font-semibold text-[var(--color-text-muted)]">
-            University materials
+          <span className="brand-tagline block truncate font-extrabold uppercase text-[var(--color-text-muted)]">
+            Graphic Era Asset Management System
           </span>
         </span>
       ) : null}

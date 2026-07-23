@@ -193,7 +193,7 @@ export function ReturnIssuePage() {
               className="button-secondary"
               to={`/bills/${issue.issueId}?type=return&returnEventId=${saved.event.returnEventId}`}
             >
-              Return bill
+              Return receipt
             </Link>
             <Link className="button-secondary" to="/returns">
               <RotateCcw aria-hidden="true" size={18} />
@@ -227,7 +227,7 @@ export function ReturnIssuePage() {
               View Issue Record
             </Link>
             <Link className="button-secondary" to={`/bills/${issue.issueId}`}>
-              Generate bill
+              Generate receipt
             </Link>
             <Link className="button-secondary" to="/returns">
               Find another return

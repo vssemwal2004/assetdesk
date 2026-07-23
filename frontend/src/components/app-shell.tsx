@@ -36,7 +36,7 @@ interface NavigationItem {
 const navigation: NavigationItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: Home, end: true },
   { label: 'Return', to: '/returns', icon: RotateCcw },
-  { label: 'Bills', to: '/bills', icon: ReceiptText },
+  { label: 'Receipts', to: '/bills', icon: ReceiptText },
   { label: 'Inventory', to: '/inventory', icon: Boxes },
   { label: 'Receivers', to: '/receivers', icon: ContactRound },
   { label: 'Workers', to: '/workers', icon: UsersRound, adminOnly: true },
@@ -56,7 +56,7 @@ const mobileNavigation: NavigationItem[] = [
   { label: 'Issues', to: '/issues', icon: ClipboardList, end: true },
   { label: 'Issue', to: '/issues/new', icon: PackagePlus, emphasized: true },
   { label: 'Return', to: '/returns', icon: RotateCcw },
-  { label: 'Bills', to: '/bills', icon: ReceiptText },
+  { label: 'Receipts', to: '/bills', icon: ReceiptText },
   { label: 'Profile', to: '/profile', icon: UserRound },
 ];
 
@@ -72,8 +72,8 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith('/issues/')) return 'Issue details';
   if (pathname === '/issues') return 'Issues';
   if (pathname === '/returns') return 'Returns';
-  if (pathname.startsWith('/bills/')) return 'Bill';
-  if (pathname === '/bills') return 'Bills';
+  if (pathname.startsWith('/bills/')) return 'Receipt';
+  if (pathname === '/bills') return 'Receipts';
   if (pathname === '/audit') return 'Audit logs';
   if (pathname === '/reports') return 'Reports';
   if (pathname === '/inventory/new') return 'Add material';
@@ -105,37 +105,38 @@ function IssueNavigationGroup({
   const children = issueNavigation.filter((item) => !item.adminOnly || auth.user?.role === 'ADMIN');
   const active = location.pathname.startsWith('/issues') || location.pathname === '/overdue';
 
-  if (compact) {
-    return (
-      <>
-        {children.map((item) => (
-          <NavigationLink compact item={item} key={item.to} {...(onClick ? { onClick } : {})} />
-        ))}
-      </>
-    );
-  }
-
   return (
     <details className="group" open={active}>
       <summary
         className={cn(
-          'flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] px-3 text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
+          'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
+          compact ? 'px-2.5' : 'px-3',
           active
             ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]'
             : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-tint)] hover:text-[var(--color-primary)]',
         )}
       >
         <ClipboardList aria-hidden="true" className="shrink-0" size={20} />
-        <span className="min-w-0 flex-1">Issue</span>
+        <span className={compact ? 'sidebar-label min-w-0 flex-1 truncate' : 'min-w-0 flex-1'}>
+          Issue
+        </span>
         <ChevronDown
           aria-hidden="true"
-          className="shrink-0 transition-transform group-open:rotate-180"
+          className={cn(
+            'shrink-0 transition-transform group-open:rotate-180',
+            compact && 'sidebar-chevron',
+          )}
           size={16}
         />
       </summary>
-      <div className="mt-1 space-y-1 pl-4">
+      <div className={cn('mt-1 space-y-1', compact ? 'pl-0' : 'pl-4')}>
         {children.map((item) => (
-          <NavigationLink item={item} key={item.to} {...(onClick ? { onClick } : {})} />
+          <NavigationLink
+            compact={compact}
+            item={item}
+            key={item.to}
+            {...(onClick ? { onClick } : {})}
+          />
         ))}
       </div>
     </details>
@@ -157,8 +158,8 @@ function NavigationLink({
       aria-label={compact ? item.label : undefined}
       className={({ isActive }) =>
         cn(
-          'group flex min-h-11 items-center rounded-[10px] text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]',
-          compact ? 'justify-center px-2' : 'gap-3 px-3',
+          'sidebar-nav-link group flex min-h-11 items-center rounded-[10px] text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]',
+          compact ? 'justify-start gap-3 px-2.5' : 'gap-3 px-3',
           isActive
             ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]'
             : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-tint)] hover:text-[var(--color-primary)]',
@@ -170,7 +171,7 @@ function NavigationLink({
       to={item.to}
     >
       <Icon aria-hidden="true" className="shrink-0" size={20} />
-      {!compact ? <span>{item.label}</span> : null}
+      <span className={compact ? 'sidebar-label truncate' : undefined}>{item.label}</span>
     </NavLink>
   );
 }
@@ -291,32 +292,14 @@ export function AppShell() {
         Skip to content
       </a>
 
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[248px] border-r border-[var(--color-border)] bg-white p-4 min-[840px]:flex min-[840px]:flex-col">
-        <div className="px-1 py-1">
+      <aside className="app-sidebar fixed inset-y-0 left-0 z-40 hidden border-r border-[var(--color-border)] bg-white/98 px-3 py-4 shadow-[6px_0_24px_rgba(44,37,52,.06)] backdrop-blur min-[600px]:flex min-[600px]:flex-col">
+        <div className="sidebar-brand px-1">
           <Brand />
         </div>
-        <nav aria-label="Main navigation" className="mt-8 min-h-0 flex-1 space-y-1 overflow-y-auto">
-          {items.slice(0, 1).map((item) => (
-            <NavigationLink item={item} key={item.to} />
-          ))}
-          <IssueNavigationGroup />
-          {items.slice(1).map((item) => (
-            <NavigationLink item={item} key={item.to} />
-          ))}
-        </nav>
-        <div className="mt-auto rounded-[12px] bg-[var(--color-surface-tint)] p-3">
-          <p className="text-xs font-bold text-[var(--color-primary-strong)]">Signed in as</p>
-          <p className="mt-1 truncate text-sm font-semibold text-[var(--color-text-muted)]">
-            {auth.user?.workerId}
-          </p>
-        </div>
-      </aside>
-
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[72px] border-r border-[var(--color-border)] bg-white px-3 py-4 min-[600px]:flex min-[840px]:hidden min-[600px]:flex-col">
-        <div className="flex justify-center">
-          <Brand compact />
-        </div>
-        <nav aria-label="Main navigation" className="mt-8 min-h-0 flex-1 space-y-2 overflow-y-auto">
+        <nav
+          aria-label="Main navigation"
+          className="sidebar-scroll mt-8 min-h-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden"
+        >
           {items.slice(0, 1).map((item) => (
             <NavigationLink compact item={item} key={item.to} />
           ))}
@@ -325,9 +308,17 @@ export function AppShell() {
             <NavigationLink compact item={item} key={item.to} />
           ))}
         </nav>
+        <div className="sidebar-user mt-auto rounded-[10px] bg-[var(--color-surface-tint)] p-2.5">
+          <p className="sidebar-label text-[10px] font-extrabold uppercase tracking-[0.02em] text-[var(--color-primary-strong)]">
+            Signed in
+          </p>
+          <p className="sidebar-label mt-1 truncate text-[11px] font-semibold text-[var(--color-text-muted)]">
+            {auth.user?.workerId}
+          </p>
+        </div>
       </aside>
 
-      <header className="fixed inset-x-0 top-0 z-30 h-16 border-b border-[var(--color-border)] bg-white/95 backdrop-blur-md min-[600px]:left-[72px] min-[840px]:left-[248px]">
+      <header className="app-topbar fixed inset-x-0 top-0 z-30 h-16 border-b border-[var(--color-border)] bg-white/95 backdrop-blur-md min-[600px]:left-[72px]">
         <div className="flex h-full items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
             <button
@@ -347,7 +338,7 @@ export function AppShell() {
       </header>
 
       {drawerOpen ? (
-        <div className="fixed inset-0 z-50 min-[600px]:hidden">
+        <div className="app-drawer fixed inset-0 z-50 min-[600px]:hidden">
           <button
             aria-label="Close menu"
             className="absolute inset-0 bg-slate-950/35"
@@ -380,7 +371,7 @@ export function AppShell() {
       ) : null}
 
       <main
-        className="min-h-dvh px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-20 sm:px-6 min-[600px]:ml-[72px] min-[600px]:pb-8 min-[840px]:ml-[248px] lg:px-8"
+        className="min-h-dvh px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-20 sm:px-6 min-[600px]:ml-[72px] min-[600px]:pb-8 lg:px-8"
         id="main-content"
       >
         <div className="mx-auto max-w-[1360px]">
@@ -390,7 +381,7 @@ export function AppShell() {
 
       <nav
         aria-label="Mobile navigation"
-        className="fixed inset-x-0 bottom-0 z-30 grid min-h-[68px] border-t border-[var(--color-border)] bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-3px_16px_rgba(67,45,90,.06)] backdrop-blur-md min-[600px]:hidden"
+        className="app-mobile-nav fixed inset-x-0 bottom-0 z-30 grid min-h-[68px] border-t border-[var(--color-border)] bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] shadow-[0_-3px_16px_rgba(67,45,90,.06)] backdrop-blur-md min-[600px]:hidden"
         style={{ gridTemplateColumns: `repeat(${mobileItems.length}, minmax(0, 1fr))` }}
       >
         {mobileItems.map((item) => {
