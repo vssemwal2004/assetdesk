@@ -459,28 +459,24 @@ export const IssueSchema = IssueBaseSchema.superRefine((issue, context) => {
         });
       }
     }
-    if (line.material.returnPolicy === 'CONSUMABLE' && line.outstandingQuantity !== 0) {
-      context.addIssue({
-        code: 'custom',
-        path: ['lines', index, 'outstandingQuantity'],
-        message: 'Consumable material cannot remain outstanding.',
-      });
-    }
   }
-  const hasReusable = issue.lines.some((line) => line.material.returnPolicy === 'REUSABLE');
+  const hasReturnableQuantity = issue.lines.some((line) => line.outstandingQuantity > 0);
   const hasExpectedReturn = issue.expectedReturnAt !== null;
   const hasDuePreset = issue.duePreset !== null;
-  const requiresExpectedReturn = hasReusable && issue.assignmentType === 'SHORT_TERM';
+  const requiresExpectedReturn =
+    hasReturnableQuantity && issue.assignmentType === 'SHORT_TERM';
+  const hasForbiddenReturnDate =
+    issue.assignmentType === 'LONG_TERM' && (hasExpectedReturn || hasDuePreset);
   if (
     (requiresExpectedReturn && (!hasExpectedReturn || !hasDuePreset)) ||
-    ((!hasReusable || issue.assignmentType === 'LONG_TERM') && (hasExpectedReturn || hasDuePreset))
+    hasForbiddenReturnDate
   ) {
     context.addIssue({
       code: 'custom',
       path: ['expectedReturnAt'],
       message: requiresExpectedReturn
-        ? 'Reusable material requires an expected return date and due preset.'
-        : 'Permanent or consumable-only Issues cannot have a return due date.',
+        ? 'Return-by-date Issues require an expected return date and due preset.'
+        : 'Permanent Issues cannot have a return due date.',
     });
   }
 });

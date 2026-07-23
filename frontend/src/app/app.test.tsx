@@ -204,10 +204,11 @@ describe('AssetDesk application routes', () => {
                 email: 'ravi.mehta@university.edu',
                 contact: null,
                 department: 'Server Operations',
-                status: 'INVITED',
-                invitationStatus: 'PENDING',
-                mustChangePassword: true,
-                temporaryPasswordExpiresAt: '2026-07-16T09:00:00.000Z',
+                status: 'ACTIVE',
+                permissions: worker.permissions,
+                invitationStatus: 'SENT',
+                mustChangePassword: false,
+                temporaryPasswordExpiresAt: null,
                 lastLoginAt: null,
                 createdAt: '2026-07-15T09:00:00.000Z',
               },
@@ -263,6 +264,7 @@ describe('AssetDesk application routes', () => {
                 availableQuantity: 1,
                 issuedQuantity: 1,
                 unitLabel: null,
+                assignmentTypes: ['LONG_TERM', 'SHORT_TERM'],
                 createdAt: '2026-07-15T09:00:00.000Z',
                 updatedAt: '2026-07-15T09:00:00.000Z',
               },
@@ -278,7 +280,10 @@ describe('AssetDesk application routes', () => {
     render(<App />);
 
     expect((await screen.findAllByText('Core switch')).length).toBeGreaterThan(0);
-    expect(screen.queryByRole('link', { name: 'Add material' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Add material' })).toHaveAttribute(
+      'href',
+      '/inventory/new',
+    );
     expect(screen.getAllByText('1 of 2 units available').length).toBeGreaterThan(0);
   });
 
@@ -305,7 +310,7 @@ describe('AssetDesk application routes', () => {
 
     expect(await screen.findByRole('heading', { name: 'No material added' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Add material' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Inventory' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Inventory' }).length).toBeGreaterThan(0);
   });
 
   it('renders the Receiver directory for a Worker without management controls', async () => {
@@ -446,9 +451,11 @@ describe('AssetDesk application routes', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Person receiving material')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: 'Issue material' })).toBeInTheDocument();
-    expect(screen.getByText(/No inventory setup is required/)).toBeInTheDocument();
+    expect(await screen.findByText('Issued To')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Create Asset Assignment' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Material type')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Access denied' })).not.toBeInTheDocument();
   });
 
@@ -512,10 +519,10 @@ describe('AssetDesk application routes', () => {
     render(<App />);
 
     expect(
-      await screen.findByRole('heading', { level: 1, name: 'Overdue Returns' }),
+      await screen.findByRole('heading', { level: 1, name: 'Overdue Assets' }),
     ).toBeInTheDocument();
     expect((await screen.findAllByText('GEU-ISS-2026-000123')).length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole('button', { name: 'Send reminder' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Send reminder' })[0]!);
     expect(screen.getByRole('heading', { name: 'Send Return reminder?' })).toBeInTheDocument();
     expect(
       fetchMock.mock.calls.some(
@@ -587,6 +594,8 @@ describe('AssetDesk application routes', () => {
                 issuedByWorkerId: 'GEU-WRK-A7K4',
                 issuedByName: 'Anita Sharma',
                 materials: ['Core switch'],
+                materialTypes: ['IT Asset'],
+                serialNumbers: ['SWITCH-001'],
                 totalIssuedQuantity: 2,
                 totalOutstandingQuantity: 2,
                 returnEventCount: 0,

@@ -31,6 +31,7 @@ vi.mock('../auth/auth.middleware.js', () => {
     requireFullAccess: pass,
     requireTrustedOrigin: pass,
     requireCsrf: pass,
+    requirePermission: () => pass,
     requireRole:
       (...roles: UserRole[]): RequestHandler =>
       (request, response, next) => {

@@ -346,7 +346,7 @@ function NoReturnableResults({
   if (exactLookupRequired) {
     return (
       <EmptyState
-        message="Check the complete Issue ID or asset tag and try again. Only records with reusable material pending return can be accepted here."
+        message="Check the complete Issue ID or asset tag and try again. Only records with outstanding returnable material can be accepted here."
         title="No outstanding Issue Record found"
       />
     );
@@ -356,7 +356,7 @@ function NoReturnableResults({
   if (query.isError) {
     return (
       <EmptyState
-        message="No reusable material is pending return for this search."
+        message="No returnable material is pending return for this search."
         title="No outstanding Issue Record found"
       />
     );
@@ -375,7 +375,7 @@ function NoReturnableResults({
   return (
     <div className="space-y-3">
       <EmptyState
-        message="Matching Issue Records were found, but none currently have reusable material pending return."
+        message="Matching Issue Records were found, but none currently have returnable material pending return."
         title="No return pending for these records"
       />
       <div className="grid gap-3 lg:grid-cols-2">

@@ -214,9 +214,7 @@ export function ReturnIssuePage() {
             No return is pending
           </h1>
           <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-            {issue.lines.every((line) => line.material.returnPolicy === 'CONSUMABLE')
-              ? 'This Issue contains consumable material. It was deducted from stock at issue time, so the user does not need to return it.'
-              : 'All reusable material on this Issue Record has already been returned or closed.'}
+            All material on this Issue Record has already been returned, consumed, or closed.
           </p>
           <dl className="mt-5 divide-y divide-[var(--color-border)] rounded-[12px] border border-[var(--color-border)] px-4">
             <SummaryRow label="Issue ID" value={issue.issueId} />

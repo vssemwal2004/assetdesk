@@ -67,6 +67,42 @@ describe('Issue persistence invariants', () => {
     await expect(new IssueModel(baseIssue()).validate()).resolves.toBeUndefined();
   });
 
+  it('accepts a return-by-date consumable Issue with outstanding quantity', async () => {
+    const record = baseIssue() as unknown as Record<string, unknown> & {
+      lines: Array<Record<string, unknown>>;
+    };
+    record.lines = [
+      {
+        lineId: '84f9d1ad-70ad-4dad-8d7b-32174705654a',
+        material: {
+          materialId,
+          materialCode: 'GEU-MAT-000001',
+          name: 'HDMI Cable',
+          category: 'Accessories',
+          trackingMode: 'QUANTITY',
+          returnPolicy: 'CONSUMABLE',
+          unitLabel: 'units',
+        },
+        issuedQuantity: 3,
+        outstandingQuantity: 3,
+        assets: [],
+      },
+    ];
+    record.totalIssuedQuantity = 3;
+    record.totalOutstandingQuantity = 3;
+
+    await expect(new IssueModel(record).validate()).resolves.toBeUndefined();
+  });
+
+  it('rejects a permanent Issue with a fixed return date', async () => {
+    const record = baseIssue() as unknown as Record<string, unknown>;
+    record.assignmentType = 'LONG_TERM';
+
+    await expect(new IssueModel(record).validate()).rejects.toThrow(
+      'Permanent Issues cannot have a Return due time.',
+    );
+  });
+
   it('rejects partial Return evidence on an outstanding asset', async () => {
     const record = baseIssue() as unknown as ReturnType<typeof baseIssue> & {
       lines: Array<{

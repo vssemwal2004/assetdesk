@@ -7,6 +7,7 @@ export const AdminDashboardStatsSchema = z
     todayIssued: z.number().int().nonnegative(),
     totalIssues: z.number().int().nonnegative(),
     pendingReturns: z.number().int().nonnegative(),
+    overdueReturns: z.number().int().nonnegative(),
     dueToday: z.number().int().nonnegative(),
     returnedToday: z.number().int().nonnegative(),
     outstandingItems: z.number().int().nonnegative(),

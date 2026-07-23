@@ -197,7 +197,7 @@ export function BillDocument({
 
       <footer className="bill-footer">
         <p>
-          This bill confirms that the listed material was issued to the receiver above. Reusable
+          This bill confirms that the listed material was issued to the receiver above. Returnable
           material must be returned in acceptable condition by the expected return date where
           applicable.
         </p>

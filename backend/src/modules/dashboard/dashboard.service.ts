@@ -10,6 +10,7 @@ interface DashboardAggregationRow {
   todayIssued: number;
   totalIssues: number;
   pendingReturns: number;
+  overdueReturns: number;
   dueToday: number;
   returnedToday: number;
   outstandingItems: number;
@@ -19,6 +20,7 @@ const emptyIssueStats: Omit<AdminDashboardStats, 'activeWorkers'> = {
   todayIssued: 0,
   totalIssues: 0,
   pendingReturns: 0,
+  overdueReturns: 0,
   dueToday: 0,
   returnedToday: 0,
   outstandingItems: 0,
@@ -68,6 +70,21 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
             },
           },
           pendingReturns: { $sum: { $cond: [hasOutstanding, 1, 0] } },
+          overdueReturns: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    hasOutstanding,
+                    { $ne: ['$expectedReturnAt', null] },
+                    { $lt: ['$expectedReturnAt', start] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
           dueToday: {
             $sum: {
               $cond: [
@@ -123,6 +140,7 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
       todayIssued: issueStats.todayIssued,
       totalIssues: issueStats.totalIssues,
       pendingReturns: issueStats.pendingReturns,
+      overdueReturns: issueStats.overdueReturns,
       dueToday: issueStats.dueToday,
       returnedToday: issueStats.returnedToday,
       outstandingItems: issueStats.outstandingItems,

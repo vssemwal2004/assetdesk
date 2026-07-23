@@ -149,6 +149,7 @@ async function claimActor(
 
 async function createIssueLine(
   input: CreateCatalogIssueRequest['lines'][number],
+  assignmentType: CreateCatalogIssueRequest['assignmentType'],
   session?: ClientSession,
 ): Promise<IssueLineRecord> {
   const materialQuery = MaterialModel.findOne({
@@ -167,8 +168,10 @@ async function createIssueLine(
 
   if (input.trackingMode === 'QUANTITY') {
     const quantity = input.quantity;
+    const returnableQuantity =
+      material.returnPolicy === 'REUSABLE' || assignmentType === 'SHORT_TERM';
     const update =
-      material.returnPolicy === 'REUSABLE'
+      returnableQuantity
         ? { $inc: { availableQuantity: -quantity, issuedQuantity: quantity } }
         : { $inc: { availableQuantity: -quantity, totalQuantity: -quantity } };
     const updated = await MaterialModel.findOneAndUpdate(
@@ -178,7 +181,9 @@ async function createIssueLine(
         trackingMode: 'QUANTITY',
         returnPolicy: material.returnPolicy,
         availableQuantity: { $gte: quantity },
-        ...(material.returnPolicy === 'CONSUMABLE' ? { issuedQuantity: 0 } : {}),
+        ...(material.returnPolicy === 'CONSUMABLE' && assignmentType === 'LONG_TERM'
+          ? { issuedQuantity: 0 }
+          : {}),
       },
       update,
       { returnDocument: 'after', ...(session ? { session } : {}) },
@@ -188,7 +193,7 @@ async function createIssueLine(
       lineId: randomUUID(),
       material: materialSnapshot(material),
       issuedQuantity: quantity,
-      outstandingQuantity: material.returnPolicy === 'REUSABLE' ? quantity : 0,
+      outstandingQuantity: returnableQuantity ? quantity : 0,
       assets: [],
     };
   }
@@ -301,6 +306,19 @@ async function restoreClaimedIssueLines(lines: IssueLineRecord[]): Promise<void>
     }
 
     if (line.material.returnPolicy === 'CONSUMABLE') {
+      if (line.outstandingQuantity > 0) {
+        await MaterialModel.updateOne(
+          { _id: line.material.materialId, materialCode: line.material.materialCode },
+          {
+            $inc: {
+              availableQuantity: line.outstandingQuantity,
+              issuedQuantity: -line.outstandingQuantity,
+            },
+          },
+        );
+        continue;
+      }
+
       await MaterialModel.updateOne(
         { _id: line.material.materialId, materialCode: line.material.materialCode },
         { $inc: { availableQuantity: line.issuedQuantity, totalQuantity: line.issuedQuantity } },
@@ -338,12 +356,12 @@ export async function createIssue(
     const receiver = await claimReceiver(input, actor);
     const issuedAt = new Date();
     for (const lineInput of input.lines) {
-      const line = await createIssueLine(lineInput);
+      const line = await createIssueLine(lineInput, input.assignmentType);
       claimedLines.push(line);
     }
-    const hasReusable = claimedLines.some((line) => line.material.returnPolicy === 'REUSABLE');
-    if (input.assignmentType === 'SHORT_TERM' && hasReusable && !input.due) {
-      throw new AppError(400, 'RETURN_DUE_REQUIRED', 'Choose a return due date because this Issue contains reusable material.', {
+    const hasReturnable = claimedLines.some((line) => line.outstandingQuantity > 0);
+    if (input.assignmentType === 'SHORT_TERM' && hasReturnable && !input.due) {
+      throw new AppError(400, 'RETURN_DUE_REQUIRED', 'Choose a return due date because this Issue contains returnable material.', {
         due: 'Choose a return preset or custom date.',
       });
     }
@@ -353,7 +371,10 @@ export async function createIssue(
       });
     }
 
-    const expectedReturnAt = input.due ? calculateExpectedReturnAt(issuedAt, input.due) : undefined;
+    const expectedReturnAt =
+      input.assignmentType === 'SHORT_TERM' && input.due
+        ? calculateExpectedReturnAt(issuedAt, input.due)
+        : undefined;
     const issueId = await allocateIssueId(issueYearInIst(issuedAt));
     const totalIssuedQuantity = claimedLines.reduce((sum, line) => sum + line.issuedQuantity, 0);
     const totalOutstandingQuantity = claimedLines.reduce(
@@ -414,7 +435,7 @@ export async function createIssue(
         actorWorkerId: actor.workerId,
         actorRole: actor.role,
         action:
-          line.material.returnPolicy === 'CONSUMABLE'
+          line.material.returnPolicy === 'CONSUMABLE' && line.outstandingQuantity === 0
             ? 'MATERIAL_STOCK_CONSUMED'
             : 'MATERIAL_STOCK_ISSUED',
         targetType: 'MATERIAL',
@@ -676,21 +697,21 @@ export async function updateIssue(
     changedFields.push('notes');
   }
   if (input.expectedReturnAt !== undefined) {
-    const hasReusable = issue.lines.some((line) => line.material.returnPolicy === 'REUSABLE');
+    const hasReturnableQuantity = issue.lines.some((line) => line.outstandingQuantity > 0);
     const nextExpectedReturnAt = new Date(input.expectedReturnAt);
     if (actor.role !== 'ADMIN') {
       throw new AppError(403, 'RETURN_DATE_ADMIN_ONLY', 'Only an Admin can extend a return date.');
     }
     if (
       issue.assignmentType !== 'SHORT_TERM' ||
-      !hasReusable ||
+      !hasReturnableQuantity ||
       issue.totalOutstandingQuantity <= 0 ||
       !['ISSUED', 'PARTIALLY_RETURNED'].includes(issue.status)
     ) {
       throw new AppError(
         409,
         'RETURN_DATE_NOT_EXTENDABLE',
-        'Only active return-by-date issues with reusable material can be extended.',
+        'Only active return-by-date issues with returnable material can be extended.',
       );
     }
     if (nextExpectedReturnAt <= new Date()) {
@@ -734,6 +755,22 @@ export async function deleteIssue(issueId: string, actor: IssueActorContext): Pr
 
       for (const line of issue.lines) {
         if (line.material.returnPolicy === 'CONSUMABLE') {
+          if (line.outstandingQuantity > 0) {
+            await MaterialModel.updateOne(
+              { _id: line.material.materialId, materialCode: line.material.materialCode },
+              {
+                $inc: {
+                  availableQuantity: line.outstandingQuantity,
+                  issuedQuantity: -line.outstandingQuantity,
+                },
+              },
+              { session },
+            );
+            continue;
+          }
+
+          if (issue.assignmentType === 'SHORT_TERM') continue;
+
           await MaterialModel.updateOne(
             { _id: line.material.materialId, materialCode: line.material.materialCode },
             {

@@ -62,10 +62,14 @@ describe('Return line ownership and outstanding validation', () => {
     );
   });
 
-  it('rejects all returns for consumable material', () => {
+  it('accepts return-by-date consumable material while outstanding remains', () => {
+    expect(() => assertLineKind(line('QUANTITY', 'CONSUMABLE', 3), 'QUANTITY')).not.toThrow();
+  });
+
+  it('rejects material lines with no outstanding return balance', () => {
     expectProblem(
       () => assertLineKind(line('QUANTITY', 'CONSUMABLE', 0), 'QUANTITY'),
-      'CONSUMABLE_NOT_RETURNABLE',
+      'RETURN_LINE_NOT_OUTSTANDING',
     );
   });
 

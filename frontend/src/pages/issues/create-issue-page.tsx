@@ -119,7 +119,7 @@ export function CreateIssuePage() {
   });
 
   function expectedReturn(): Date | null {
-    if (materialType === 'QUANTITY' || assignmentType === 'LONG_TERM') return null;
+    if (assignmentType === 'LONG_TERM') return null;
     if (duePreset === 'CUSTOM') {
       return customReturnAt ? new Date(`${customReturnAt}:00+05:30`) : null;
     }
@@ -133,8 +133,7 @@ export function CreateIssuePage() {
       setMessage(stockIssue);
       return null;
     }
-    const effectiveAssignmentType: AssignmentType =
-      materialType === 'SERIALIZED' ? assignmentType : 'LONG_TERM';
+    const effectiveAssignmentType: AssignmentType = assignmentType;
     const candidate = {
       mode: 'CATALOG' as const,
       assignmentType: effectiveAssignmentType,
@@ -268,7 +267,6 @@ export function CreateIssuePage() {
             label="IT Consumables"
             onClick={() => {
               setMaterialType('QUANTITY');
-              setAssignmentType('LONG_TERM');
               setLines([blankLine()]);
               setMessage(null);
             }}
@@ -365,22 +363,21 @@ export function CreateIssuePage() {
         </div>
       </AppCard>
 
-      {materialType === 'SERIALIZED' ? (
-        <AppCard className="issue-panel">
-          <SectionTitle number="3" title="Issue duration" />
-          <div className="mt-4 grid grid-cols-2 gap-1.5 rounded-[10px] bg-[var(--color-surface-tint)] p-1">
-            <TypeButton
-              active={assignmentType === 'LONG_TERM'}
-              label="Permanent issue"
-              onClick={() => setAssignmentType('LONG_TERM')}
-            />
-            <TypeButton
-              active={assignmentType === 'SHORT_TERM'}
-              label="Return by date"
-              onClick={() => setAssignmentType('SHORT_TERM')}
-            />
-          </div>
-          {assignmentType === 'SHORT_TERM' ? (
+      <AppCard className="issue-panel">
+        <SectionTitle number="3" title="Issue duration" />
+        <div className="mt-4 grid grid-cols-2 gap-1.5 rounded-[10px] bg-[var(--color-surface-tint)] p-1">
+          <TypeButton
+            active={assignmentType === 'LONG_TERM'}
+            label="Permanent issue"
+            onClick={() => setAssignmentType('LONG_TERM')}
+          />
+          <TypeButton
+            active={assignmentType === 'SHORT_TERM'}
+            label="Return by date"
+            onClick={() => setAssignmentType('SHORT_TERM')}
+          />
+        </div>
+        {assignmentType === 'SHORT_TERM' ? (
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="space-y-1.5">
               <span className="field-label">Return period</span>
@@ -413,12 +410,11 @@ export function CreateIssuePage() {
               </div>
             )}
           </div>
-          ) : null}
-        </AppCard>
-      ) : null}
+        ) : null}
+      </AppCard>
 
       <AppCard className="issue-panel">
-        <SectionTitle number={materialType === 'SERIALIZED' ? '4' : '3'} title="Notes" />
+        <SectionTitle number="4" title="Notes" />
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <TextArea label="Purpose" onChange={setPurpose} value={purpose} />
           <TextArea label="Notes" onChange={setNotes} value={notes} />

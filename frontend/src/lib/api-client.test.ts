@@ -10,6 +10,7 @@ const user = {
   contact: null,
   department: 'IT Services',
   role: 'ADMIN',
+  permissions: [],
   status: 'ACTIVE',
   mustChangePassword: false,
 } as const;

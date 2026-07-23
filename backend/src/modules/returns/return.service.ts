@@ -124,8 +124,12 @@ export function assertLineKind(
       'The requested return type does not match the issued material line.',
     );
   }
-  if (line.material.returnPolicy === 'CONSUMABLE') {
-    throw new AppError(409, 'CONSUMABLE_NOT_RETURNABLE', 'Consumable material cannot be returned.');
+  if (line.outstandingQuantity <= 0) {
+    throw new AppError(
+      409,
+      'RETURN_LINE_NOT_OUTSTANDING',
+      'This material line has no outstanding quantity available to return.',
+    );
   }
 }
 

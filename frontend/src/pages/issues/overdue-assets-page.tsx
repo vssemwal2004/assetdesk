@@ -84,7 +84,7 @@ export function OverdueAssetsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        description="Track overdue return-by-date issues where reusable material is still outstanding."
+        description="Track overdue return-by-date issues where returnable material is still outstanding."
         title="Overdue Assets"
       />
 
@@ -351,7 +351,7 @@ function Dialog({
 }) {
   const reference = useRef<HTMLDialogElement>(null);
   useEffect(() => {
-    reference.current?.showModal();
+    if (typeof reference.current?.showModal === 'function') reference.current.showModal();
   }, []);
   return (
     <dialog
@@ -359,6 +359,7 @@ function Dialog({
       className="w-[min(94vw,720px)] rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
       onCancel={onClose}
       onClose={onClose}
+      open
       ref={reference}
     >
       {children}

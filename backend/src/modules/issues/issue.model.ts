@@ -261,9 +261,6 @@ IssueLineSchema.pre('validate', function validateIssueLineInvariants() {
   if (this.assets.length > 0) {
     this.invalidate('assets', 'Quantity-tracked lines cannot contain serialized assets.');
   }
-  if (this.material.returnPolicy === 'CONSUMABLE' && this.outstandingQuantity !== 0) {
-    this.invalidate('outstandingQuantity', 'Consumable material cannot remain outstanding.');
-  }
 });
 
 const ReturnEventItemSchema = new Schema<ReturnEventItemRecord>(
@@ -349,11 +346,10 @@ const IssueSchema = new Schema<IssueRecord>(
     receiver: { type: ReceiverSnapshotSchema, required: true, immutable: true },
     issuedBy: { type: ActorSnapshotSchema, required: true, immutable: true },
     issuedAt: { type: Date, required: true, immutable: true },
-    expectedReturnAt: { type: Date, immutable: true },
+    expectedReturnAt: { type: Date },
     duePreset: {
       type: String,
       enum: ['ONE_DAY', 'ONE_WEEK', 'ONE_MONTH', 'SIX_MONTHS', 'ONE_YEAR', 'CUSTOM'],
-      immutable: true,
     },
     assignmentType: {
       type: String,
@@ -418,19 +414,22 @@ IssueSchema.pre('validate', function validateIssueInvariants() {
     );
   }
 
-  const hasReusable = this.lines.some((line) => line.material.returnPolicy === 'REUSABLE');
+  const hasReturnableQuantity = this.lines.some((line) => line.outstandingQuantity > 0);
   const hasExpectedReturn = this.expectedReturnAt !== undefined;
   const hasDuePreset = this.duePreset !== undefined;
-  const requiresExpectedReturn = hasReusable && this.assignmentType === 'SHORT_TERM';
+  const requiresExpectedReturn =
+    hasReturnableQuantity && this.assignmentType === 'SHORT_TERM';
+  const hasForbiddenReturnDate =
+    this.assignmentType === 'LONG_TERM' && (hasExpectedReturn || hasDuePreset);
   if (
     (requiresExpectedReturn && (!hasExpectedReturn || !hasDuePreset)) ||
-    ((!hasReusable || this.assignmentType === 'LONG_TERM') && (hasExpectedReturn || hasDuePreset))
+    hasForbiddenReturnDate
   ) {
     this.invalidate(
       'expectedReturnAt',
       requiresExpectedReturn
-        ? 'Reusable material requires an expected Return time and due preset.'
-        : 'Permanent or consumable-only Issues cannot have a Return due time.',
+        ? 'Return-by-date Issues require an expected Return time and due preset.'
+        : 'Permanent Issues cannot have a Return due time.',
     );
   }
 });

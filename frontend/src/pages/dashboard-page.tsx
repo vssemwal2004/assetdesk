@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
+  AlertTriangle,
   Boxes,
   CalendarClock,
   CalendarDays,
@@ -116,14 +117,6 @@ function DashboardContent({
       tone: 'primary' as const,
     },
     {
-      label: 'Total Issues',
-      value: stats.totalIssues,
-      helper: 'Complete Issue history',
-      icon: ClipboardList,
-      to: '/issues',
-      tone: 'info' as const,
-    },
-    {
       label: 'Pending Returns',
       value: stats.pendingReturns,
       helper: `${stats.outstandingItems} material item${stats.outstandingItems === 1 ? '' : 's'} outside`,
@@ -132,12 +125,20 @@ function DashboardContent({
       tone: 'warning' as const,
     },
     {
-      label: 'Inventory',
-      value: stats.outstandingItems,
-      helper: 'Open dense inventory quantity table',
-      icon: Boxes,
-      to: '/inventory',
-      tone: 'primary' as const,
+      label: 'Overdue',
+      value: stats.overdueReturns,
+      helper: 'Return-by-date Issues past due',
+      icon: AlertTriangle,
+      to: '/overdue',
+      tone: 'danger' as const,
+    },
+    {
+      label: 'Due today',
+      value: stats.dueToday,
+      helper: 'Returnable material due today',
+      icon: CalendarClock,
+      to: '/issues?returnState=DUE_TODAY',
+      tone: 'info' as const,
     },
   ];
 
@@ -162,18 +163,24 @@ function DashboardContent({
             <MetricCard {...metric} key={metric.label} />
           ))}
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <SmallMetric
-            icon={CalendarClock}
-            label="Due today"
-            to="/issues?returnState=DUE_TODAY"
-            value={stats.dueToday}
+            icon={ClipboardList}
+            label="Total Issues"
+            to="/issues"
+            value={stats.totalIssues}
           />
           <SmallMetric
             icon={CheckCircle2}
             label="Returned today"
             to="/returns?period=TODAY"
             value={stats.returnedToday}
+          />
+          <SmallMetric
+            icon={Boxes}
+            label="Outstanding items"
+            to="/inventory"
+            value={stats.outstandingItems}
           />
           <SmallMetric
             icon={UsersRound}
