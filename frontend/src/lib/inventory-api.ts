@@ -7,7 +7,6 @@ import {
   type AdjustQuantityRequest,
   type AssetUnitMutationResponse,
   type AssetUnitsListResponse,
-  type AssignmentType,
   type CreateAssetUnitRequest,
   type CreateMaterialRequest,
   type Material,
@@ -28,8 +27,7 @@ export interface InventoryFilters {
   status?: MaterialStatus;
   trackingMode?: TrackingMode;
   returnPolicy?: ReturnPolicy;
-  assignmentType?: AssignmentType;
-  stockState?: 'IN_STOCK' | 'OUT_OF_STOCK';
+  stockState?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
   category?: string;
 }
 
@@ -45,7 +43,6 @@ export async function getInventory(
   if (filters.status) parameters.set('status', filters.status);
   if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
-  if (filters.assignmentType) parameters.set('assignmentType', filters.assignmentType);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
   if (filters.category) parameters.set('category', filters.category);
 
@@ -69,6 +66,53 @@ export async function createMaterial(input: CreateMaterialRequest): Promise<Mate
     json: input,
   });
   return MaterialResponseSchema.parse(payload).data.material;
+}
+
+export interface InventoryImportResult {
+  created: Array<{ materialCode: string; name: string; quantity: number }>;
+  failed: Array<{ rowNumber: number; name: string; reason: string }>;
+}
+
+export interface InventoryImportPreview {
+  importId: string;
+  fileName: string;
+  mode: TrackingMode;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  rows: Array<{
+    rowNumber: number;
+    name: string;
+    category: string;
+    serialNumber?: string;
+    quantity?: number;
+    unitLabel?: string;
+    valid: boolean;
+    errors: string[];
+  }>;
+  expiresAt: string;
+}
+
+export async function previewInventoryImport(
+  file: File,
+  mode: TrackingMode,
+): Promise<InventoryImportPreview> {
+  const form = new FormData();
+  form.set('file', file);
+  form.set('mode', mode);
+  const payload = await apiRequest<{ data: InventoryImportPreview }>(
+    '/api/v1/inventory/imports/preview',
+    { method: 'POST', body: form },
+  );
+  return payload.data;
+}
+
+export async function commitInventoryImport(importId: string): Promise<InventoryImportResult> {
+  const payload = await apiRequest<{ data: InventoryImportResult }>(
+    `/api/v1/inventory/imports/${encodeURIComponent(importId)}/commit`,
+    { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, json: {} },
+  );
+  return payload.data;
 }
 
 export async function updateMaterial(
@@ -113,9 +157,14 @@ export async function adjustMaterialQuantity(
 export async function getAssetUnits(
   materialCode: string,
   page: number,
+  filters: { status?: string; pageSize?: number } = {},
   signal?: AbortSignal,
 ): Promise<AssetUnitsListResponse> {
-  const parameters = new URLSearchParams({ page: String(page), pageSize: '20' });
+  const parameters = new URLSearchParams({
+    page: String(page),
+    pageSize: String(filters.pageSize ?? 20),
+  });
+  if (filters.status) parameters.set('status', filters.status);
   const payload = await apiRequest<unknown>(
     `/api/v1/inventory/${encodeURIComponent(materialCode)}/units?${parameters.toString()}`,
     { ...(signal ? { signal } : {}) },
@@ -160,6 +209,17 @@ export async function updateAssetUnit(
   const payload = await apiRequest<unknown>(
     `/api/v1/inventory/${encodeURIComponent(materialCode)}/units/${encodeURIComponent(assetTag)}`,
     { method: 'PATCH', json: input },
+  );
+  return AssetUnitMutationResponseSchema.parse(payload).data;
+}
+
+export async function deleteAssetUnit(
+  materialCode: string,
+  assetTag: string,
+): Promise<AssetUnitMutationResponse['data']> {
+  const payload = await apiRequest<unknown>(
+    `/api/v1/inventory/${encodeURIComponent(materialCode)}/units/${encodeURIComponent(assetTag)}`,
+    { method: 'DELETE' },
   );
   return AssetUnitMutationResponseSchema.parse(payload).data;
 }

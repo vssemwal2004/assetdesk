@@ -9,6 +9,7 @@ import {
   calculateQuantityAdjustment,
   manualAvailabilityDelta,
   translateAssetUnitDuplicateError,
+  translateMaterialDuplicateError,
 } from './inventory.service.js';
 
 function expectCode(run: () => unknown, code: string): void {
@@ -32,9 +33,7 @@ describe('inventory access filters', () => {
     });
 
     expect(filter.status).toBe('ACTIVE');
-    const search = (filter.$or as Array<{ name?: RegExp }>)[1]?.name;
-    expect(search?.test('switch.*')).toBe(true);
-    expect(search?.test('switchZZ')).toBe(false);
+    expect(filter.$text).toEqual({ $search: 'switch.*' });
   });
 
   it('forces Worker unit reads to AVAILABLE while Admin filters remain selectable', () => {
@@ -73,6 +72,8 @@ describe('serialized unit state rules', () => {
   it('applies the correct available count delta for manual state changes', () => {
     expect(manualAvailabilityDelta('AVAILABLE', 'UNDER_REPAIR')).toBe(-1);
     expect(manualAvailabilityDelta('DAMAGED', 'AVAILABLE')).toBe(1);
+    expect(manualAvailabilityDelta('DAMAGED', 'UNDER_REPAIR')).toBe(0);
+    expect(manualAvailabilityDelta('UNDER_REPAIR', 'AVAILABLE')).toBe(1);
     expect(manualAvailabilityDelta('UNDER_REPAIR', 'SCRAPPED')).toBe(0);
   });
 
@@ -122,6 +123,16 @@ describe('archive and duplicate guards', () => {
     });
     expect(mapped).toBeInstanceOf(AppError);
     expect(mapped?.code).toBe('ASSET_SERIAL_EXISTS');
+    expect(mapped?.status).toBe(409);
+  });
+
+  it('maps a normalized material identity conflict to the public API error', () => {
+    const mapped = translateMaterialDuplicateError({
+      code: 11_000,
+      keyPattern: { identityKey: 1 },
+    });
+    expect(mapped).toBeInstanceOf(AppError);
+    expect(mapped?.code).toBe('MATERIAL_ALREADY_EXISTS');
     expect(mapped?.status).toBe(409);
   });
 });

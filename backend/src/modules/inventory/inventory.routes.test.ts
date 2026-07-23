@@ -7,6 +7,7 @@ import type { UserRole } from '@assetdesk/contracts';
 const service = vi.hoisted(() => ({
   adjustQuantity: vi.fn(),
   createAssetUnit: vi.fn(),
+  deleteAssetUnit: vi.fn(),
   createMaterial: vi.fn(),
   deleteMaterial: vi.fn(),
   getMaterial: vi.fn(),
@@ -16,12 +17,17 @@ const service = vi.hoisted(() => ({
   updateMaterial: vi.fn(),
   updateMaterialStatus: vi.fn(),
 }));
+const importService = vi.hoisted(() => ({
+  previewInventoryImport: vi.fn(),
+  commitInventoryImport: vi.fn(),
+}));
 
 const authState = vi.hoisted(() => ({
   role: 'WORKER' as UserRole,
 }));
 
 vi.mock('./inventory.service.js', () => service);
+vi.mock('./inventory-import.service.js', () => importService);
 vi.mock('../audit/audit.service.js', () => ({ appendAuditEvent: vi.fn() }));
 vi.mock('../auth/auth.middleware.js', () => {
   const requireAuth: RequestHandler = (request, _response, next) => {
@@ -127,5 +133,56 @@ describe('inventory route authorization', () => {
     await request(testApp()).delete('/api/v1/inventory/GEU-MAT-000001').expect(403);
 
     expect(service.deleteMaterial).not.toHaveBeenCalled();
+  });
+
+  it('previews an Admin bulk upload without creating inventory', async () => {
+    authState.role = 'ADMIN';
+    importService.previewInventoryImport.mockResolvedValue({
+      importId: '507f1f77bcf86cd799439012',
+      fileName: 'assets.csv',
+      mode: 'SERIALIZED',
+      totalRows: 1,
+      validRows: 1,
+      invalidRows: 0,
+      rows: [
+        {
+          rowNumber: 2,
+          name: 'Laptop',
+          category: 'Laptops',
+          serialNumber: 'LT-001',
+          valid: true,
+          errors: [],
+        },
+      ],
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    const response = await request(testApp())
+      .post('/api/v1/inventory/imports/preview')
+      .field('mode', 'SERIALIZED')
+      .attach('file', Buffer.from('Material Name,Group,Serial Number\nLaptop,Laptops,LT-001'), {
+        filename: 'assets.csv',
+        contentType: 'text/csv',
+      })
+      .expect(201);
+
+    expect(response.body.data.validRows).toBe(1);
+    expect(importService.previewInventoryImport).toHaveBeenCalledOnce();
+    expect(service.createMaterial).not.toHaveBeenCalled();
+  });
+
+  it('commits only through the explicit import commit endpoint', async () => {
+    authState.role = 'ADMIN';
+    importService.commitInventoryImport.mockResolvedValue({ created: [], failed: [] });
+
+    await request(testApp())
+      .post('/api/v1/inventory/imports/507f1f77bcf86cd799439012/commit')
+      .send({})
+      .expect(200);
+
+    expect(importService.commitInventoryImport).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439012',
+      '507f1f77bcf86cd799439011',
+    );
   });
 });

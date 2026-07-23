@@ -189,7 +189,7 @@ export async function createReceiver(
 export async function findOrCreateReceiverForIssue(
   input: CreateReceiverRequest,
   actorUserId: string,
-  session: ClientSession,
+  session?: ClientSession,
 ): Promise<ReceiverRecord> {
   const values = createRecordInput(input, objectId(actorUserId));
   const identityFilter: QueryFilter<ReceiverRecord> = {
@@ -228,16 +228,17 @@ export async function findOrCreateReceiverForIssue(
       },
       $inc: { operationalUseCount: 1 },
     },
-    { returnDocument: 'after', session, timestamps: false },
+    { returnDocument: 'after', ...(session ? { session } : {}), timestamps: false },
   );
   if (existing) return existing;
 
   for (let attempt = 0; attempt < MAX_CODE_ALLOCATION_ATTEMPTS; attempt += 1) {
     const receiverCode = await allocateReceiverCode();
     try {
-      const created = await ReceiverModel.create([{ receiverCode, ...values, operationalUseCount: 1 }], {
-        session,
-      });
+      const created = await ReceiverModel.create(
+        [{ receiverCode, ...values, operationalUseCount: 1 }],
+        session ? { session } : undefined,
+      );
       const receiver = created[0];
       if (!receiver) throw new Error('Receiver insert returned no document.');
       return receiver;
@@ -247,7 +248,7 @@ export async function findOrCreateReceiverForIssue(
         const retry = await ReceiverModel.findOneAndUpdate(
           identityFilter,
           { $set: { status: 'ACTIVE', updatedBy: values.updatedBy }, $inc: { operationalUseCount: 1 } },
-          { returnDocument: 'after', session, timestamps: false },
+          { returnDocument: 'after', ...(session ? { session } : {}), timestamps: false },
         );
         if (retry) return retry;
         throw conflict;

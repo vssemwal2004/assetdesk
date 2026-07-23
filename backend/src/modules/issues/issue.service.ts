@@ -131,15 +131,16 @@ function materialSnapshot(material: {
 
 async function claimActor(
   actor: IssueActorContext,
-  session: ClientSession,
+  session?: ClientSession,
 ): Promise<IssueActorSnapshotRecord> {
   const actorId = objectId(actor.userId);
-  const user = await UserModel.findOne({
+  const query = UserModel.findOne({
     _id: actorId,
     workerId: actor.workerId,
     role: actor.role,
     status: 'ACTIVE',
-  }).session(session);
+  });
+  const user = session ? await query.session(session) : await query;
   if (!user) {
     throw new AppError(403, 'ISSUE_ACTOR_INACTIVE', 'Your account cannot issue material.');
   }
@@ -148,14 +149,13 @@ async function claimActor(
 
 async function createIssueLine(
   input: CreateCatalogIssueRequest['lines'][number],
-  assignmentType: CreateCatalogIssueRequest['assignmentType'],
-  session: ClientSession,
+  session?: ClientSession,
 ): Promise<IssueLineRecord> {
-  const material = await MaterialModel.findOne({
-      materialCode: input.materialCode,
-      status: 'ACTIVE',
-      assignmentTypes: assignmentType,
-  }).session(session);
+  const materialQuery = MaterialModel.findOne({
+    materialCode: input.materialCode,
+    status: 'ACTIVE',
+  });
+  const material = session ? await materialQuery.session(session) : await materialQuery;
   if (!material) throw inventoryUnavailable(input.materialCode);
   if (material.trackingMode !== input.trackingMode) {
     throw new AppError(
@@ -181,7 +181,7 @@ async function createIssueLine(
         ...(material.returnPolicy === 'CONSUMABLE' ? { issuedQuantity: 0 } : {}),
       },
       update,
-      { returnDocument: 'after', session },
+      { returnDocument: 'after', ...(session ? { session } : {}) },
     );
     if (!updated) throw inventoryUnavailable(input.materialCode);
     return {
@@ -202,11 +202,12 @@ async function createIssueLine(
   }
 
   const assetTags = input.assetTags;
-  const units = await AssetUnitModel.find({
+  const unitsQuery = AssetUnitModel.find({
     materialId: material._id,
     assetTag: { $in: assetTags },
     status: 'AVAILABLE',
-  }).session(session);
+  });
+  const units = session ? await unitsQuery.session(session) : await unitsQuery;
   if (units.length !== assetTags.length) throw inventoryUnavailable(input.materialCode);
   const unitByTag = new Map(units.map((unit) => [unit.assetTag, unit]));
   if (assetTags.some((assetTag) => !unitByTag.has(assetTag))) {
@@ -220,7 +221,7 @@ async function createIssueLine(
       status: 'AVAILABLE',
     },
     { $set: { status: 'ISSUED' } },
-    { session },
+    session ? { session } : undefined,
   );
   if (unitUpdate.modifiedCount !== assetTags.length) throw inventoryUnavailable(input.materialCode);
 
@@ -233,7 +234,7 @@ async function createIssueLine(
       availableQuantity: { $gte: assetTags.length },
     },
     { $inc: { availableQuantity: -assetTags.length, issuedQuantity: assetTags.length } },
-    { returnDocument: 'after', session },
+    { returnDocument: 'after', ...(session ? { session } : {}) },
   );
   if (!updatedMaterial) throw inventoryUnavailable(input.materialCode);
 
@@ -259,7 +260,7 @@ async function createIssueLine(
 async function claimReceiver(
   input: CreateIssueRequest,
   actor: IssueActorContext,
-  session: ClientSession,
+  session?: ClientSession,
 ) {
   if (input.receiver) {
     return findOrCreateReceiverForIssue(input.receiver, actor.userId, session);
@@ -270,7 +271,7 @@ async function claimReceiver(
   const receiver = await ReceiverModel.findOneAndUpdate(
     { receiverCode: input.receiverCode, status: 'ACTIVE' },
     { $inc: { operationalUseCount: 1 } },
-    { returnDocument: 'after', session, timestamps: false },
+    { returnDocument: 'after', ...(session ? { session } : {}), timestamps: false },
   );
   if (!receiver) {
     throw new AppError(
@@ -282,6 +283,38 @@ async function claimReceiver(
   return receiver;
 }
 
+async function restoreClaimedIssueLines(lines: IssueLineRecord[]): Promise<void> {
+  for (const line of lines) {
+    if (line.material.trackingMode === 'SERIALIZED') {
+      const assetTags = line.assets.map((asset) => asset.assetTag);
+      if (assetTags.length > 0) {
+        await AssetUnitModel.updateMany(
+          { assetTag: { $in: assetTags }, status: 'ISSUED' },
+          { $set: { status: 'AVAILABLE' } },
+        );
+      }
+      await MaterialModel.updateOne(
+        { _id: line.material.materialId, materialCode: line.material.materialCode },
+        { $inc: { availableQuantity: line.issuedQuantity, issuedQuantity: -line.issuedQuantity } },
+      );
+      continue;
+    }
+
+    if (line.material.returnPolicy === 'CONSUMABLE') {
+      await MaterialModel.updateOne(
+        { _id: line.material.materialId, materialCode: line.material.materialCode },
+        { $inc: { availableQuantity: line.issuedQuantity, totalQuantity: line.issuedQuantity } },
+      );
+      continue;
+    }
+
+    await MaterialModel.updateOne(
+      { _id: line.material.materialId, materialCode: line.material.materialCode },
+      { $inc: { availableQuantity: line.issuedQuantity, issuedQuantity: -line.issuedQuantity } },
+    );
+  }
+}
+
 export async function createIssue(
   input: CreateIssueRequest,
   actor: IssueActorContext,
@@ -289,149 +322,118 @@ export async function createIssue(
   requestFingerprint: string,
 ): Promise<CreateIssueResult> {
   const actorUserId = objectId(actor.userId);
-  const session = await mongoose.startSession();
   let result: CreateIssueResult | undefined;
+  const claimedLines: IssueLineRecord[] = [];
 
   try {
-    await session.withTransaction(async () => {
-      const existing = await IssueModel.findOne({
-        createdByUserId: actorUserId,
-        idempotencyKeyHash,
-      })
-        .select('+requestFingerprint')
-        .session(session);
-      if (existing) {
-        if (existing.requestFingerprint !== requestFingerprint) throw idempotencyConflict();
-        result = { issue: toIssue(existing), idempotentReplay: true };
-        return;
-      }
+    const existing = await IssueModel.findOne({ createdByUserId: actorUserId, idempotencyKeyHash })
+      .select('+requestFingerprint')
+      .exec();
+    if (existing) {
+      if (existing.requestFingerprint !== requestFingerprint) throw idempotencyConflict();
+      return { issue: toIssue(existing), idempotentReplay: true };
+    }
 
-      const issuedBy = await claimActor(actor, session);
-      const receiver = await claimReceiver(input, actor, session);
+    const issuedBy = await claimActor(actor);
+    const receiver = await claimReceiver(input, actor);
+    const issuedAt = new Date();
+    for (const lineInput of input.lines) {
+      const line = await createIssueLine(lineInput);
+      claimedLines.push(line);
+    }
+    const hasReusable = claimedLines.some((line) => line.material.returnPolicy === 'REUSABLE');
+    if (input.assignmentType === 'SHORT_TERM' && hasReusable && !input.due) {
+      throw new AppError(400, 'RETURN_DUE_REQUIRED', 'Choose a return due date because this Issue contains reusable material.', {
+        due: 'Choose a return preset or custom date.',
+      });
+    }
+    if (input.assignmentType === 'LONG_TERM' && input.due) {
+      throw new AppError(400, 'RETURN_DUE_NOT_APPLICABLE', 'Permanent issues do not have a fixed return date.', {
+        due: 'Remove the return due selection.',
+      });
+    }
 
-      const issuedAt = new Date();
-      const lines: IssueLineRecord[] = [];
-      // MongoDB does not support parallel operations on one transaction session.
-      for (const lineInput of input.lines) {
-        lines.push(await createIssueLine(lineInput, input.assignmentType, session));
-      }
-      const hasReusable = lines.some((line) => line.material.returnPolicy === 'REUSABLE');
-      if (input.assignmentType === 'SHORT_TERM' && hasReusable && !input.due) {
-        throw new AppError(
-          400,
-          'RETURN_DUE_REQUIRED',
-          'Choose a return due date because this Issue contains reusable material.',
-          { due: 'Choose a return preset or custom date.' },
-        );
-      }
-      if (input.assignmentType === 'LONG_TERM' && input.due) {
-        throw new AppError(
-          400,
-          'RETURN_DUE_NOT_APPLICABLE',
-          'Long-Term Assignments do not have a fixed return due date.',
-          { due: 'Remove the return due selection.' },
-        );
-      }
-
-      const expectedReturnAt = input.due
-        ? calculateExpectedReturnAt(issuedAt, input.due)
-        : undefined;
-      const issueId = await allocateIssueId(issueYearInIst(issuedAt), session);
-      const totalIssuedQuantity = lines.reduce((sum, line) => sum + line.issuedQuantity, 0);
-      const totalOutstandingQuantity = lines.reduce(
-        (sum, line) => sum + line.outstandingQuantity,
-        0,
-      );
-      const created = await IssueModel.create(
-        [
-          {
-            issueId,
-            receiver: {
-              receiverId: receiver._id,
-              receiverCode: receiver.receiverCode,
-              fullName: receiver.fullName,
-              ...(receiver.universityId ? { universityId: receiver.universityId } : {}),
-              type: receiver.type,
-              ...(receiver.department ? { department: receiver.department } : {}),
-              contact: receiver.contact,
-              email: receiver.email,
-            },
-            issuedBy,
-            issuedAt,
-            ...(expectedReturnAt && input.due
-              ? { expectedReturnAt, duePreset: input.due.preset }
-              : {}),
-            assignmentType: input.assignmentType,
-            status: 'ISSUED',
-            ...(input.purpose ? { purpose: input.purpose } : {}),
-            ...(input.notes ? { notes: input.notes } : {}),
-            lines,
-            returnEvents: [],
-            totalIssuedQuantity,
-            totalOutstandingQuantity,
-            hasDamagedOutcome: false,
-            hasLostOutcome: false,
-            idempotencyKeyHash,
-            requestFingerprint,
-            createdByUserId: actorUserId,
-          },
-        ],
-        { session },
-      );
-      const issue = created[0];
-      if (!issue) throw new Error('Issue insert returned no document.');
-
-      await appendAuditEvent(
-        {
-          requestId: actor.requestId,
-          actorUserId: actor.userId,
-          actorWorkerId: actor.workerId,
-          actorRole: actor.role,
-          action: 'ISSUE_CREATED',
-          targetType: 'ISSUE',
-          targetId: issueId,
-          result: 'SUCCESS',
-          metadata: {
-            lineCount: lines.length,
-            itemCount: totalIssuedQuantity,
-            status: 'ISSUED',
-            duePreset: input.due?.preset ?? null,
-            assignmentType: input.assignmentType,
-          },
-        },
-        { session },
-      );
-      for (const line of lines) {
-        await appendAuditEvent(
-          {
-            requestId: actor.requestId,
-            actorUserId: actor.userId,
-            actorWorkerId: actor.workerId,
-            actorRole: actor.role,
-            action:
-              line.material.returnPolicy === 'CONSUMABLE'
-                ? 'MATERIAL_STOCK_CONSUMED'
-                : 'MATERIAL_STOCK_ISSUED',
-            targetType: 'MATERIAL',
-            targetId: line.material.materialCode,
-            result: 'SUCCESS',
-            metadata: {
-              issueId,
-              materialName: line.material.name,
-              category: line.material.category,
-              trackingMode: line.material.trackingMode,
-              returnPolicy: line.material.returnPolicy,
-              issuedQuantity: line.issuedQuantity,
-              outstandingQuantity: line.outstandingQuantity,
-              assignmentType: input.assignmentType,
-            },
-          },
-          { session },
-        );
-      }
-      await enqueueIssueNotifications(issue, session);
-      result = { issue: toIssue(issue), idempotentReplay: false };
+    const expectedReturnAt = input.due ? calculateExpectedReturnAt(issuedAt, input.due) : undefined;
+    const issueId = await allocateIssueId(issueYearInIst(issuedAt));
+    const totalIssuedQuantity = claimedLines.reduce((sum, line) => sum + line.issuedQuantity, 0);
+    const totalOutstandingQuantity = claimedLines.reduce(
+      (sum, line) => sum + line.outstandingQuantity,
+      0,
+    );
+    const issue = await IssueModel.create({
+      issueId,
+      receiver: {
+        receiverId: receiver._id,
+        receiverCode: receiver.receiverCode,
+        fullName: receiver.fullName,
+        ...(receiver.universityId ? { universityId: receiver.universityId } : {}),
+        type: receiver.type,
+        ...(receiver.department ? { department: receiver.department } : {}),
+        contact: receiver.contact,
+        email: receiver.email,
+      },
+      issuedBy,
+      issuedAt,
+      ...(expectedReturnAt && input.due ? { expectedReturnAt, duePreset: input.due.preset } : {}),
+      assignmentType: input.assignmentType,
+      status: 'ISSUED',
+      ...(input.purpose ? { purpose: input.purpose } : {}),
+      ...(input.notes ? { notes: input.notes } : {}),
+      lines: claimedLines,
+      returnEvents: [],
+      totalIssuedQuantity,
+      totalOutstandingQuantity,
+      hasDamagedOutcome: false,
+      hasLostOutcome: false,
+      idempotencyKeyHash,
+      requestFingerprint,
+      createdByUserId: actorUserId,
     });
+
+    await appendAuditEvent({
+      requestId: actor.requestId,
+      actorUserId: actor.userId,
+      actorWorkerId: actor.workerId,
+      actorRole: actor.role,
+      action: 'ISSUE_CREATED',
+      targetType: 'ISSUE',
+      targetId: issueId,
+      result: 'SUCCESS',
+      metadata: {
+        lineCount: claimedLines.length,
+        itemCount: totalIssuedQuantity,
+        status: 'ISSUED',
+        duePreset: input.due?.preset ?? null,
+        assignmentType: input.assignmentType,
+      },
+    });
+    for (const line of claimedLines) {
+      await appendAuditEvent({
+        requestId: actor.requestId,
+        actorUserId: actor.userId,
+        actorWorkerId: actor.workerId,
+        actorRole: actor.role,
+        action:
+          line.material.returnPolicy === 'CONSUMABLE'
+            ? 'MATERIAL_STOCK_CONSUMED'
+            : 'MATERIAL_STOCK_ISSUED',
+        targetType: 'MATERIAL',
+        targetId: line.material.materialCode,
+        result: 'SUCCESS',
+        metadata: {
+          issueId,
+          materialName: line.material.name,
+          category: line.material.category,
+          trackingMode: line.material.trackingMode,
+          returnPolicy: line.material.returnPolicy,
+          issuedQuantity: line.issuedQuantity,
+          outstandingQuantity: line.outstandingQuantity,
+          assignmentType: input.assignmentType,
+        },
+      });
+    }
+    await enqueueIssueNotifications(issue);
+    result = { issue: toIssue(issue), idempotentReplay: false };
   } catch (error) {
     const duplicate =
       error && typeof error === 'object' && (error as { code?: unknown }).code === 11_000;
@@ -443,8 +445,11 @@ export async function createIssue(
     if (!existing) throw error;
     if (existing.requestFingerprint !== requestFingerprint) throw idempotencyConflict();
     result = { issue: toIssue(existing), idempotentReplay: true };
+    return result;
   } finally {
-    await session.endSession();
+    if (!result && claimedLines.length > 0) {
+      await restoreClaimedIssueLines(claimedLines);
+    }
   }
 
   if (!result) throw new AppError(500, 'ISSUE_CREATE_FAILED', 'The Issue could not be created.');
@@ -452,19 +457,10 @@ export async function createIssue(
 }
 
 export function buildIssueSearchFilter(search: string): QueryFilter<unknown> {
-  const value = new RegExp(escapeSearchRegex(search), 'i');
-  return {
-    $or: [
-      { issueId: value },
-      { 'receiver.receiverCode': value },
-      { 'receiver.fullName': value },
-      { 'receiver.universityId': value },
-      { 'lines.material.materialCode': value },
-      { 'lines.material.name': value },
-      { 'lines.assets.assetTag': value },
-      { 'lines.assets.serialNumber': value },
-    ],
-  };
+  const normalized = search.trim().toUpperCase();
+  if (IssueIdSchema.safeParse(normalized).success) return { issueId: normalized };
+  if (AssetTagSchema.safeParse(normalized).success) return { 'lines.assets.assetTag': normalized };
+  return { $text: { $search: search.trim() } };
 }
 
 export function buildReturnSearchFilter(search: string, actorRole: UserRole): QueryFilter<unknown> {
@@ -694,7 +690,7 @@ export async function updateIssue(
       throw new AppError(
         409,
         'RETURN_DATE_NOT_EXTENDABLE',
-        'Only active Short-Term reusable Issues can have the return date extended.',
+        'Only active return-by-date issues with reusable material can be extended.',
       );
     }
     if (nextExpectedReturnAt <= new Date()) {
@@ -740,7 +736,9 @@ export async function deleteIssue(issueId: string, actor: IssueActorContext): Pr
         if (line.material.returnPolicy === 'CONSUMABLE') {
           await MaterialModel.updateOne(
             { _id: line.material.materialId, materialCode: line.material.materialCode },
-            { $inc: { totalQuantity: line.issuedQuantity, availableQuantity: line.issuedQuantity } },
+            {
+              $inc: { totalQuantity: line.issuedQuantity, availableQuantity: line.issuedQuantity },
+            },
             { session },
           );
           continue;
@@ -794,7 +792,8 @@ export async function deleteIssue(issueId: string, actor: IssueActorContext): Pr
     await session.endSession();
   }
 
-  if (!deletedIssue) throw new AppError(500, 'ISSUE_DELETE_FAILED', 'The Issue could not be deleted.');
+  if (!deletedIssue)
+    throw new AppError(500, 'ISSUE_DELETE_FAILED', 'The Issue could not be deleted.');
   return deletedIssue;
 }
 

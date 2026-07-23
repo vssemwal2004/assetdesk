@@ -69,6 +69,8 @@ const reportRow = {
   issuedByWorkerId: 'GEU-WRK-A7K4',
   issuedByName: 'Anita Sharma',
   materials: ['Core switch'],
+  materialTypes: ['IT Asset'],
+  serialNumbers: ['SWITCH-001', 'SWITCH-002'],
   totalIssuedQuantity: 2,
   totalOutstandingQuantity: 2,
   returnEventCount: 0,

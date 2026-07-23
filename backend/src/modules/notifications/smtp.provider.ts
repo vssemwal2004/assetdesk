@@ -19,7 +19,7 @@ export function assertSmtpConfiguration(): void {
   const missing = [
     ['SMTP_HOST', env.SMTP_HOST],
     ['SMTP_PORT', env.SMTP_PORT],
-    ['SMTP_FROM', env.SMTP_FROM],
+    ['SMTP_FROM or SMTP_USER', env.SMTP_FROM ?? env.SMTP_USER],
   ].filter(([, value]) => !value);
   if (missing.length > 0) {
     throw new EmailProviderError(
@@ -30,12 +30,20 @@ export function assertSmtpConfiguration(): void {
   }
 }
 
+export function smtpFromAddress(): string {
+  return env.SMTP_FROM ?? env.SMTP_USER ?? '';
+}
+
+export function smtpSecure(): boolean {
+  return env.SMTP_SECURE || env.SMTP_PORT === 465;
+}
+
 export async function sendWithSmtp(job: EmailJobDocument): Promise<string> {
   assertSmtpConfiguration();
   const transporter = nodemailer.createTransport({
     host: env.SMTP_HOST,
     port: env.SMTP_PORT,
-    secure: env.SMTP_SECURE,
+    secure: smtpSecure(),
     ...(env.SMTP_USER || env.SMTP_PASS
       ? { auth: { user: env.SMTP_USER, pass: env.SMTP_PASS } }
       : {}),
@@ -44,7 +52,7 @@ export async function sendWithSmtp(job: EmailJobDocument): Promise<string> {
   try {
     const rendered = renderEmail(job.templateKey, job.templateParams);
     const result = await transporter.sendMail({
-      from: { address: env.SMTP_FROM ?? '', name: env.SMTP_FROM_NAME },
+      from: { address: smtpFromAddress(), name: env.SMTP_FROM_NAME },
       to: { address: job.recipientEmailNormalized, name: job.recipientName },
       subject: rendered.subject,
       html: rendered.html,

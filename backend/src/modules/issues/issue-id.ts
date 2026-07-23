@@ -17,11 +17,11 @@ export function formatIssueId(year: number, sequence: number): string {
   return `GEU-ISS-${year}-${String(sequence).padStart(6, '0')}`;
 }
 
-export async function allocateIssueId(year: number, session: ClientSession): Promise<string> {
+export async function allocateIssueId(year: number, session?: ClientSession): Promise<string> {
   const counter = await IssueSequenceModel.findOneAndUpdate(
     { _id: year },
     { $inc: { sequence: 1 } },
-    { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true, session },
+    { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true, ...(session ? { session } : {}) },
   );
   if (!counter) {
     throw new AppError(

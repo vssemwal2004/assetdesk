@@ -22,7 +22,7 @@ import {
   UpdateAssetUnitRequestSchema,
   UpdateMaterialRequestSchema,
   type AuditEvent,
-  type AssignmentType,
+  type AssetUnitStatus,
   type AssetUnit,
   type AssetUnitsListResponse,
   type ManualAssetUnitStatus,
@@ -50,6 +50,7 @@ import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import {
   addAssetUnit,
   adjustMaterialQuantity,
+  deleteAssetUnit,
   deleteMaterial,
   getAssetUnits,
   getMaterial,
@@ -74,6 +75,7 @@ export function InventoryDetailPage() {
   const [editing, setEditing] = useState(parameters.get('edit') === '1');
   const [dialog, setDialog] = useState<'status' | 'quantity' | 'add-unit' | 'delete' | null>(null);
   const [editUnit, setEditUnit] = useState<AssetUnit | null>(null);
+  const [unitStatus, setUnitStatus] = useState<AssetUnitStatus | ''>('');
   const [actionError, setActionError] = useState<string | null>(null);
   const notice = (location.state as { notice?: string } | null)?.notice;
   const admin = user?.role === 'ADMIN';
@@ -85,8 +87,14 @@ export function InventoryDetailPage() {
   });
 
   const unitsQuery = useQuery({
-    queryKey: ['asset-units', materialCode, unitPage],
-    queryFn: ({ signal }) => getAssetUnits(materialCode, unitPage, signal),
+    queryKey: ['asset-units', materialCode, unitPage, unitStatus],
+    queryFn: ({ signal }) =>
+      getAssetUnits(
+        materialCode,
+        unitPage,
+        { ...(unitStatus ? { status: unitStatus } : {}) },
+        signal,
+      ),
     enabled: query.data?.trackingMode === 'SERIALIZED',
     placeholderData: (previous) => previous,
   });
@@ -188,7 +196,7 @@ export function InventoryDetailPage() {
               </span>
               <div>
                 <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-                  Material information
+                  Inventory information
                 </h2>
                 <CatalogBadge value={material.status} />
               </div>
@@ -214,14 +222,13 @@ export function InventoryDetailPage() {
               <DetailRow label="Material code" value={material.materialCode} />
               <DetailRow label="Material group" value={material.category} />
               <DetailRow
-                label="Tracking mode"
+                label="Material type"
                 value={<CatalogBadge value={material.trackingMode} />}
               />
               <DetailRow
                 label="Return policy"
                 value={<CatalogBadge value={material.returnPolicy} />}
               />
-              <DetailRow label="Assignment types" value={assignmentLabel(material.assignmentTypes)} />
               <DetailRow label="Description" value={material.description ?? 'Not provided'} />
               {material.unitLabel ? (
                 <DetailRow label="Unit label" value={material.unitLabel} />
@@ -243,14 +250,14 @@ export function InventoryDetailPage() {
                 Values shown in {material.unitLabel}
               </p>
             ) : null}
-            {admin && material.status === 'ACTIVE' && material.trackingMode === 'QUANTITY' ? (
+            {admin && material.status === 'ACTIVE' ? (
               <Button
                 className="mt-4 w-full"
                 onClick={() => setDialog('quantity')}
                 variant="secondary"
               >
                 <SlidersHorizontal aria-hidden="true" size={18} />
-                Adjust quantity
+                {material.trackingMode === 'SERIALIZED' ? 'Change IT Asset quantity' : 'Adjust quantity'}
               </Button>
             ) : null}
           </AppCard>
@@ -304,6 +311,13 @@ export function InventoryDetailPage() {
           }}
           page={unitPage}
           query={unitsQuery}
+          status={unitStatus}
+          onStatusChange={(nextStatus) => {
+            setUnitStatus(nextStatus);
+            const next = new URLSearchParams(parameters);
+            next.set('unitPage', '1');
+            setParameters(next);
+          }}
         />
       ) : null}
 
@@ -323,14 +337,15 @@ export function InventoryDetailPage() {
         />
       ) : null}
       {dialog === 'quantity' ? (
-        <QuantityDialog
-          material={material}
-          onCancel={() => setDialog(null)}
-          onSaved={async (updated) => {
-            await updateCached(updated);
-            setDialog(null);
-          }}
-        />
+          <QuantityDialog
+            material={material}
+            onCancel={() => setDialog(null)}
+            onSaved={async (updated) => {
+              await updateCached(updated);
+              await queryClient.invalidateQueries({ queryKey: ['asset-units', materialCode] });
+              setDialog(null);
+            }}
+          />
       ) : null}
       {dialog === 'add-unit' ? (
         <UnitDialog
@@ -365,11 +380,6 @@ export function InventoryDetailPage() {
       ) : null}
     </div>
   );
-}
-
-function assignmentLabel(types: AssignmentType[]): string {
-  if (types.length === 2) return 'Long-Term + Short-Term';
-  return types[0] === 'LONG_TERM' ? 'Long-Term Assignment' : 'Short-Term Assignment';
 }
 
 function QuantityStat({ label, value }: { label: string; value: number }) {
@@ -430,7 +440,7 @@ function InventoryFlowPanel({ material }: { material: Material }) {
               Inventory flow
             </h2>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Full material lifecycle from registration to issue, return and closure.
+              Full inventory lifecycle from registration to issue, return and closure.
             </p>
           </div>
         </div>
@@ -442,7 +452,7 @@ function InventoryFlowPanel({ material }: { material: Material }) {
       <div className="mt-5 grid gap-3 md:grid-cols-4">
         <FlowStep
           active
-          detail={`${material.trackingMode === 'SERIALIZED' ? 'Asset tags' : material.unitLabel ?? 'Units'} tracked`}
+          detail={`${material.trackingMode === 'SERIALIZED' ? 'Serial-numbered assets' : (material.unitLabel ?? 'Units')} tracked`}
           label="1. Register"
         />
         <FlowStep
@@ -618,16 +628,16 @@ function ActivityRow({ event }: { event: AuditEvent }) {
   );
 }
 
-function editMaterialMessage(form: {
-  name: string;
-  category: string;
-  unitLabel: string;
-  longTerm: boolean;
-  shortTerm: boolean;
-}, material: Material): string | null {
+function editMaterialMessage(
+  form: {
+    name: string;
+    category: string;
+    unitLabel: string;
+  },
+  material: Material,
+): string | null {
   if (form.name.trim().length < 2) return 'Enter a material name with at least 2 characters.';
   if (form.category.trim().length < 2) return 'Choose a material group, or enter a custom group.';
-  if (!form.longTerm && !form.shortTerm) return 'Choose at least one assignment type.';
   if (material.trackingMode === 'QUANTITY' && form.unitLabel.trim().length < 1) {
     return 'Enter a unit label, for example units, boxes, meters, or pieces.';
   }
@@ -649,8 +659,6 @@ function EditMaterialForm({
     description: material.description ?? '',
     returnPolicy: material.returnPolicy,
     unitLabel: material.unitLabel ?? '',
-    longTerm: material.assignmentTypes.includes('LONG_TERM'),
-    shortTerm: material.assignmentTypes.includes('SHORT_TERM'),
   });
   const [message, setMessage] = useState<string | null>(null);
   const mutation = useMutation({
@@ -671,10 +679,6 @@ function EditMaterialForm({
       category: form.category,
       description: form.description.trim() || null,
       returnPolicy: form.returnPolicy,
-      assignmentTypes: [
-        ...(form.longTerm ? (['LONG_TERM'] as const) : []),
-        ...(form.shortTerm ? (['SHORT_TERM'] as const) : []),
-      ],
       ...(material.trackingMode === 'QUANTITY' ? { unitLabel: form.unitLabel } : {}),
     });
     if (!result.success) {
@@ -730,33 +734,6 @@ function EditMaterialForm({
           />
         ) : null}
       </div>
-      <fieldset className="space-y-2">
-        <legend className="field-label">Allowed assignment type</legend>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="flex min-h-11 items-center gap-3 rounded-[10px] border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-strong)]">
-            <input
-              checked={form.longTerm}
-              className="size-4 accent-[var(--color-primary)]"
-              onChange={(event) =>
-                setForm((value) => ({ ...value, longTerm: event.target.checked }))
-              }
-              type="checkbox"
-            />
-            Long-Term Assignment
-          </label>
-          <label className="flex min-h-11 items-center gap-3 rounded-[10px] border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-strong)]">
-            <input
-              checked={form.shortTerm}
-              className="size-4 accent-[var(--color-primary)]"
-              onChange={(event) =>
-                setForm((value) => ({ ...value, shortTerm: event.target.checked }))
-              }
-              type="checkbox"
-            />
-            Short-Term Assignment
-          </label>
-        </div>
-      </fieldset>
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button disabled={mutation.isPending} onClick={onCancel} type="button" variant="secondary">
           Cancel
@@ -773,17 +750,21 @@ function SerializedUnits({
   material,
   admin,
   page,
+  status,
   onPage,
   onAdd,
   onEdit,
+  onStatusChange,
   query,
 }: {
   material: Material;
   admin: boolean;
   page: number;
+  status: AssetUnitStatus | '';
   onPage: (page: number) => void;
   onAdd: () => void;
   onEdit: (unit: AssetUnit) => void;
+  onStatusChange: (status: AssetUnitStatus | '') => void;
   query: ReturnType<typeof useQuery<AssetUnitsListResponse>>;
 }) {
   return (
@@ -791,25 +772,42 @@ function SerializedUnits({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-            Serialized units
+            IT Asset units
           </h2>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            Each physical device has its own Asset tag, condition and status.
+            Each physical item has its own serial number, asset tag, condition and status.
           </p>
         </div>
         {admin && material.status === 'ACTIVE' ? (
           <Button onClick={onAdd}>
             <Plus aria-hidden="true" size={18} />
-            Add unit
+            Add IT Asset
           </Button>
         ) : null}
       </div>
+      <div className="mt-4 grid gap-3 sm:max-w-xs">
+        <SelectField
+          id="asset-unit-status-filter"
+          label="Asset status"
+          onChange={(value) => onStatusChange(value as AssetUnitStatus | '')}
+          value={status}
+        >
+          <option value="">All statuses</option>
+          <option value="AVAILABLE">Available</option>
+          <option value="ISSUED">Issued</option>
+          <option value="RETURNED">Returned</option>
+          <option value="UNDER_REPAIR">Under repair</option>
+          <option value="DAMAGED">Damaged</option>
+          <option value="LOST">Lost</option>
+          <option value="SCRAPPED">Scrapped</option>
+        </SelectField>
+      </div>
       <div className="mt-5">
         {query.isPending ? (
-          <LoadingPanel label="Loading serialized units" />
+          <LoadingPanel label="Loading IT Asset units" />
         ) : query.isError ? (
           <ErrorState
-            message="Serialized units could not be loaded."
+            message="IT Asset units could not be loaded."
             onRetry={() => void query.refetch()}
           />
         ) : !query.data?.data.length ? (
@@ -824,10 +822,10 @@ function SerializedUnits({
             }
             message={
               admin
-                ? 'Add each physical device to begin tracking availability.'
-                : 'No available serialized units are shown.'
+                ? 'Add each physical item to begin tracking availability.'
+                : 'No available IT Asset units are shown.'
             }
-            title="No available units"
+            title="No IT Asset units"
           />
         ) : (
           <>
@@ -888,6 +886,9 @@ function UnitCard({
         Condition:{' '}
         <span className="font-bold text-[var(--color-text-strong)]">{unit.condition}</span>
       </p>
+      <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+        Registered {formatIstDateTime(unit.createdAt)}
+      </p>
       {admin ? (
         <Button className="mt-3 w-full" onClick={() => onEdit(unit)} variant="secondary">
           <Pencil aria-hidden="true" size={17} />
@@ -925,6 +926,9 @@ function UnitTable({
             <th className="h-11 px-4 font-bold" scope="col">
               Status
             </th>
+            <th className="h-11 px-4 font-bold" scope="col">
+              Registered
+            </th>
             {admin ? (
               <th className="h-11 px-4 text-right font-bold" scope="col">
                 Action
@@ -944,6 +948,9 @@ function UnitTable({
               <td className="px-4 text-sm text-[var(--color-text-muted)]">{unit.condition}</td>
               <td className="px-4">
                 <CatalogBadge value={unit.status} />
+              </td>
+              <td className="px-4 text-sm text-[var(--color-text-muted)]">
+                {formatIstDateTime(unit.createdAt)}
               </td>
               {admin ? (
                 <td className="px-4 text-right">
@@ -1083,14 +1090,60 @@ function QuantityDialog({
 }) {
   const [delta, setDelta] = useState('');
   const [reason, setReason] = useState('');
+  const [serialNumbers, setSerialNumbers] = useState<string[]>([]);
+  const [selectedAssetTags, setSelectedAssetTags] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const quantityDelta = Number(delta);
+  const availableUnitsQuery = useQuery({
+    queryKey: ['asset-units-removable', material.materialCode],
+    queryFn: ({ signal }) => getAssetUnits(material.materialCode, 1, { status: 'AVAILABLE', pageSize: 100 }, signal),
+    enabled: material.trackingMode === 'SERIALIZED' && quantityDelta < 0,
+  });
   const mutation = useMutation({
-    mutationFn: (input: { quantityDelta: number; reason: string }) =>
-      adjustMaterialQuantity(material.materialCode, input),
+    mutationFn: async (input: { quantityDelta: number; reason: string }) => {
+      if (material.trackingMode === 'QUANTITY') {
+        return adjustMaterialQuantity(material.materialCode, input);
+      }
+      if (input.quantityDelta > 0) {
+        let latest = material;
+        for (const serialNumber of serialNumbers.slice(0, input.quantityDelta)) {
+          const result = await addAssetUnit(material.materialCode, {
+            serialNumber: serialNumber.trim(),
+            condition: 'Good',
+          });
+          latest = result.material;
+        }
+        return latest;
+      }
+      let latest = material;
+      for (const assetTag of selectedAssetTags.slice(0, Math.abs(input.quantityDelta))) {
+        const result = await deleteAssetUnit(material.materialCode, assetTag);
+        latest = result.material;
+      }
+      return latest;
+    },
     onSuccess: onSaved,
     onError: (error) =>
       setMessage(isApiError(error) ? error.message : 'The quantity could not be adjusted.'),
   });
+  function setSerializedDelta(rawValue: string) {
+    setDelta(rawValue);
+    const next = Number(rawValue);
+    if (material.trackingMode !== 'SERIALIZED') return;
+    if (Number.isInteger(next) && next > 0 && next <= 1000) {
+      setSerialNumbers((current) => Array.from({ length: next }, (_, index) => current[index] ?? ''));
+    } else {
+      setSerialNumbers([]);
+    }
+    setSelectedAssetTags([]);
+  }
+  function toggleAssetTag(assetTag: string) {
+    setSelectedAssetTags((current) =>
+      current.includes(assetTag)
+        ? current.filter((value) => value !== assetTag)
+        : [...current, assetTag],
+    );
+  }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const result = AdjustQuantityRequestSchema.safeParse({ quantityDelta: Number(delta), reason });
@@ -1098,13 +1151,36 @@ function QuantityDialog({
       setMessage(result.error.issues[0]?.message ?? 'Check the adjustment.');
       return;
     }
+    if (material.trackingMode === 'SERIALIZED') {
+      if (result.data.quantityDelta > 0) {
+        const prepared = serialNumbers.map((value) => value.trim());
+        if (prepared.length !== result.data.quantityDelta || prepared.some((value) => !value)) {
+          setMessage(`Enter one serial number for each of the ${result.data.quantityDelta} IT Assets.`);
+          return;
+        }
+        const unique = new Set(prepared.map((value) => value.toLocaleUpperCase('en-US')));
+        if (unique.size !== prepared.length) {
+          setMessage('Serial numbers must be unique.');
+          return;
+        }
+      }
+      if (
+        result.data.quantityDelta < 0 &&
+        selectedAssetTags.length !== Math.abs(result.data.quantityDelta)
+      ) {
+        setMessage(`Select ${Math.abs(result.data.quantityDelta)} available IT Asset units to remove.`);
+        return;
+      }
+    }
     mutation.mutate(result.data);
   }
+  const title = material.trackingMode === 'SERIALIZED' ? 'Change IT Asset quantity' : 'Adjust quantity';
   return (
-    <Dialog onClose={onCancel} title="Adjust quantity">
+    <Dialog onClose={onCancel} title={title}>
       <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-        Use a positive number to add stock or a negative number to correct a stock reduction. Issued
-        stock cannot be removed.
+        {material.trackingMode === 'SERIALIZED'
+          ? 'Add IT Assets with serial numbers, or remove available units that have never been issued.'
+          : 'Use a positive number to add stock or a negative number to correct a stock reduction. Issued stock cannot be removed.'}
       </p>
       {message ? (
         <div className="mt-4">
@@ -1113,16 +1189,79 @@ function QuantityDialog({
       ) : null}
       <form className="mt-5 space-y-5" onSubmit={submit}>
         <TextField
-          hint={`Current total: ${material.totalQuantity} ${material.unitLabel ?? 'units'}`}
+          hint={`Current total: ${material.totalQuantity} ${material.unitLabel ?? 'IT Assets'}`}
           inputMode="numeric"
           label="Quantity change"
-          onChange={(event) => setDelta(event.target.value)}
+          onChange={(event) =>
+            material.trackingMode === 'SERIALIZED'
+              ? setSerializedDelta(event.target.value)
+              : setDelta(event.target.value)
+          }
           placeholder="For example: 10 or -2"
           required
           step="1"
           type="number"
           value={delta}
         />
+        {material.trackingMode === 'SERIALIZED' && quantityDelta > 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {serialNumbers.map((serialNumber, index) => (
+              <TextField
+                key={index}
+                label={`New asset ${index + 1} serial number`}
+                maxLength={120}
+                onChange={(event) =>
+                  setSerialNumbers((current) =>
+                    current.map((value, currentIndex) =>
+                      currentIndex === index ? event.target.value : value,
+                    ),
+                  )
+                }
+                required
+                value={serialNumber}
+              />
+            ))}
+          </div>
+        ) : null}
+        {material.trackingMode === 'SERIALIZED' && quantityDelta < 0 ? (
+          <div className="space-y-3">
+            <p className="text-sm font-bold text-[var(--color-text-strong)]">
+              Select {Math.abs(quantityDelta)} available IT Asset units
+            </p>
+            {availableUnitsQuery.isPending ? (
+              <LoadingPanel label="Loading available IT Assets" />
+            ) : availableUnitsQuery.isError ? (
+              <ErrorSummary message="Available IT Assets could not be loaded." />
+            ) : (
+              <div className="max-h-64 space-y-2 overflow-y-auto rounded-[12px] border border-[var(--color-border)] p-2">
+                {(availableUnitsQuery.data?.data ?? []).map((unit) => (
+                  <label
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-[10px] p-2 hover:bg-[var(--color-surface-tint)]"
+                    key={unit.assetTag}
+                  >
+                    <span>
+                      <span className="block text-sm font-extrabold text-[var(--color-text-strong)]">
+                        {unit.assetTag}
+                      </span>
+                      <span className="block text-xs text-[var(--color-text-muted)]">
+                        {unit.serialNumber ?? 'No serial number'}
+                      </span>
+                    </span>
+                    <input
+                      checked={selectedAssetTags.includes(unit.assetTag)}
+                      disabled={
+                        !selectedAssetTags.includes(unit.assetTag) &&
+                        selectedAssetTags.length >= Math.abs(quantityDelta)
+                      }
+                      onChange={() => toggleAssetTag(unit.assetTag)}
+                      type="checkbox"
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
         <div className="space-y-1.5">
           <label className="field-label" htmlFor="quantity-reason">
             Reason
@@ -1163,7 +1302,7 @@ function validStatuses(unit: AssetUnit): ManualAssetUnitStatus[] {
     return ['RETURNED', 'AVAILABLE', 'UNDER_REPAIR', 'DAMAGED', 'LOST', 'SCRAPPED'];
   }
   if (unit.status === 'UNDER_REPAIR' || unit.status === 'DAMAGED' || unit.status === 'LOST') {
-    return [unit.status, 'AVAILABLE', 'SCRAPPED'];
+    return ['AVAILABLE', 'UNDER_REPAIR', 'DAMAGED', 'LOST', 'SCRAPPED'];
   }
   return ['SCRAPPED'];
 }
@@ -1184,22 +1323,24 @@ function UnitDialog({
   const [status, setStatus] = useState<ManualAssetUnitStatus>(
     unit?.status === 'ISSUED' ? 'AVAILABLE' : (unit?.status ?? 'AVAILABLE'),
   );
+  const [reason, setReason] = useState('');
   const statusOptions = unit ? validStatuses(unit) : [];
   const [message, setMessage] = useState<string | null>(null);
   const mutation = useMutation({
     mutationFn: async () => {
       if (unit) {
         const result = UpdateAssetUnitRequestSchema.safeParse({
-          serialNumber: serialNumber.trim() || null,
+          ...(unit.status !== 'ISSUED' ? { serialNumber: serialNumber.trim() } : {}),
           condition,
           ...(unit.status !== 'ISSUED' ? { status } : {}),
+          reason,
         });
         if (!result.success)
           throw new Error(result.error.issues[0]?.message ?? 'Check the unit details.');
         return updateAssetUnit(material.materialCode, unit.assetTag, result.data);
       }
       const result = CreateAssetUnitRequestSchema.safeParse({
-        ...(serialNumber.trim() ? { serialNumber } : {}),
+        serialNumber: serialNumber.trim(),
         condition,
       });
       if (!result.success)
@@ -1215,10 +1356,10 @@ function UnitDialog({
       ),
   });
   return (
-    <Dialog onClose={onCancel} title={unit ? `Edit ${unit.assetTag}` : 'Add serialized unit'}>
+    <Dialog onClose={onCancel} title={unit ? `Repair / edit ${unit.assetTag}` : 'Add IT Asset'}>
       <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
         {unit
-          ? 'Update this physical device record.'
+          ? 'Update condition and service status. Changes are written to the inventory log.'
           : 'An Asset tag will be generated automatically.'}
       </p>
       {message ? (
@@ -1234,14 +1375,17 @@ function UnitDialog({
         }}
       >
         <TextField
+          disabled={unit?.status === 'ISSUED'}
+          hint={unit?.status === 'ISSUED' ? 'Serial number is locked while this IT Asset is issued.' : undefined}
           label="Serial number"
           onChange={(event) => setSerialNumber(event.target.value)}
-          optional
+          required
           value={serialNumber}
         />
         <TextField
           label="Condition"
           onChange={(event) => setCondition(event.target.value)}
+          placeholder="Good, repaired, keyboard replaced..."
           required
           value={condition}
         />
@@ -1263,6 +1407,23 @@ function UnitDialog({
             An issued unit’s status is managed through Return workflows.
           </p>
         ) : null}
+        {unit ? (
+          <div className="space-y-1.5">
+            <label className="field-label" htmlFor="unit-update-reason">
+              Log reason
+            </label>
+            <textarea
+              className="field-input min-h-20 resize-y"
+              id="unit-update-reason"
+              maxLength={500}
+              minLength={5}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Example: repaired display and verified working"
+              required
+              value={reason}
+            />
+          </div>
+        ) : null}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button
             disabled={mutation.isPending}
@@ -1273,7 +1434,7 @@ function UnitDialog({
             Cancel
           </Button>
           <Button loading={mutation.isPending} type="submit">
-            {mutation.isPending ? 'Saving…' : unit ? 'Save unit' : 'Add unit'}
+            {mutation.isPending ? 'Saving…' : unit ? 'Save repair log' : 'Add IT Asset'}
           </Button>
         </div>
       </form>

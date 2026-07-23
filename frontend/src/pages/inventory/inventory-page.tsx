@@ -1,15 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, MoreVertical, PackagePlus, PackageSearch, Pencil, Search, Trash2 } from 'lucide-react';
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Eye, MoreVertical, PackagePlus, PackageSearch, Pencil, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
-import type {
-  AssignmentType,
-  Material,
-  MaterialStatus,
-  ReturnPolicy,
-  TrackingMode,
-} from '@assetdesk/contracts';
+import type { Material, MaterialStatus, ReturnPolicy, TrackingMode } from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
 import { CatalogBadge, PageCount } from '../../components/catalog-ui';
@@ -18,8 +12,10 @@ import {
   EmptyState,
   ErrorState,
   ErrorSummary,
+  FilterPopover,
   LoadingPanel,
   PageHeader,
+  SearchForm,
 } from '../../components/ui';
 import { deleteMaterial, getInventory } from '../../lib/inventory-api';
 import { isApiError } from '../../lib/api-client';
@@ -37,12 +33,12 @@ function returnPolicy(value: string): ReturnPolicy | undefined {
   return value === 'REUSABLE' || value === 'CONSUMABLE' ? value : undefined;
 }
 
-function assignmentType(value: string): AssignmentType | undefined {
-  return value === 'LONG_TERM' || value === 'SHORT_TERM' ? value : undefined;
-}
+type InventoryStockState = 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
 
-function stockState(value: string): 'IN_STOCK' | 'OUT_OF_STOCK' | undefined {
-  return value === 'IN_STOCK' || value === 'OUT_OF_STOCK' ? value : undefined;
+function stockState(value: string): InventoryStockState | undefined {
+  return ['AVAILABLE', 'LOW_STOCK', 'OUT_OF_STOCK', 'ISSUED', 'FULLY_ISSUED'].includes(value)
+    ? (value as InventoryStockState)
+    : undefined;
 }
 
 function quantityLabel(material: Material): string {
@@ -52,9 +48,21 @@ function quantityLabel(material: Material): string {
   return `${material.availableQuantity} of ${material.totalQuantity} ${material.unitLabel ?? 'units'} available`;
 }
 
-function assignmentLabel(material: Material): string {
-  if (material.assignmentTypes.length === 2) return 'Long + Short';
-  return material.assignmentTypes[0] === 'LONG_TERM' ? 'Long-Term' : 'Short-Term';
+function inactiveQuantity(material: Material): number {
+  return Math.max(0, material.totalQuantity - material.availableQuantity - material.issuedQuantity);
+}
+
+function materialStatsLabel(material: Material): string {
+  if (material.status === 'ARCHIVED') return 'Archived';
+  if (material.availableQuantity === 0) return 'Out of stock';
+  if (material.issuedQuantity > 0 && material.issuedQuantity === material.totalQuantity) {
+    return 'Fully issued';
+  }
+  if (material.availableQuantity <= Math.max(1, Math.ceil(material.totalQuantity * 0.2))) {
+    return 'Low stock';
+  }
+  if (material.issuedQuantity > 0) return 'Partially issued';
+  return 'Available';
 }
 
 export function InventoryPage() {
@@ -70,12 +78,11 @@ export function InventoryPage() {
   const status = materialStatus(parameters.get('status') ?? '');
   const mode = trackingMode(parameters.get('trackingMode') ?? '');
   const policy = returnPolicy(parameters.get('returnPolicy') ?? '');
-  const assignment = assignmentType(parameters.get('assignmentType') ?? '');
   const stock = stockState(parameters.get('stockState') ?? '');
   const admin = user?.role === 'ADMIN';
 
   const query = useQuery({
-    queryKey: ['inventory', { page, search, category, status, mode, policy, assignment, stock }],
+    queryKey: ['inventory', { page, search, category, status, mode, policy, stock }],
     queryFn: ({ signal }) =>
       getInventory(
         {
@@ -85,7 +92,6 @@ export function InventoryPage() {
           ...(status ? { status } : {}),
           ...(mode ? { trackingMode: mode } : {}),
           ...(policy ? { returnPolicy: policy } : {}),
-          ...(assignment ? { assignmentType: assignment } : {}),
           ...(stock ? { stockState: stock } : {}),
         },
         signal,
@@ -104,7 +110,7 @@ export function InventoryPage() {
   }
 
   const materials = query.data?.data ?? [];
-  const filtered = Boolean(search || category || status || mode || policy || assignment || stock);
+  const filtered = Boolean(search || category || status || mode || policy || stock);
   const deleteMutation = useMutation({
     mutationFn: (material: Material) => deleteMaterial(material.materialCode),
     onSuccess: async () => {
@@ -138,7 +144,7 @@ export function InventoryPage() {
         }
         description={
           admin
-            ? 'Track asset quantities, assignment eligibility, and stock health in a compact table.'
+            ? 'Track IT Assets, IT Consumables, availability, and stock health.'
             : 'Search current university material availability.'
         }
         title="Inventory"
@@ -146,70 +152,93 @@ export function InventoryPage() {
       {actionError ? <ErrorSummary message={actionError} title="Action failed" /> : null}
 
       <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)] sm:p-4">
-        <InventorySearch
-          category={category}
-          key={`${search}-${category}`}
-          onApply={(values) => updateParameters(values)}
-          search={search}
-        />
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-[repeat(5,190px)_auto]">
-          {admin ? (
-            <FilterSelect
-              id="inventory-status-filter"
-              label="Filter by status"
-              onChange={(value) => updateParameters({ status: value })}
-              value={status ?? ''}
-            >
-              <option value="">All statuses</option>
-              <option value="ACTIVE">Active</option>
-              <option value="ARCHIVED">Archived</option>
-            </FilterSelect>
-          ) : null}
-          <FilterSelect
-            id="inventory-assignment-filter"
-            label="Filter by assignment type"
-            onChange={(value) => updateParameters({ assignmentType: value })}
-            value={assignment ?? ''}
+        <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <SearchForm
+            debounceMs={300}
+            id="inventory-search"
+            key={search}
+            label="Search Inventory"
+            onSearch={(value) => updateParameters({ search: value })}
+            placeholder="Material name, code, group or description"
+            value={search}
+          />
+          <FilterPopover
+            activeCount={[category, status, mode, policy, stock].filter(Boolean).length}
+            onClear={() =>
+              updateParameters({
+                category: '',
+                status: '',
+                trackingMode: '',
+                returnPolicy: '',
+                stockState: '',
+              })
+            }
           >
-            <option value="">All assignment types</option>
-            <option value="LONG_TERM">Long-Term Assignment</option>
-            <option value="SHORT_TERM">Short-Term Assignment</option>
-          </FilterSelect>
-          <FilterSelect
-            id="inventory-stock-filter"
-            label="Filter by stock state"
-            onChange={(value) => updateParameters({ stockState: value })}
-            value={stock ?? ''}
-          >
-            <option value="">All stock states</option>
-            <option value="IN_STOCK">In Stock</option>
-            <option value="OUT_OF_STOCK">Out of Stock</option>
-          </FilterSelect>
-          <FilterSelect
-            id="inventory-mode-filter"
-            label="Filter by tracking mode"
-            onChange={(value) => updateParameters({ trackingMode: value })}
-            value={mode ?? ''}
-          >
-            <option value="">All tracking modes</option>
-            <option value="SERIALIZED">Serialized</option>
-            <option value="QUANTITY">Quantity tracked</option>
-          </FilterSelect>
-          <FilterSelect
-            id="inventory-policy-filter"
-            label="Filter by return policy"
-            onChange={(value) => updateParameters({ returnPolicy: value })}
-            value={policy ?? ''}
-          >
-            <option value="">All return policies</option>
-            <option value="REUSABLE">Reusable</option>
-            <option value="CONSUMABLE">Consumable</option>
-          </FilterSelect>
-          {filtered ? (
-            <Button onClick={() => setParameters({ page: '1' })} type="button" variant="quiet">
-              Clear filters
-            </Button>
-          ) : null}
+            <FilterField label="Material group">
+              <SearchForm
+                debounceMs={300}
+                id="inventory-category-filter"
+                key={category}
+                label="Filter by material group"
+                onSearch={(value) => updateParameters({ category: value })}
+                placeholder="Any material group"
+                value={category}
+              />
+            </FilterField>
+            {admin ? (
+              <FilterField label="Status">
+                <FilterSelect
+                  id="inventory-status-filter"
+                  label="Filter by status"
+                  onChange={(value) => updateParameters({ status: value })}
+                  value={status ?? ''}
+                >
+                  <option value="">Any status</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="ARCHIVED">Archived</option>
+                </FilterSelect>
+              </FilterField>
+            ) : null}
+            <FilterField label="Stats">
+              <FilterSelect
+                id="inventory-stock-filter"
+                label="Filter by stats"
+                onChange={(value) => updateParameters({ stockState: value })}
+                value={stock ?? ''}
+              >
+                <option value="">Any stats</option>
+                <option value="AVAILABLE">Available stock</option>
+                <option value="LOW_STOCK">Low stock</option>
+                <option value="OUT_OF_STOCK">Out of stock</option>
+                <option value="ISSUED">Issued stock</option>
+                <option value="FULLY_ISSUED">Fully issued</option>
+              </FilterSelect>
+            </FilterField>
+            <FilterField label="Material type">
+              <FilterSelect
+                id="inventory-mode-filter"
+                label="Filter by material type"
+                onChange={(value) => updateParameters({ trackingMode: value })}
+                value={mode ?? ''}
+              >
+                <option value="">Any material type</option>
+                <option value="SERIALIZED">IT Assets</option>
+                <option value="QUANTITY">IT Consumables</option>
+              </FilterSelect>
+            </FilterField>
+            <FilterField label="Return policy">
+              <FilterSelect
+                id="inventory-policy-filter"
+                label="Filter by return policy"
+                onChange={(value) => updateParameters({ returnPolicy: value })}
+                value={policy ?? ''}
+              >
+                <option value="">Any return policy</option>
+                <option value="REUSABLE">Reusable</option>
+                <option value="CONSUMABLE">Consumable</option>
+              </FilterSelect>
+            </FilterField>
+          </FilterPopover>
         </div>
         {query.data ? <PageCount count={query.data.meta.total} noun="material" /> : null}
       </section>
@@ -360,15 +389,21 @@ function DeleteMaterialDialog({
         <dl className="mt-5 grid gap-2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 text-sm">
           <div className="flex justify-between gap-3">
             <dt className="font-bold text-[var(--color-text-muted)]">Material code</dt>
-            <dd className="font-extrabold text-[var(--color-text-strong)]">{material.materialCode}</dd>
+            <dd className="font-extrabold text-[var(--color-text-strong)]">
+              {material.materialCode}
+            </dd>
           </div>
           <div className="flex justify-between gap-3">
             <dt className="font-bold text-[var(--color-text-muted)]">Total stock</dt>
-            <dd className="font-extrabold text-[var(--color-text-strong)]">{material.totalQuantity}</dd>
+            <dd className="font-extrabold text-[var(--color-text-strong)]">
+              {material.totalQuantity}
+            </dd>
           </div>
           <div className="flex justify-between gap-3">
             <dt className="font-bold text-[var(--color-text-muted)]">Issued stock</dt>
-            <dd className="font-extrabold text-[var(--color-text-strong)]">{material.issuedQuantity}</dd>
+            <dd className="font-extrabold text-[var(--color-text-strong)]">
+              {material.issuedQuantity}
+            </dd>
           </div>
         </dl>
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -427,13 +462,50 @@ function MaterialQuickViewDialog({
         <DetailGrid>
           <DetailItem label="Tracking" value={humanizeCatalogValue(material.trackingMode)} />
           <DetailItem label="Return policy" value={humanizeCatalogValue(material.returnPolicy)} />
-          <DetailItem label="Use" value={assignmentLabel(material)} />
+          <DetailItem label="Stats" value={materialStatsLabel(material)} />
           <DetailItem label="Availability" value={quantityLabel(material)} />
-          <DetailItem label="Total stock" value={material.totalQuantity} />
-          <DetailItem label="Issued stock" value={material.issuedQuantity} />
-          <DetailItem label="Available stock" value={material.availableQuantity} />
           <DetailItem label="Unit label" value={material.unitLabel ?? 'Not applicable'} />
         </DetailGrid>
+        <div className="mt-5 overflow-hidden rounded-[12px] border border-[var(--color-border)]">
+          <table className="w-full border-collapse text-left text-sm">
+            <caption className="sr-only">Inventory stock stats</caption>
+            <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
+              <tr>
+                <th className="h-10 px-3 font-bold" scope="col">
+                  Stock bucket
+                </th>
+                <th className="h-10 px-3 font-bold" scope="col">
+                  Quantity
+                </th>
+                <th className="h-10 px-3 font-bold" scope="col">
+                  Meaning
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)]">
+              <StatsRow
+                label="Total registered"
+                note="All stock recorded in AssetDesk."
+                value={material.totalQuantity}
+              />
+              <StatsRow
+                label="Available"
+                note="Can be issued right now."
+                value={material.availableQuantity}
+              />
+              <StatsRow
+                label="Issued"
+                note="Currently assigned to receivers."
+                value={material.issuedQuantity}
+              />
+              <StatsRow
+                label="Repair/damaged/lost/scrapped"
+                note="Registered but not issue-ready."
+                value={inactiveQuantity(material)}
+              />
+            </tbody>
+          </table>
+        </div>
         <div className="mt-5 rounded-[10px] border border-[var(--color-border)] p-3">
           <p className="text-xs font-bold text-[var(--color-text-muted)]">Description</p>
           <p className="mt-1 text-sm leading-6 text-[var(--color-text-strong)]">
@@ -463,60 +535,13 @@ function MaterialQuickViewDialog({
   );
 }
 
-function InventorySearch({
-  search,
-  category,
-  onApply,
-}: {
-  search: string;
-  category: string;
-  onApply: (values: Record<string, string>) => void;
-}) {
-  const [searchDraft, setSearchDraft] = useState(search);
-  const [categoryDraft, setCategoryDraft] = useState(category);
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    onApply({ search: searchDraft.trim(), category: categoryDraft.trim() });
-  }
+function StatsRow({ label, value, note }: { label: string; value: number; note: string }) {
   return (
-    <form
-      className="grid gap-3 md:grid-cols-[minmax(260px,1fr)_260px_auto]"
-      onSubmit={submit}
-      role="search"
-    >
-      <div className="relative">
-        <label className="sr-only" htmlFor="inventory-search">
-          Search Inventory
-        </label>
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
-          size={18}
-        />
-        <input
-          className="field-input field-input-search"
-          id="inventory-search"
-          onChange={(event) => setSearchDraft(event.target.value)}
-          placeholder="Material name or code"
-          value={searchDraft}
-        />
-      </div>
-      <div>
-        <label className="sr-only" htmlFor="inventory-category-filter">
-          Filter by material group
-        </label>
-        <input
-          className="field-input"
-          id="inventory-category-filter"
-          onChange={(event) => setCategoryDraft(event.target.value)}
-          placeholder="Material group"
-          value={categoryDraft}
-        />
-      </div>
-      <Button type="submit" variant="secondary">
-        Apply
-      </Button>
-    </form>
+    <tr>
+      <td className="px-3 py-3 font-bold text-[var(--color-text-strong)]">{label}</td>
+      <td className="px-3 py-3 font-extrabold text-[var(--color-primary-strong)]">{value}</td>
+      <td className="px-3 py-3 text-[var(--color-text-muted)]">{note}</td>
+    </tr>
   );
 }
 
@@ -546,6 +571,15 @@ function FilterSelect({
       >
         {children}
       </select>
+    </div>
+  );
+}
+
+function FilterField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="field-label">{label}</p>
+      {children}
     </div>
   );
 }
@@ -625,9 +659,6 @@ function MaterialCard({
           <p className="mt-1 text-sm font-bold text-[var(--color-text-strong)]">
             {quantityLabel(material)}
           </p>
-          <p className="mt-1 text-xs font-bold text-[var(--color-text-muted)]">
-            {assignmentLabel(material)}
-          </p>
         </div>
       </div>
       <Link className="button-secondary mt-4 w-full" to={`/inventory/${material.materialCode}`}>
@@ -664,9 +695,6 @@ function MaterialTable({
               Availability
             </th>
             <th className="h-11 px-4 font-bold" scope="col">
-              Use
-            </th>
-            <th className="h-11 px-4 font-bold" scope="col">
               Status
             </th>
             <th className="h-11 px-4 text-right font-bold" scope="col">
@@ -693,9 +721,6 @@ function MaterialTable({
               </td>
               <td className="px-4 text-sm text-[var(--color-text-muted)]">
                 {quantityLabel(material)}
-              </td>
-              <td className="px-4 text-xs font-bold text-[var(--color-text-muted)]">
-                {assignmentLabel(material)}
               </td>
               <td className="px-4">
                 <CatalogBadge value={material.status} />

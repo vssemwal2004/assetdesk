@@ -123,14 +123,14 @@ export const CreateCatalogIssueRequestSchema = z
       context.addIssue({
         code: 'custom',
         path: ['due'],
-        message: 'Short-Term Assignment requires an expected return date.',
+        message: 'Return by date requires an expected return date.',
       });
     }
     if (request.assignmentType === 'LONG_TERM' && request.due) {
       context.addIssue({
         code: 'custom',
         path: ['due'],
-        message: 'Long-Term Assignment does not use a fixed return date.',
+        message: 'Permanent issue does not use a fixed return date.',
       });
     }
   });
@@ -470,16 +470,17 @@ export const IssueSchema = IssueBaseSchema.superRefine((issue, context) => {
   const hasReusable = issue.lines.some((line) => line.material.returnPolicy === 'REUSABLE');
   const hasExpectedReturn = issue.expectedReturnAt !== null;
   const hasDuePreset = issue.duePreset !== null;
+  const requiresExpectedReturn = hasReusable && issue.assignmentType === 'SHORT_TERM';
   if (
-    (hasReusable && (!hasExpectedReturn || !hasDuePreset)) ||
-    (!hasReusable && (hasExpectedReturn || hasDuePreset))
+    (requiresExpectedReturn && (!hasExpectedReturn || !hasDuePreset)) ||
+    ((!hasReusable || issue.assignmentType === 'LONG_TERM') && (hasExpectedReturn || hasDuePreset))
   ) {
     context.addIssue({
       code: 'custom',
       path: ['expectedReturnAt'],
-      message: hasReusable
+      message: requiresExpectedReturn
         ? 'Reusable material requires an expected return date and due preset.'
-        : 'Consumable-only Issues cannot have a return due date.',
+        : 'Permanent or consumable-only Issues cannot have a return due date.',
     });
   }
 });

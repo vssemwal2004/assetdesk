@@ -14,6 +14,17 @@ const admin = {
   role: 'ADMIN',
   status: 'ACTIVE',
   mustChangePassword: false,
+  permissions: [
+    'DASHBOARD',
+    'ISSUES_VIEW',
+    'ASSIGNMENTS_CREATE',
+    'RETURNS_RECORD',
+    'INVENTORY_VIEW',
+    'INVENTORY_MANAGE',
+    'RECEIVERS_VIEW',
+    'RECEIVERS_MANAGE',
+    'REPORTS_VIEW',
+  ],
 } as const;
 
 const worker = {
@@ -26,6 +37,7 @@ const worker = {
   role: 'WORKER',
   status: 'INVITED',
   mustChangePassword: true,
+  permissions: ['DASHBOARD', 'ISSUES_VIEW', 'RETURNS_RECORD', 'INVENTORY_VIEW', 'RECEIVERS_VIEW'],
 } as const;
 
 const activeWorker = {
@@ -358,6 +370,74 @@ describe('AssetDesk application routes', () => {
     expect((await screen.findAllByText('GEU-ISS-2026-000123')).length).toBeGreaterThan(0);
     expect(screen.getByText('Review all university Issue Records.')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Record Return' }).length).toBeGreaterThan(0);
+  });
+
+  it('opens an Issue Record detail page from reports without a blank screen', async () => {
+    window.history.replaceState({}, '', '/issues/GEU-ISS-2026-000004');
+    const { materialNames: _materialNames, ...issueBase } = issueSummary;
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path.includes('/api/v1/auth/me')) return Promise.resolve(json({ data: { user: admin } }));
+      if (path.includes('/api/v1/issues/GEU-ISS-2026-000004/notifications')) {
+        return Promise.resolve(json({ data: { notifications: [] } }));
+      }
+      if (path.includes('/api/v1/issues/GEU-ISS-2026-000004')) {
+        return Promise.resolve(
+          json({
+            accessScope: 'FULL',
+            data: {
+              issue: {
+                ...issueBase,
+                issueId: 'GEU-ISS-2026-000004',
+                expectedReturnAt: null,
+                duePreset: null,
+                assignmentType: 'LONG_TERM',
+                lines: [
+                  {
+                    lineId: '11111111-1111-4111-8111-111111111111',
+                    material: {
+                      materialCode: 'GEU-MAT-000004',
+                      name: 'Dell Latitude 5450',
+                      category: 'Laptops',
+                      description: 'Staff laptop',
+                      source: 'CATALOG',
+                      trackingMode: 'SERIALIZED',
+                      returnPolicy: 'REUSABLE',
+                      unitLabel: null,
+                    },
+                    issuedQuantity: 1,
+                    outstandingQuantity: 1,
+                    assets: [
+                      {
+                        assetTag: 'GEU-AST-000004',
+                        serialNumber: 'DL5450-001',
+                        conditionAtIssue: 'Good',
+                        outstanding: true,
+                        returnDisposition: null,
+                        returnedAt: null,
+                      },
+                    ],
+                  },
+                ],
+                returnEvents: [],
+                totalIssuedQuantity: 1,
+                totalOutstandingQuantity: 1,
+              },
+            },
+          }),
+        );
+      }
+      return Promise.resolve(problem(404));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'GEU-ISS-2026-000004' }))
+      .toBeInTheDocument();
+    expect(screen.getByText('Dell Latitude 5450')).toBeInTheDocument();
+    expect(screen.getByText('DL5450-001')).toBeInTheDocument();
+    expect(screen.getByText('Not applicable')).toBeInTheDocument();
   });
 
   it('allows a Worker to open the Issue material workflow', async () => {

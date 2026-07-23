@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Download, FileSpreadsheet } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import type { IssueReportFilters, IssueReportRow, IssueStatus } from '@assetdesk/contracts';
@@ -11,6 +12,7 @@ import {
   EmptyState,
   ErrorState,
   ErrorSummary,
+  FilterPopover,
   LoadingPanel,
   PageHeader,
   SearchForm,
@@ -76,6 +78,7 @@ export function ReportsPage() {
   }
 
   const rows = query.data?.data ?? [];
+  const activeFilters = [status, returnState, issuedFrom, issuedThrough].filter(Boolean).length;
   return (
     <div className="space-y-6">
       <PageHeader
@@ -100,9 +103,8 @@ export function ReportsPage() {
             </p>
           </div>
         </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_180px_190px_180px_180px]">
+        <div className="mt-5 grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
           <SearchForm
-            className="self-end"
             id="report-search"
             key={search}
             label="Search Issue Register"
@@ -110,53 +112,65 @@ export function ReportsPage() {
             placeholder="Issue ID, Receiver or material"
             value={search}
           />
-          <label className="space-y-1 text-xs font-bold text-[var(--color-text-muted)]">
-            Status
-            <select
-              className="field-input"
-              onChange={(event) => update({ status: event.target.value })}
-              value={status ?? ''}
-            >
-              <option value="">All statuses</option>
-              {statuses.map((value) => (
-                <option key={value} value={value}>
-                  {value.toLowerCase().replaceAll('_', ' ')}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-xs font-bold text-[var(--color-text-muted)]">
-            Return state
-            <select
-              className="field-input"
-              onChange={(event) => update({ returnState: event.target.value })}
-              value={returnState ?? ''}
-            >
-              <option value="">All Returns</option>
-              <option value="PENDING">Pending</option>
-              <option value="DUE_TODAY">Due today</option>
-            </select>
-          </label>
-          <label className="space-y-1 text-xs font-bold text-[var(--color-text-muted)]">
-            Issued from
-            <input
-              className="field-input"
-              max={issuedThrough}
-              onChange={(event) => update({ issuedFrom: event.target.value })}
-              type="date"
-              value={issuedFrom}
-            />
-          </label>
-          <label className="space-y-1 text-xs font-bold text-[var(--color-text-muted)]">
-            Issued through
-            <input
-              className="field-input"
-              min={issuedFrom}
-              onChange={(event) => update({ issuedThrough: event.target.value })}
-              type="date"
-              value={issuedThrough}
-            />
-          </label>
+          <FilterPopover
+            activeCount={activeFilters}
+            onClear={() =>
+              update({
+                status: '',
+                returnState: '',
+                issuedFrom: dateDaysAgo(30),
+                issuedThrough: dateDaysAgo(0),
+              })
+            }
+          >
+            <FilterField label="Status">
+              <FilterSelect
+                id="report-status-filter"
+                label="Filter by status"
+                onChange={(value) => update({ status: value })}
+                value={status ?? ''}
+              >
+                <option value="">All statuses</option>
+                {statuses.map((value) => (
+                  <option key={value} value={value}>
+                    {value.toLowerCase().replaceAll('_', ' ')}
+                  </option>
+                ))}
+              </FilterSelect>
+            </FilterField>
+            <FilterField label="Return state">
+              <FilterSelect
+                id="report-return-filter"
+                label="Filter by return state"
+                onChange={(value) => update({ returnState: value })}
+                value={returnState ?? ''}
+              >
+                <option value="">All returns</option>
+                <option value="PENDING">Pending</option>
+                <option value="DUE_TODAY">Due today</option>
+              </FilterSelect>
+            </FilterField>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FilterField label="Issued from">
+                <input
+                  className="field-input"
+                  max={issuedThrough}
+                  onChange={(event) => update({ issuedFrom: event.target.value })}
+                  type="date"
+                  value={issuedFrom}
+                />
+              </FilterField>
+              <FilterField label="Issued through">
+                <input
+                  className="field-input"
+                  min={issuedFrom}
+                  onChange={(event) => update({ issuedThrough: event.target.value })}
+                  type="date"
+                  value={issuedThrough}
+                />
+              </FilterField>
+            </div>
+          </FilterPopover>
         </div>
         {query.data ? <PageCount count={query.data.meta.total} noun="Issue Record" /> : null}
       </AppCard>
@@ -235,6 +249,10 @@ function ReportCard({ row }: { row: IssueReportRow }) {
         <CatalogBadge value={row.status} />
       </div>
       <p className="mt-3 text-sm text-[var(--color-text-muted)]">{materials(row)}</p>
+      <p className="mt-2 text-xs font-bold text-[var(--color-primary-strong)]">
+        {row.materialTypes.join(' + ')}
+        {row.serialNumbers.length ? ` · Serial: ${row.serialNumbers.join(', ')}` : ''}
+      </p>
       <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-lg bg-[var(--color-surface-tint)] p-2">
           <dt>Issued</dt>
@@ -287,6 +305,12 @@ function ReportTable({ rows }: { rows: IssueReportRow[] }) {
               </td>
               <td className="max-w-xs px-4 py-3 text-sm text-[var(--color-text-muted)]">
                 {materials(row)}
+                <p className="mt-1 text-xs font-bold text-[var(--color-primary-strong)]">
+                  {row.materialTypes.join(' + ')}
+                </p>
+                {row.serialNumbers.length ? (
+                  <p className="mt-1 text-xs">Serial: {row.serialNumbers.join(', ')}</p>
+                ) : null}
               </td>
               <td className="px-4 py-3 text-sm font-bold">
                 {row.totalIssuedQuantity} / {row.totalOutstandingQuantity}
@@ -298,6 +322,45 @@ function ReportTable({ rows }: { rows: IssueReportRow[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function FilterSelect({
+  id,
+  label,
+  value,
+  onChange,
+  children,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <label className="sr-only" htmlFor={id}>
+        {label}
+      </label>
+      <select
+        className="field-input"
+        id={id}
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        {children}
+      </select>
+    </div>
+  );
+}
+
+function FilterField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="field-label">{label}</p>
+      {children}
     </div>
   );
 }

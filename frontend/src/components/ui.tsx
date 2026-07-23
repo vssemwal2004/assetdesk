@@ -7,9 +7,11 @@ import {
   LoaderCircle,
   RefreshCw,
   Search,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   forwardRef,
+  useEffect,
   useId,
   useState,
   type ButtonHTMLAttributes,
@@ -199,6 +201,7 @@ export function SearchForm({
   error,
   autoComplete,
   transform,
+  debounceMs,
 }: {
   id: string;
   label: string;
@@ -210,9 +213,19 @@ export function SearchForm({
   error?: string | null;
   autoComplete?: string;
   transform?: (value: string) => string;
+  debounceMs?: number;
 }) {
   const [draft, setDraft] = useState(value);
   const errorId = `${id}-error`;
+
+  useEffect(() => {
+    if (!debounceMs || draft.trim() === value) return;
+    const timer = window.setTimeout(() => {
+      const next = transform ? transform(draft.trim()) : draft.trim();
+      onSearch(next);
+    }, debounceMs);
+    return () => window.clearTimeout(timer);
+  }, [debounceMs, draft, onSearch, transform, value]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -240,7 +253,11 @@ export function SearchForm({
           aria-describedby={error ? errorId : undefined}
           aria-invalid={Boolean(error)}
           autoComplete={autoComplete}
-          className={cn('field-input field-input-search', error && 'field-input-error', inputClassName)}
+          className={cn(
+            'field-input field-input-search',
+            error && 'field-input-error',
+            inputClassName,
+          )}
           id={id}
           onChange={(event) => setDraft(event.target.value)}
           placeholder={placeholder}
@@ -261,6 +278,41 @@ export function SearchForm({
         </p>
       ) : null}
     </form>
+  );
+}
+
+export function FilterPopover({
+  activeCount,
+  children,
+  onClear,
+}: {
+  activeCount: number;
+  children: ReactNode;
+  onClear: () => void;
+}) {
+  return (
+    <details className="relative">
+      <summary className="button-secondary flex min-h-11 cursor-pointer list-none items-center justify-center gap-2">
+        <SlidersHorizontal aria-hidden="true" size={18} />
+        Filters
+        {activeCount > 0 ? (
+          <span className="grid size-5 place-items-center rounded-full bg-[var(--color-primary)] text-xs font-bold text-white">
+            {activeCount}
+          </span>
+        ) : null}
+      </summary>
+      <div className="absolute right-0 z-30 mt-2 w-[min(88vw,360px)] rounded-[8px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-overlay)]">
+        <div className="flex items-center justify-between">
+          <h2 className="font-extrabold text-[var(--color-primary-strong)]">Filters</h2>
+          {activeCount > 0 ? (
+            <Button onClick={onClear} type="button" variant="quiet">
+              Clear all
+            </Button>
+          ) : null}
+        </div>
+        <div className="mt-4 space-y-4">{children}</div>
+      </div>
+    </details>
   );
 }
 

@@ -1,12 +1,18 @@
 import { model, Schema, type HydratedDocument, type Types } from 'mongoose';
 
-import type { AssignmentType, MaterialStatus, ReturnPolicy, TrackingMode } from '@assetdesk/contracts';
+import type {
+  AssignmentType,
+  MaterialStatus,
+  ReturnPolicy,
+  TrackingMode,
+} from '@assetdesk/contracts';
 
 export interface MaterialRecord {
   _id: Types.ObjectId;
   materialCode: string;
   name: string;
   category: string;
+  identityKey?: string;
   description?: string;
   trackingMode: TrackingMode;
   returnPolicy: ReturnPolicy;
@@ -34,6 +40,7 @@ const MaterialSchema = new Schema<MaterialRecord>(
     },
     name: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
     category: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
+    identityKey: { type: String, maxlength: 300 },
     description: { type: String, trim: true, maxlength: 1_000 },
     trackingMode: {
       type: String,
@@ -53,7 +60,8 @@ const MaterialSchema = new Schema<MaterialRecord>(
       required: true,
       default: ['LONG_TERM', 'SHORT_TERM'],
       validate: {
-        validator: (values: AssignmentType[]) => values.length >= 1 && new Set(values).size === values.length,
+        validator: (values: AssignmentType[]) =>
+          values.length >= 1 && new Set(values).size === values.length,
         message: 'Select at least one assignment type.',
       },
     },
@@ -90,6 +98,15 @@ MaterialSchema.pre('validate', function validateInventoryInvariants() {
 });
 
 MaterialSchema.index({ status: 1, trackingMode: 1, category: 1 });
+MaterialSchema.index({ status: 1, trackingMode: 1, availableQuantity: 1, createdAt: -1 });
 MaterialSchema.index({ name: 1 });
+MaterialSchema.index(
+  { name: 'text', category: 'text', description: 'text' },
+  { name: 'material_search_text', weights: { name: 10, category: 5, description: 1 } },
+);
+MaterialSchema.index(
+  { identityKey: 1 },
+  { unique: true, partialFilterExpression: { identityKey: { $type: 'string' } } },
+);
 
 export const MaterialModel = model<MaterialRecord>('Material', MaterialSchema);

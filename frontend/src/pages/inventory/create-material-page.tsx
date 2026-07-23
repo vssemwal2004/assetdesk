@@ -1,11 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, PackagePlus } from 'lucide-react';
+import { ArrowLeft, FileSpreadsheet, PackagePlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 
 import {
   CreateMaterialRequestSchema,
-  type AssignmentType,
   type CreateMaterialRequest,
   type ReturnPolicy,
   type TrackingMode,
@@ -23,30 +22,21 @@ interface MaterialForm {
   description: string;
   trackingMode: TrackingMode;
   returnPolicy: ReturnPolicy;
-  longTerm: boolean;
-  shortTerm: boolean;
   totalQuantity: string;
   unitLabel: string;
+  serialNumbers: string[];
 }
 
 const initialForm: MaterialForm = {
   name: '',
   category: '',
   description: '',
-  trackingMode: 'QUANTITY',
+  trackingMode: 'SERIALIZED',
   returnPolicy: 'REUSABLE',
-  longTerm: true,
-  shortTerm: true,
-  totalQuantity: '0',
+  totalQuantity: '1',
   unitLabel: 'units',
+  serialNumbers: [''],
 };
-
-function assignmentTypes(form: MaterialForm): AssignmentType[] {
-  return [
-    ...(form.longTerm ? (['LONG_TERM'] as const) : []),
-    ...(form.shortTerm ? (['SHORT_TERM'] as const) : []),
-  ];
-}
 
 function firstIssueMessage(error: unknown): string {
   const fallback = 'Check the material details before saving.';
@@ -55,10 +45,34 @@ function firstIssueMessage(error: unknown): string {
   return issues?.[0]?.message ?? fallback;
 }
 
+function normalizedSerialNumbers(values: string[]): string[] {
+  return values.map((serialNumber) => serialNumber.trim());
+}
+
+export function serialFieldsForQuantity(current: string[], rawQuantity: string): string[] {
+  const quantity = Number(rawQuantity);
+  return Number.isInteger(quantity) && quantity > 0 && quantity <= 1000
+    ? Array.from({ length: quantity }, (_, index) => current[index] ?? '')
+    : current;
+}
+
 function materialFormMessage(form: MaterialForm): string | null {
   if (form.name.trim().length < 2) return 'Enter a material name with at least 2 characters.';
   if (form.category.trim().length < 2) return 'Choose a material group, or enter a custom group.';
-  if (!form.longTerm && !form.shortTerm) return 'Choose at least one assignment type.';
+  if (form.trackingMode === 'SERIALIZED') {
+    const quantity = Number(form.totalQuantity);
+    const serialNumbers = normalizedSerialNumbers(form.serialNumbers);
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      return 'Enter the number of IT Assets being registered.';
+    }
+    if (quantity > 1000) return 'Register 1000 or fewer IT Assets at one time.';
+    if (serialNumbers.length !== quantity || serialNumbers.some((serialNumber) => !serialNumber))
+      return `Enter one serial number for each of the ${quantity} IT Assets.`;
+    const uniqueSerials = new Set(
+      serialNumbers.map((serialNumber) => serialNumber.toLocaleUpperCase('en-US')),
+    );
+    if (uniqueSerials.size !== serialNumbers.length) return 'Serial numbers must be unique.';
+  }
   if (form.trackingMode === 'QUANTITY' && form.unitLabel.trim().length < 1) {
     return 'Enter a unit label, for example units, boxes, meters, or pieces.';
   }
@@ -98,7 +112,8 @@ export function CreateMaterialPage() {
       name: form.name,
       category: form.category,
       ...(form.description.trim() ? { description: form.description } : {}),
-      assignmentTypes: assignmentTypes(form),
+      assignmentTypes:
+        form.trackingMode === 'SERIALIZED' ? (['LONG_TERM'] as const) : (['SHORT_TERM'] as const),
     };
     const draft =
       form.trackingMode === 'SERIALIZED'
@@ -106,6 +121,7 @@ export function CreateMaterialPage() {
             ...base,
             trackingMode: 'SERIALIZED',
             returnPolicy: 'REUSABLE',
+            serialNumbers: normalizedSerialNumbers(form.serialNumbers),
           }
         : {
             ...base,
@@ -131,6 +147,23 @@ export function CreateMaterialPage() {
     }));
   }
 
+  function setAssetQuantity(rawQuantity: string) {
+    setForm((current) => ({
+      ...current,
+      totalQuantity: rawQuantity,
+      serialNumbers: serialFieldsForQuantity(current.serialNumbers, rawQuantity),
+    }));
+  }
+
+  function setSerialNumber(index: number, serialNumber: string) {
+    setForm((current) => ({
+      ...current,
+      serialNumbers: current.serialNumbers.map((value, currentIndex) =>
+        currentIndex === index ? serialNumber : value,
+      ),
+    }));
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -140,22 +173,33 @@ export function CreateMaterialPage() {
             Back to Inventory
           </Link>
         }
-        description="Create reusable, consumable, quantity-tracked or serialized material records."
+        description="Create IT Assets with serial numbers or IT Consumables with quantity stock."
         title="Add material"
       />
 
       <AppCard className="max-w-3xl">
+        <div className="mb-5 grid grid-cols-2 gap-2">
+          <Button type="button">
+            <PackagePlus aria-hidden="true" size={18} />
+            Individual
+          </Button>
+          <Button
+            onClick={() => void navigate('/inventory/import')}
+            type="button"
+            variant="secondary"
+          >
+            <FileSpreadsheet aria-hidden="true" size={18} />
+            Bulk upload
+          </Button>
+        </div>
         <div className="mb-5 flex items-center gap-3">
           <span className="grid size-11 place-items-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
             <PackagePlus aria-hidden="true" size={22} />
           </span>
           <div>
-            <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-              Material setup
-            </h2>
+            <h2 className="font-extrabold text-[var(--color-primary-strong)]">Material setup</h2>
             <p className="text-sm leading-6 text-[var(--color-text-muted)]">
-              Serialized material starts with zero units. Add physical units from the material
-              details page after saving.
+              Choose IT Assets for serialized stock, or IT Consumables for quantity stock.
             </p>
           </div>
         </div>
@@ -178,7 +222,8 @@ export function CreateMaterialPage() {
 
           <div className="space-y-1.5">
             <label className="field-label" htmlFor="material-description">
-              Description <span className="font-medium text-[var(--color-text-muted)]">(optional)</span>
+              Description{' '}
+              <span className="font-medium text-[var(--color-text-muted)]">(optional)</span>
             </label>
             <textarea
               className="field-input min-h-24 resize-y"
@@ -194,17 +239,17 @@ export function CreateMaterialPage() {
           <div className="grid gap-5 sm:grid-cols-2">
             <SelectField
               id="material-tracking-mode"
-              label="Tracking type"
+              label="Type of material"
               onChange={(value) => setTrackingMode(value as TrackingMode)}
               value={form.trackingMode}
             >
-              <option value="QUANTITY">Quantity tracked</option>
-              <option value="SERIALIZED">Serialized assets</option>
+              <option value="SERIALIZED">IT Assets</option>
+              <option value="QUANTITY">IT Consumables</option>
             </SelectField>
             <SelectField
               disabled={form.trackingMode === 'SERIALIZED'}
               {...(form.trackingMode === 'SERIALIZED'
-                ? { hint: 'Serialized assets are always reusable.' }
+                ? { hint: 'IT Assets are always reusable.' }
                 : {})}
               id="material-return-policy"
               label="Return policy"
@@ -217,34 +262,6 @@ export function CreateMaterialPage() {
               <option value="CONSUMABLE">Consumable</option>
             </SelectField>
           </div>
-
-          <fieldset className="space-y-2">
-            <legend className="field-label">Allowed assignment type</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="flex min-h-11 items-center gap-3 rounded-[10px] border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-strong)]">
-                <input
-                  checked={form.longTerm}
-                  className="size-4 accent-[var(--color-primary)]"
-                  onChange={(event) =>
-                    setForm((value) => ({ ...value, longTerm: event.target.checked }))
-                  }
-                  type="checkbox"
-                />
-                Long-Term Assignment
-              </label>
-              <label className="flex min-h-11 items-center gap-3 rounded-[10px] border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-text-strong)]">
-                <input
-                  checked={form.shortTerm}
-                  className="size-4 accent-[var(--color-primary)]"
-                  onChange={(event) =>
-                    setForm((value) => ({ ...value, shortTerm: event.target.checked }))
-                  }
-                  type="checkbox"
-                />
-                Short-Term Assignment
-              </label>
-            </div>
-          </fieldset>
 
           {form.trackingMode === 'QUANTITY' ? (
             <div className="grid gap-5 sm:grid-cols-2">
@@ -269,6 +286,43 @@ export function CreateMaterialPage() {
                 required
                 value={form.unitLabel}
               />
+            </div>
+          ) : null}
+
+          {form.trackingMode === 'SERIALIZED' ? (
+            <div className="space-y-4">
+              <TextField
+                hint="Each IT Asset must have one unique serial number."
+                inputMode="numeric"
+                label="Quantity"
+                min="1"
+                onChange={(event) => setAssetQuantity(event.target.value)}
+                required
+                step="1"
+                type="number"
+                value={form.totalQuantity}
+              />
+              <div className="space-y-3">
+                <div>
+                  <h3 className="field-label">Serial numbers</h3>
+                  <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
+                    Enter the unique serial number printed on each individual IT Asset.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {form.serialNumbers.map((serialNumber, index) => (
+                    <TextField
+                      key={index}
+                      label={`Asset ${index + 1} serial number`}
+                      maxLength={120}
+                      onChange={(event) => setSerialNumber(index, event.target.value)}
+                      placeholder={`Serial number ${index + 1}`}
+                      required
+                      value={serialNumber}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           ) : null}
 

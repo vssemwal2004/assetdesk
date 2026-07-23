@@ -75,24 +75,8 @@ export function IssueDetailPage() {
     queryFn: ({ signal }) => getIssue(issueId, signal),
     enabled: Boolean(issueId),
   });
-
-  if (query.isPending) return <LoadingPanel label="Loading Issue Record" />;
-  if (query.isError || !query.data)
-    return (
-      <ErrorState
-        message="This Issue Record could not be loaded."
-        onRetry={() => void query.refetch()}
-        title="Issue Record not available"
-      />
-    );
-  const response = query.data;
-  const issue = response.data.issue;
-  const full = response.accessScope === 'FULL' ? response.data.issue : null;
-  const returnable = canRecordReturn(issue);
-  const totalIssued =
-    full?.totalIssuedQuantity ?? issue.lines.reduce((sum, line) => sum + line.issuedQuantity, 0);
   const deleteMutation = useMutation({
-    mutationFn: () => deleteIssue(issue.issueId),
+    mutationFn: () => deleteIssue(issueId),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['issues'] }),
@@ -107,7 +91,7 @@ export function IssueDetailPage() {
     },
   });
   const extendMutation = useMutation({
-    mutationFn: (expectedReturnAt: string) => updateIssue(issue.issueId, { expectedReturnAt }),
+    mutationFn: (expectedReturnAt: string) => updateIssue(issueId, { expectedReturnAt }),
     onSuccess: async (response) => {
       queryClient.setQueryData(['issue', issueId], {
         accessScope: 'FULL',
@@ -125,6 +109,22 @@ export function IssueDetailPage() {
       setExtendError(isApiError(error) ? error.message : 'The return date could not be extended.');
     },
   });
+
+  if (query.isPending) return <LoadingPanel label="Loading Issue Record" />;
+  if (query.isError || !query.data)
+    return (
+      <ErrorState
+        message="This Issue Record could not be loaded."
+        onRetry={() => void query.refetch()}
+        title="Issue Record not available"
+      />
+    );
+  const response = query.data;
+  const issue = response.data.issue;
+  const full = response.accessScope === 'FULL' ? response.data.issue : null;
+  const returnable = canRecordReturn(issue);
+  const totalIssued =
+    full?.totalIssuedQuantity ?? issue.lines.reduce((sum, line) => sum + line.issuedQuantity, 0);
 
   return (
     <div className="space-y-6">
@@ -529,7 +529,12 @@ function EditIssueCard({
         ) : null}
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <EditField label="Issued to" onChange={setFullName} value={fullName} />
-          <EditField label="University ID" onChange={setUniversityId} optional value={universityId} />
+          <EditField
+            label="University ID"
+            onChange={setUniversityId}
+            optional
+            value={universityId}
+          />
           <label className="block">
             <span className="field-label">Type</span>
             <select
@@ -633,7 +638,7 @@ function IssueLineCard({ line }: { line: IssueLine }) {
       {line.assets.length ? (
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[560px] border-collapse text-left text-sm">
-            <caption className="sr-only">Serialized units for {line.material.name}</caption>
+            <caption className="sr-only">IT Asset units for {line.material.name}</caption>
             <thead className="text-xs text-[var(--color-text-muted)]">
               <tr>
                 <th className="border-b border-[var(--color-border)] py-2 pr-3" scope="col">

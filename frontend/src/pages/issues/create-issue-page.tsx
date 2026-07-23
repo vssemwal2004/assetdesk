@@ -11,6 +11,7 @@ import {
   type Issue,
   type Material,
   type ReceiverType,
+  type TrackingMode,
 } from '@assetdesk/contracts';
 
 import { CatalogBadge } from '../../components/catalog-ui';
@@ -56,6 +57,7 @@ const receiverTypes: ReceiverType[] = [
 
 export function CreateIssuePage() {
   const queryClient = useQueryClient();
+  const [materialType, setMaterialType] = useState<TrackingMode>('SERIALIZED');
   const [assignmentType, setAssignmentType] = useState<AssignmentType>('LONG_TERM');
   const [issuedTo, setIssuedTo] = useState({
     fullName: '',
@@ -75,14 +77,14 @@ export function CreateIssuePage() {
   const [created, setCreated] = useState<Issue | null>(null);
 
   const inventoryQuery = useQuery({
-    queryKey: ['inventory', { assignmentType, materialSearch }],
+    queryKey: ['inventory', { materialSearch, materialType }],
     queryFn: ({ signal }) =>
       getInventory(
         {
           page: 1,
           pageSize: 100,
           status: 'ACTIVE',
-          assignmentType,
+          trackingMode: materialType,
           ...(materialSearch ? { search: materialSearch } : {}),
         },
         signal,
@@ -94,10 +96,6 @@ export function CreateIssuePage() {
     () => new Map(materials.map((material) => [material.materialCode, material])),
     [materials],
   );
-  const selectedHasReusable = lines.some(
-    (line) => materialByCode.get(line.materialCode)?.returnPolicy === 'REUSABLE',
-  );
-
   const mutation = useMutation({
     mutationFn: ({ input, key }: { input: CreateIssueRequest; key: string }) =>
       createIssue(input, key),
@@ -121,21 +119,22 @@ export function CreateIssuePage() {
   });
 
   function expectedReturn(): Date | null {
-    if (assignmentType === 'LONG_TERM' || !selectedHasReusable) return null;
+    if (materialType === 'QUANTITY' || assignmentType === 'LONG_TERM') return null;
     if (duePreset === 'CUSTOM') {
       return customReturnAt ? new Date(`${customReturnAt}:00+05:30`) : null;
     }
     return calculatePresetReturnInIst(new Date(), duePreset);
   }
 
-function buildInput(): CreateIssueRequest | null {
+  function buildInput(): CreateIssueRequest | null {
     const expected = expectedReturn();
     const stockIssue = firstStockIssue(lines, materialByCode);
     if (stockIssue) {
       setMessage(stockIssue);
       return null;
     }
-    const effectiveAssignmentType: AssignmentType = selectedHasReusable ? assignmentType : 'LONG_TERM';
+    const effectiveAssignmentType: AssignmentType =
+      materialType === 'SERIALIZED' ? assignmentType : 'LONG_TERM';
     const candidate = {
       mode: 'CATALOG' as const,
       assignmentType: effectiveAssignmentType,
@@ -204,8 +203,18 @@ function buildInput(): CreateIssueRequest | null {
           <dl className="mt-5 divide-y divide-[var(--color-border)] rounded-[12px] border border-[var(--color-border)] px-4">
             <Summary label="Assignment ID" value={created.issueId} />
             <Summary label="Issued To" value={created.receiver.fullName} />
-            <Summary label="Type" value={created.assignmentType === 'LONG_TERM' ? 'Long-Term Assignment' : 'Short-Term Assignment'} />
-            <Summary label="Expected Return" value={created.expectedReturnAt ? formatIstDateTime(created.expectedReturnAt) : 'No fixed return date'} />
+            <Summary
+              label="Type"
+              value={created.assignmentType === 'LONG_TERM' ? 'Permanent issue' : 'Return by date'}
+            />
+            <Summary
+              label="Expected Return"
+              value={
+                created.expectedReturnAt
+                  ? formatIstDateTime(created.expectedReturnAt)
+                  : 'No fixed return date'
+              }
+            />
           </dl>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row">
             <Link className="button-primary" to={`/issues/${created.issueId}`}>
@@ -241,10 +250,29 @@ function buildInput(): CreateIssueRequest | null {
       {message ? <ErrorSummary message={message} /> : null}
 
       <AppCard className="issue-panel">
-        <h2 className="text-base font-extrabold text-[var(--color-primary-strong)]">Assignment type</h2>
+        <h2 className="text-base font-extrabold text-[var(--color-primary-strong)]">
+          Material type
+        </h2>
         <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-[10px] bg-[var(--color-surface-tint)] p-1">
-          <TypeButton active={assignmentType === 'LONG_TERM'} label="Long-Term" onClick={() => setAssignmentType('LONG_TERM')} />
-          <TypeButton active={assignmentType === 'SHORT_TERM'} label="Short-Term" onClick={() => setAssignmentType('SHORT_TERM')} />
+          <TypeButton
+            active={materialType === 'SERIALIZED'}
+            label="IT Assets"
+            onClick={() => {
+              setMaterialType('SERIALIZED');
+              setLines([blankLine()]);
+              setMessage(null);
+            }}
+          />
+          <TypeButton
+            active={materialType === 'QUANTITY'}
+            label="IT Consumables"
+            onClick={() => {
+              setMaterialType('QUANTITY');
+              setAssignmentType('LONG_TERM');
+              setLines([blankLine()]);
+              setMessage(null);
+            }}
+          />
         </div>
       </AppCard>
 
@@ -299,8 +327,14 @@ function buildInput(): CreateIssueRequest | null {
 
       <AppCard className="issue-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <SectionTitle number="2" title="Inventory assets" />
-          <Button onClick={() => setLines((current) => [...current, blankLine()])} variant="secondary">
+          <SectionTitle
+            number="2"
+            title={materialType === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'}
+          />
+          <Button
+            onClick={() => setLines((current) => [...current, blankLine()])}
+            variant="secondary"
+          >
             <Plus aria-hidden="true" size={17} />
             Add item
           </Button>
@@ -318,22 +352,43 @@ function buildInput(): CreateIssueRequest | null {
               material={materialByCode.get(line.materialCode) ?? null}
               materials={materials}
               onChange={(next) =>
-                setLines((current) => current.map((candidate) => (candidate.id === line.id ? next : candidate)))
+                setLines((current) =>
+                  current.map((candidate) => (candidate.id === line.id ? next : candidate)),
+                )
               }
-              onRemove={() => setLines((current) => current.filter((candidate) => candidate.id !== line.id))}
+              onRemove={() =>
+                setLines((current) => current.filter((candidate) => candidate.id !== line.id))
+              }
               removable={lines.length > 1}
             />
           ))}
         </div>
       </AppCard>
 
-      {assignmentType === 'SHORT_TERM' && selectedHasReusable ? (
+      {materialType === 'SERIALIZED' ? (
         <AppCard className="issue-panel">
-          <SectionTitle number="3" title="Return schedule" />
+          <SectionTitle number="3" title="Issue duration" />
+          <div className="mt-4 grid grid-cols-2 gap-1.5 rounded-[10px] bg-[var(--color-surface-tint)] p-1">
+            <TypeButton
+              active={assignmentType === 'LONG_TERM'}
+              label="Permanent issue"
+              onClick={() => setAssignmentType('LONG_TERM')}
+            />
+            <TypeButton
+              active={assignmentType === 'SHORT_TERM'}
+              label="Return by date"
+              onClick={() => setAssignmentType('SHORT_TERM')}
+            />
+          </div>
+          {assignmentType === 'SHORT_TERM' ? (
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="space-y-1.5">
               <span className="field-label">Return period</span>
-              <select className="field-input field-input-compact" onChange={(event) => setDuePreset(event.target.value as DuePreset)} value={duePreset}>
+              <select
+                className="field-input field-input-compact"
+                onChange={(event) => setDuePreset(event.target.value as DuePreset)}
+                value={duePreset}
+              >
                 <option value="ONE_DAY">1 day</option>
                 <option value="ONE_WEEK">1 week</option>
                 <option value="ONE_MONTH">1 month</option>
@@ -343,28 +398,27 @@ function buildInput(): CreateIssueRequest | null {
               </select>
             </label>
             {duePreset === 'CUSTOM' ? (
-              <Field label="Expected return (IST)" onChange={setCustomReturnAt} type="datetime-local" value={customReturnAt} />
+              <Field
+                label="Expected return (IST)"
+                onChange={setCustomReturnAt}
+                type="datetime-local"
+                value={customReturnAt}
+              />
             ) : (
               <div className="rounded-[12px] bg-[var(--color-surface-tint)] p-4">
                 <p className="text-xs font-bold text-[var(--color-text-muted)]">Expected return</p>
-                <p className="mt-1 text-sm font-extrabold text-[var(--color-primary-strong)]">{formatIstDateTime(expectedReturn())}</p>
+                <p className="mt-1 text-sm font-extrabold text-[var(--color-primary-strong)]">
+                  {formatIstDateTime(expectedReturn())}
+                </p>
               </div>
             )}
           </div>
-        </AppCard>
-      ) : null}
-      {assignmentType === 'SHORT_TERM' && !selectedHasReusable ? (
-        <AppCard className="issue-panel">
-          <SectionTitle number="3" title="Return schedule" />
-          <p className="mt-3 text-sm leading-6 text-[var(--color-text-muted)]">
-            Selected material is consumable-only, so no return date is needed. Stock will be
-            deducted immediately when the Issue Record is created.
-          </p>
+          ) : null}
         </AppCard>
       ) : null}
 
       <AppCard className="issue-panel">
-        <SectionTitle number={assignmentType === 'SHORT_TERM' ? '4' : '3'} title="Notes" />
+        <SectionTitle number={materialType === 'SERIALIZED' ? '4' : '3'} title="Notes" />
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <TextArea label="Purpose" onChange={setPurpose} value={purpose} />
           <TextArea label="Notes" onChange={setNotes} value={notes} />
@@ -372,7 +426,9 @@ function buildInput(): CreateIssueRequest | null {
       </AppCard>
 
       <StickyWorkflowActions>
-        <Link className="button-secondary" to="/issues">Cancel</Link>
+        <Link className="button-secondary" to="/issues">
+          Cancel
+        </Link>
         <Button loading={mutation.isPending} onClick={submit}>
           {mutation.isPending ? 'Saving...' : 'Create assignment'}
         </Button>
@@ -381,7 +437,15 @@ function buildInput(): CreateIssueRequest | null {
   );
 }
 
-function TypeButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+function TypeButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
       className={`min-h-10 rounded-[9px] px-3 text-sm font-extrabold transition ${active ? 'bg-white text-[var(--color-primary)] shadow-[var(--shadow-card)]' : 'text-[var(--color-text-muted)]'}`}
@@ -415,25 +479,41 @@ function LineEditor({
   return (
     <div className="rounded-[10px] border border-[var(--color-border)] p-3">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-extrabold text-[var(--color-primary-strong)]">Item {index + 1}</h3>
+        <h3 className="text-sm font-extrabold text-[var(--color-primary-strong)]">
+          Item {index + 1}
+        </h3>
         {removable ? (
-          <button aria-label={`Remove item ${index + 1}`} className="icon-button text-[var(--color-danger)]" onClick={onRemove} type="button">
+          <button
+            aria-label={`Remove item ${index + 1}`}
+            className="icon-button text-[var(--color-danger)]"
+            onClick={onRemove}
+            type="button"
+          >
             <Trash2 aria-hidden="true" size={17} />
           </button>
         ) : null}
       </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_150px]">
+      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
         <label className="space-y-1.5">
           <span className="field-label">Material</span>
           <select
             className="field-input field-input-compact"
-            onChange={(event) => onChange({ ...line, materialCode: event.target.value, assetTags: [], quantity: '1' })}
+            onChange={(event) =>
+              onChange({ ...line, materialCode: event.target.value, assetTags: [], quantity: '1' })
+            }
             value={line.materialCode}
           >
             <option value="">Choose inventory material</option>
             {materials.map((item) => (
-              <option disabled={item.availableQuantity <= 0} key={item.materialCode} value={item.materialCode}>
-                {item.name} · {item.availableQuantity > 0 ? `${item.availableQuantity} available` : 'out of stock'}
+              <option
+                disabled={item.availableQuantity <= 0}
+                key={item.materialCode}
+                value={item.materialCode}
+              >
+                {item.name} ·{' '}
+                {item.availableQuantity > 0
+                  ? `${item.availableQuantity} available`
+                  : 'out of stock'}
               </option>
             ))}
           </select>
@@ -448,7 +528,27 @@ function LineEditor({
             value={line.quantity}
           />
         ) : material?.trackingMode === 'SERIALIZED' ? (
-          <SerializedPicker line={line} material={material} onChange={onChange} />
+          <div className="space-y-3">
+            <Field
+              label="IT Asset quantity"
+              max={String(material.availableQuantity)}
+              min="1"
+              onChange={(value) => {
+                const quantity = Number(value);
+                onChange({
+                  ...line,
+                  quantity: value,
+                  assetTags:
+                    Number.isInteger(quantity) && quantity >= 0
+                      ? line.assetTags.slice(0, quantity)
+                      : line.assetTags,
+                });
+              }}
+              type="number"
+              value={line.quantity}
+            />
+            <SerializedPicker line={line} material={material} onChange={onChange} />
+          </div>
         ) : null}
       </div>
       {material ? (
@@ -477,37 +577,62 @@ function LineEditor({
   );
 }
 
-function SerializedPicker({ line, material, onChange }: { line: LineDraft; material: Material; onChange: (line: LineDraft) => void }) {
+function SerializedPicker({
+  line,
+  material,
+  onChange,
+}: {
+  line: LineDraft;
+  material: Material;
+  onChange: (line: LineDraft) => void;
+}) {
   const query = useQuery({
     queryKey: ['asset-units', material.materialCode, 'available'],
     queryFn: ({ signal }) => getAvailableAssetUnits(material.materialCode, '', signal),
   });
   const units = query.data?.data ?? [];
+  const quantity = Number(line.quantity);
   return (
-    <label className="space-y-1.5">
-      <span className="field-label">Asset tags</span>
-      <select
-        className="field-input field-input-compact min-h-11"
-        multiple
-        onChange={(event) =>
-          onChange({
-            ...line,
-            assetTags: Array.from(event.target.selectedOptions).map((option) => option.value),
-          })
-        }
-        value={line.assetTags}
-      >
-        {units.map((unit: AssetUnit) => (
-          <option key={unit.assetTag} value={unit.assetTag}>
-            {unit.assetTag} · {unit.serialNumber ?? 'No serial'}
-          </option>
-        ))}
-      </select>
-    </label>
+    <fieldset className="space-y-2">
+      <legend className="field-label">Select serial numbers</legend>
+      <p className="text-xs text-[var(--color-text-muted)]">
+        Select {Number.isInteger(quantity) && quantity > 0 ? quantity : 0}. Currently selected:{' '}
+        {line.assetTags.length}.
+      </p>
+      <div className="max-h-52 space-y-1 overflow-y-auto rounded-[8px] border border-[var(--color-border)] p-2">
+        {units.map((unit: AssetUnit) => {
+          const checked = line.assetTags.includes(unit.assetTag);
+          const selectionFull =
+            Number.isInteger(quantity) && quantity > 0 && line.assetTags.length >= quantity;
+          return (
+            <label
+              className="flex min-h-10 items-center gap-3 rounded-[6px] px-2 text-sm hover:bg-[var(--color-surface-tint)]"
+              key={unit.assetTag}
+            >
+              <input
+                checked={checked}
+                disabled={!checked && selectionFull}
+                onChange={(event) =>
+                  onChange({
+                    ...line,
+                    assetTags: event.target.checked
+                      ? [...line.assetTags, unit.assetTag]
+                      : line.assetTags.filter((assetTag) => assetTag !== unit.assetTag),
+                  })
+                }
+                type="checkbox"
+              />
+              <span className="font-bold text-[var(--color-text-strong)]">{unit.serialNumber}</span>
+              <span className="text-xs text-[var(--color-text-muted)]">{unit.assetTag}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
-function firstStockIssue(
+export function firstStockIssue(
   lines: LineDraft[],
   materialByCode: Map<string, Material>,
 ): string | null {
@@ -533,22 +658,29 @@ function firstStockIssue(
       }
     }
     if (material.trackingMode === 'SERIALIZED') {
-      if (line.assetTags.length < 1) {
-        return `Select at least one asset tag for ${material.name}.`;
+      const requested = Number(line.quantity);
+      if (!Number.isInteger(requested) || requested < 1) {
+        return `Enter a valid IT Asset quantity for ${material.name}.`;
+      }
+      if (line.assetTags.length !== requested) {
+        return `Select exactly ${requested} serial number${requested === 1 ? '' : 's'} for ${material.name}.`;
       }
       for (const assetTag of line.assetTags) {
         if (seenAssetTags.has(assetTag)) return `${assetTag} is selected more than once.`;
         seenAssetTags.add(assetTag);
       }
       if (line.assetTags.length > material.availableQuantity) {
-        return `${material.name} has only ${material.availableQuantity} serialized units available.`;
+        return `${material.name} has only ${material.availableQuantity} IT Assets available.`;
       }
     }
   }
   return null;
 }
 
-function stockMessage(line: LineDraft, material: Material | null): { tone: 'ok' | 'warn'; text: string } | null {
+function stockMessage(
+  line: LineDraft,
+  material: Material | null,
+): { tone: 'ok' | 'warn'; text: string } | null {
   if (!material) return null;
   if (material.availableQuantity <= 0) {
     return { tone: 'warn', text: 'Out of stock. This material cannot be issued right now.' };
@@ -568,14 +700,16 @@ function stockMessage(line: LineDraft, material: Material | null): { tone: 'ok' 
   }
   return {
     tone: 'ok',
-    text: `${material.availableQuantity} serialized ${material.availableQuantity === 1 ? 'unit' : 'units'} available. Select exact asset tags.`,
+    text: `${material.availableQuantity} IT ${material.availableQuantity === 1 ? 'Asset' : 'Assets'} available. Select the required serial numbers.`,
   };
 }
 
 function SectionTitle({ number, title }: { number: string; title: string }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="grid size-8 place-items-center rounded-[9px] bg-[var(--color-primary)] text-sm font-extrabold text-white">{number}</span>
+      <span className="grid size-8 place-items-center rounded-[9px] bg-[var(--color-primary)] text-sm font-extrabold text-white">
+        {number}
+      </span>
       <h2 className="text-base font-extrabold text-[var(--color-primary-strong)]">{title}</h2>
     </div>
   );
@@ -613,11 +747,26 @@ function Field({
   );
 }
 
-function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function TextArea({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <label className="space-y-1.5">
-      <span className="field-label">{label} <span className="font-medium text-[var(--color-text-muted)]">(optional)</span></span>
-      <textarea className="field-input field-input-compact min-h-20 resize-y" maxLength={2000} onChange={(event) => onChange(event.target.value)} value={value} />
+      <span className="field-label">
+        {label} <span className="font-medium text-[var(--color-text-muted)]">(optional)</span>
+      </span>
+      <textarea
+        className="field-input field-input-compact min-h-20 resize-y"
+        maxLength={2000}
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      />
     </label>
   );
 }

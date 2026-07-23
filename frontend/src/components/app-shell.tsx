@@ -77,6 +77,7 @@ function pageTitle(pathname: string): string {
   if (pathname === '/audit') return 'Audit logs';
   if (pathname === '/reports') return 'Reports';
   if (pathname === '/inventory/new') return 'Add material';
+  if (pathname === '/inventory/import') return 'Bulk inventory upload';
   if (pathname.startsWith('/inventory/')) return 'Material details';
   if (pathname === '/inventory') return 'Inventory';
   if (pathname === '/receivers/new') return 'Add receiver';

@@ -40,41 +40,55 @@ function materialIssueLines(issue: IssueDocument): string[] {
     const units = line.assets.length
       ? line.assets
           .map(
-            (asset) => `${asset.assetTag}${asset.serialNumber ? ` / ${asset.serialNumber}` : ''}`,
+            (asset) =>
+              `Serial ${asset.serialNumber ?? 'not recorded'} (Asset tag ${asset.assetTag})`,
           )
           .join(', ')
       : `${line.issuedQuantity} ${line.material.unitLabel ?? 'units'}`;
-    return `${line.material.name} (${line.material.materialCode}) — ${units}`;
+    const type = line.material.trackingMode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable';
+    return `${type}: ${line.material.name} (${line.material.materialCode}) — ${units}`;
   });
 }
 
 function returnLines(event: ReturnEventRecord): string[] {
   return event.items.map((item) =>
     item.trackingMode === 'QUANTITY'
-      ? `${item.materialName} (${item.materialCode}) — ${item.quantity} returned — ${item.disposition}; ${item.condition}`
-      : `${item.materialName} (${item.materialCode}) — ${item.assetTag}${item.serialNumber ? ` / ${item.serialNumber}` : ''} — ${item.disposition}; ${item.condition}`,
+      ? `IT Consumable: ${item.materialName} (${item.materialCode}) — ${item.quantity} returned — ${item.disposition}; ${item.condition}`
+      : `IT Asset: ${item.materialName} (${item.materialCode}) — Serial ${item.serialNumber ?? 'not recorded'} (Asset tag ${item.assetTag}) — ${item.disposition}; ${item.condition}`,
   );
 }
 
 function outstandingLines(issue: IssueDocument): string[] {
   return issue.lines
     .filter((line) => line.outstandingQuantity > 0)
-    .map(
-      (line) =>
-        `${line.material.name} (${line.material.materialCode}) — ${line.outstandingQuantity} ${line.material.unitLabel ?? 'units'} outstanding`,
-    );
+    .map((line) => {
+      if (line.material.trackingMode === 'SERIALIZED') {
+        const assets = line.assets
+          .filter((asset) => asset.outstanding)
+          .map(
+            (asset) =>
+              `Serial ${asset.serialNumber ?? 'not recorded'} (Asset tag ${asset.assetTag})`,
+          )
+          .join(', ');
+        return `IT Asset: ${line.material.name} (${line.material.materialCode}) — ${assets}`;
+      }
+      return `IT Consumable: ${line.material.name} (${line.material.materialCode}) — ${line.outstandingQuantity} ${line.material.unitLabel ?? 'units'} outstanding`;
+    });
 }
 
-async function activeUser(userId: Types.ObjectId, session: ClientSession): Promise<UserDocument> {
-  const user = await UserModel.findOne({ _id: userId, status: 'ACTIVE' }).session(session);
+async function activeUser(userId: Types.ObjectId, session?: ClientSession): Promise<UserDocument> {
+  const query = UserModel.findOne({ _id: userId, status: 'ACTIVE' });
+  const user = session ? await query.session(session) : await query;
   if (!user) throw new AppError(401, 'SESSION_REVOKED', 'Your account is no longer authorized.');
   return user;
 }
 
-async function mainAdmin(session: ClientSession): Promise<UserDocument | null> {
-  return UserModel.findOne({ role: 'ADMIN', status: 'ACTIVE' })
-    .sort({ createdAt: 1, _id: 1 })
-    .session(session);
+async function mainAdmin(session?: ClientSession): Promise<UserDocument | null> {
+  const query = UserModel.findOne({ role: 'ADMIN', status: 'ACTIVE' }).sort({
+    createdAt: 1,
+    _id: 1,
+  });
+  return session ? query.session(session) : query;
 }
 
 function deduplicateRecipients(recipients: Recipient[]): Recipient[] {
@@ -89,14 +103,16 @@ function deduplicateRecipients(recipients: Recipient[]): Recipient[] {
 
 async function insertJobs(
   jobs: Array<Omit<EmailJobRecord, '_id' | 'createdAt' | 'updatedAt'>>,
-  session: ClientSession,
+  session?: ClientSession,
 ): Promise<void> {
-  if (jobs.length) await EmailJobModel.insertMany(jobs, { session });
+  if (!jobs.length) return;
+  if (session) await EmailJobModel.insertMany(jobs, { session });
+  else await EmailJobModel.insertMany(jobs);
 }
 
 export async function enqueueIssueNotifications(
   issue: IssueDocument,
-  session: ClientSession,
+  session?: ClientSession,
 ): Promise<void> {
   const actor = await activeUser(issue.issuedBy.userId, session);
   const recipients: Recipient[] = [

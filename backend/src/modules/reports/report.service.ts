@@ -9,7 +9,7 @@ import { buildIssueSearchFilter } from '../issues/issue.service.js';
 import { createCsv } from './csv.js';
 
 const reportFields =
-  'issueId status issuedAt expectedReturnAt receiver.fullName receiver.type receiver.department issuedBy.workerId issuedBy.name lines.material.name lines.issuedQuantity lines.outstandingQuantity totalIssuedQuantity totalOutstandingQuantity returnEvents.returnEventId';
+  'issueId status issuedAt expectedReturnAt receiver.fullName receiver.type receiver.department issuedBy.workerId issuedBy.name lines.material.name lines.material.trackingMode lines.issuedQuantity lines.outstandingQuantity lines.assets.serialNumber totalIssuedQuantity totalOutstandingQuantity returnEvents.returnEventId';
 const DAY_MILLISECONDS = 86_400_000;
 const MAX_REPORT_DAYS = 366;
 
@@ -63,6 +63,16 @@ function toRow(issue: IssueDocument): IssueReportRow {
     materials: issue.lines.map(
       (line) =>
         `${line.material.name} — issued ${line.issuedQuantity}, outstanding ${line.outstandingQuantity}`,
+    ),
+    materialTypes: [
+      ...new Set(
+        issue.lines.map((line) =>
+          line.material.trackingMode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable',
+        ),
+      ),
+    ],
+    serialNumbers: issue.lines.flatMap((line) =>
+      line.assets.flatMap((asset) => (asset.serialNumber ? [asset.serialNumber] : [])),
     ),
     totalIssuedQuantity: issue.totalIssuedQuantity,
     totalOutstandingQuantity: issue.totalOutstandingQuantity,
@@ -126,6 +136,8 @@ export async function exportIssueReport(filters: IssueReportFilters) {
       'Issued by ID',
       'Issued by name',
       'Materials',
+      'Material types',
+      'Serial numbers',
       'Total issued',
       'Outstanding',
       'Return events',
@@ -141,6 +153,8 @@ export async function exportIssueReport(filters: IssueReportFilters) {
       row.issuedByWorkerId,
       row.issuedByName,
       row.materials.join(' | '),
+      row.materialTypes.join(' | '),
+      row.serialNumbers.join(' | '),
       row.totalIssuedQuantity,
       row.totalOutstandingQuantity,
       row.returnEventCount,

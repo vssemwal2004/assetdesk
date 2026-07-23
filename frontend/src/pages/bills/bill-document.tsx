@@ -52,13 +52,28 @@ export function BillDocument({
       <section className="bill-grid bill-summary-grid">
         <BillField label="Issue ID" value={issue.issueId} />
         <BillField label="Issue status" value={issue.status.replaceAll('_', ' ')} />
-        <BillField label="Assignment type" value={issue.assignmentType.replaceAll('_', ' ')} />
+        <BillField
+          label="Material type"
+          value={[
+            ...new Set(
+              issue.lines.map((line) =>
+                line.material.trackingMode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable',
+              ),
+            ),
+          ].join(' + ')}
+        />
         <BillField label="Issued at" value={formatIstDateTime(issue.issuedAt)} />
         <BillField
           label="Expected return"
-          value={issue.expectedReturnAt ? formatIstDateTime(issue.expectedReturnAt) : 'No fixed return'}
+          value={
+            issue.expectedReturnAt ? formatIstDateTime(issue.expectedReturnAt) : 'No fixed return'
+          }
         />
         <BillField label="Generated at" value={generatedAt()} />
+        <BillField
+          label="Issue duration"
+          value={issue.assignmentType === 'LONG_TERM' ? 'Permanent issue' : 'Return by date'}
+        />
       </section>
 
       <section className="bill-two-column">
@@ -96,7 +111,7 @@ export function BillDocument({
                 <th scope="col">Material</th>
                 <th scope="col">Code</th>
                 <th scope="col">Category</th>
-                <th scope="col">Tracking</th>
+                <th scope="col">Material type</th>
                 <th scope="col">Policy</th>
                 <th scope="col">Issued</th>
                 <th scope="col">Outstanding</th>
@@ -109,7 +124,9 @@ export function BillDocument({
                   <td>{line.material.name}</td>
                   <td>{line.material.materialCode}</td>
                   <td>{line.material.category}</td>
-                  <td>{line.material.trackingMode.replaceAll('_', ' ')}</td>
+                  <td>
+                    {line.material.trackingMode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable'}
+                  </td>
                   <td>{line.material.returnPolicy}</td>
                   <td>
                     {line.issuedQuantity} {line.material.unitLabel ?? 'unit'}
@@ -133,7 +150,7 @@ export function BillDocument({
 
       {issue.lines.some((line) => line.assets.length > 0) ? (
         <section>
-          <h2>Serialized Asset Details</h2>
+          <h2>IT Asset Serial Details</h2>
           <div className="bill-table-wrap">
             <table className="bill-table">
               <thead>
@@ -213,10 +230,16 @@ function ReturnBillDocument({
       <section className="bill-grid bill-summary-grid">
         <BillField label="Issue ID" value={issue.issueId} />
         <BillField label="Return event" value={returnEvent.returnEventId} />
-        <BillField label="Return status" value={returnEvent.resultingIssueStatus.replaceAll('_', ' ')} />
+        <BillField
+          label="Return status"
+          value={returnEvent.resultingIssueStatus.replaceAll('_', ' ')}
+        />
         <BillField label="Returned at" value={formatIstDateTime(returnEvent.returnedAt)} />
         <BillField label="Returned units" value={String(returnedTotal(returnEvent))} />
-        <BillField label="Remaining outstanding" value={String(returnEvent.remainingOutstandingQuantity)} />
+        <BillField
+          label="Remaining outstanding"
+          value={String(returnEvent.remainingOutstandingQuantity)}
+        />
       </section>
 
       <section className="bill-two-column">
@@ -277,7 +300,9 @@ function ReturnBillDocument({
               <tr>
                 <td colSpan={3}>Total returned</td>
                 <td>{returnedTotal(returnEvent)}</td>
-                <td colSpan={3}>Remaining outstanding: {returnEvent.remainingOutstandingQuantity}</td>
+                <td colSpan={3}>
+                  Remaining outstanding: {returnEvent.remainingOutstandingQuantity}
+                </td>
               </tr>
             </tfoot>
           </table>

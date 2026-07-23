@@ -1,5 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, ClipboardList, Eye, MoreVertical, PackagePlus, Pencil, Printer, RotateCcw, Trash2 } from 'lucide-react';
+import {
+  CalendarClock,
+  ClipboardList,
+  Eye,
+  MoreVertical,
+  PackagePlus,
+  Pencil,
+  Printer,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
@@ -16,6 +26,7 @@ import {
   Button,
   EmptyState,
   ErrorState,
+  FilterPopover,
   LoadingPanel,
   PageHeader,
   SearchForm,
@@ -23,6 +34,7 @@ import {
 import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import { isApiError } from '../../lib/api-client';
 import { deleteIssue, getIssues, updateIssue } from '../../lib/issues-api';
+import { humanizeCatalogValue } from '../../lib/catalog-format';
 
 const statuses: IssueStatus[] = [
   'ISSUED',
@@ -42,9 +54,7 @@ function issuePeriod(value: string): IssuePeriod | undefined {
 }
 
 function issueReturnState(value: string): IssueReturnState | undefined {
-  return ['PENDING', 'DUE_TODAY'].includes(value)
-    ? (value as IssueReturnState)
-    : undefined;
+  return ['PENDING', 'DUE_TODAY'].includes(value) ? (value as IssueReturnState) : undefined;
 }
 
 export function IssuesPage() {
@@ -139,8 +149,9 @@ export function IssuesPage() {
         title="Issue Records"
       />
       <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)] sm:p-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_190px_190px_190px_auto]">
+        <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
           <SearchForm
+            debounceMs={300}
             id="issue-list-search"
             key={search}
             label="Search Issue Records"
@@ -148,58 +159,46 @@ export function IssuesPage() {
             placeholder="Issue ID, Receiver or material"
             value={search}
           />
-          <div>
-            <label className="sr-only" htmlFor="issue-status-filter">
-              Filter by Issue status
-            </label>
-            <select
-              className="field-input"
-              id="issue-status-filter"
-              onChange={(event) => updateParameters({ status: event.target.value })}
-              value={status ?? ''}
-            >
-              <option value="">All statuses</option>
-              {statuses.map((value) => (
-                <option key={value} value={value}>
-                  {value.toLowerCase().replaceAll('_', ' ')}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="sr-only" htmlFor="issue-period-filter">
-              Filter by issue date
-            </label>
-            <select
-              className="field-input"
-              id="issue-period-filter"
-              onChange={(event) => updateParameters({ period: event.target.value })}
-              value={period ?? ''}
-            >
-              <option value="">All issue dates</option>
-              <option value="TODAY">Issued today</option>
-            </select>
-          </div>
-          <div>
-            <label className="sr-only" htmlFor="issue-return-filter">
-              Filter by return state
-            </label>
-            <select
-              className="field-input"
-              id="issue-return-filter"
-              onChange={(event) => updateParameters({ returnState: event.target.value })}
-              value={returnState ?? ''}
-            >
-              <option value="">All return states</option>
-              <option value="PENDING">Pending Return</option>
-              <option value="DUE_TODAY">Due today</option>
-            </select>
-          </div>
-          {filtered ? (
-            <Button onClick={() => setParameters({ page: '1' })} variant="quiet">
-              Clear filters
-            </Button>
-          ) : null}
+          <FilterPopover
+            activeCount={[status, period, returnState].filter(Boolean).length}
+            onClear={() => updateParameters({ status: '', period: '', returnState: '' })}
+          >
+            <FilterField label="Issue status">
+              <select
+                className="field-input"
+                onChange={(event) => updateParameters({ status: event.target.value })}
+                value={status ?? ''}
+              >
+                <option value="">All statuses</option>
+                {statuses.map((value) => (
+                  <option key={value} value={value}>
+                    {humanizeCatalogValue(value)}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+            <FilterField label="Issue date">
+              <select
+                className="field-input"
+                onChange={(event) => updateParameters({ period: event.target.value })}
+                value={period ?? ''}
+              >
+                <option value="">Any date</option>
+                <option value="TODAY">Issued today</option>
+              </select>
+            </FilterField>
+            <FilterField label="Return state">
+              <select
+                className="field-input"
+                onChange={(event) => updateParameters({ returnState: event.target.value })}
+                value={returnState ?? ''}
+              >
+                <option value="">Any return state</option>
+                <option value="PENDING">Pending return</option>
+                <option value="DUE_TODAY">Due today</option>
+              </select>
+            </FilterField>
+          </FilterPopover>
         </div>
         {query.data ? <PageCount count={query.data.meta.total} noun="Issue Record" /> : null}
       </section>
@@ -236,10 +235,22 @@ export function IssuesPage() {
         <>
           <div className="space-y-3 min-[840px]:hidden">
             {issues.map((issue) => (
-              <IssueCard admin={admin} issue={issue} key={issue.issueId} onDelete={setDeleteTarget} onExtend={setExtendTarget} />
+              <IssueCard
+                admin={admin}
+                issue={issue}
+                key={issue.issueId}
+                onDelete={setDeleteTarget}
+                onExtend={setExtendTarget}
+              />
             ))}
           </div>
-          <IssueTable admin={admin} issues={issues} onDelete={setDeleteTarget} onExtend={setExtendTarget} onView={setViewIssue} />
+          <IssueTable
+            admin={admin}
+            issues={issues}
+            onDelete={setDeleteTarget}
+            onExtend={setExtendTarget}
+            onView={setViewIssue}
+          />
           {query.data && query.data.meta.totalPages > 1 ? (
             <nav
               aria-label="Issue Record pages"
@@ -302,6 +313,15 @@ export function IssuesPage() {
         />
       ) : null}
     </div>
+  );
+}
+
+function FilterField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="field-label">{label}</span>
+      {children}
+    </label>
   );
 }
 
@@ -379,7 +399,13 @@ function IssueCard({
         <Link className="button-secondary flex-1" to={`/issues/${issue.issueId}`}>
           View Issue Record
         </Link>
-        <IssueActionsMenu admin={admin} issue={issue} align="right" onDelete={onDelete} onExtend={onExtend} />
+        <IssueActionsMenu
+          admin={admin}
+          issue={issue}
+          align="right"
+          onDelete={onDelete}
+          onExtend={onExtend}
+        />
       </div>
     </article>
   );
@@ -535,7 +561,12 @@ function IssueTable({
               </td>
               <td className="px-4 text-right">
                 <div onClick={(event) => event.stopPropagation()}>
-                  <IssueActionsMenu admin={admin} issue={issue} onDelete={onDelete} onExtend={onExtend} />
+                  <IssueActionsMenu
+                    admin={admin}
+                    issue={issue}
+                    onDelete={onDelete}
+                    onExtend={onExtend}
+                  />
                 </div>
               </td>
             </tr>
@@ -665,16 +696,16 @@ function IssueQuickViewDialog({
                   Extend date
                 </Button>
               ) : null}
-            <Button
-              onClick={() => {
-                onClose();
-                onDelete(issue);
-              }}
-              variant="danger"
-            >
-              <Trash2 aria-hidden="true" size={18} />
-              Delete
-            </Button>
+              <Button
+                onClick={() => {
+                  onClose();
+                  onDelete(issue);
+                }}
+                variant="danger"
+              >
+                <Trash2 aria-hidden="true" size={18} />
+                Delete
+              </Button>
             </>
           ) : null}
         </div>
@@ -713,7 +744,11 @@ function DeleteIssueDialog({
             </p>
           </div>
         </div>
-        {error ? <div className="mt-4"><ErrorState message={error} title="Delete failed" /></div> : null}
+        {error ? (
+          <div className="mt-4">
+            <ErrorState message={error} title="Delete failed" />
+          </div>
+        ) : null}
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button disabled={loading} onClick={onCancel} variant="secondary">
             Cancel

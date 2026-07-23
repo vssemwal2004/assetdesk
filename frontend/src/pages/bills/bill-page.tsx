@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Printer } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
 import { Link, useParams } from 'react-router';
 
 import { Button, ErrorState, LoadingPanel, PageHeader } from '../../components/ui';
@@ -54,8 +54,8 @@ export function BillPage() {
               Back to Bills
             </Link>
             <Button className="print:hidden" onClick={() => window.print()}>
-              <Printer aria-hidden="true" size={18} />
-              Print bill
+              <Download aria-hidden="true" size={18} />
+              Print / Save PDF
             </Button>
           </>
         }

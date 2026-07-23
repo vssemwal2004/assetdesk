@@ -51,6 +51,11 @@ const CreateMaterialPage = lazy(() =>
     default: module.CreateMaterialPage,
   })),
 );
+const InventoryImportPage = lazy(() =>
+  import('../pages/inventory/inventory-import-page').then((module) => ({
+    default: module.InventoryImportPage,
+  })),
+);
 const ReceiversPage = lazy(() =>
   import('../pages/receivers/receivers-page').then((module) => ({
     default: module.ReceiversPage,
@@ -274,6 +279,14 @@ export function App() {
                       </Suspense>
                     }
                     path="/inventory/new"
+                  />
+                  <Route
+                    element={
+                      <Suspense fallback={<FeatureRouteFallback />}>
+                        <InventoryImportPage />
+                      </Suspense>
+                    }
+                    path="/inventory/import"
                   />
                   <Route
                     element={

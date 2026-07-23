@@ -421,15 +421,16 @@ IssueSchema.pre('validate', function validateIssueInvariants() {
   const hasReusable = this.lines.some((line) => line.material.returnPolicy === 'REUSABLE');
   const hasExpectedReturn = this.expectedReturnAt !== undefined;
   const hasDuePreset = this.duePreset !== undefined;
+  const requiresExpectedReturn = hasReusable && this.assignmentType === 'SHORT_TERM';
   if (
-    (hasReusable && (!hasExpectedReturn || !hasDuePreset)) ||
-    (!hasReusable && (hasExpectedReturn || hasDuePreset))
+    (requiresExpectedReturn && (!hasExpectedReturn || !hasDuePreset)) ||
+    ((!hasReusable || this.assignmentType === 'LONG_TERM') && (hasExpectedReturn || hasDuePreset))
   ) {
     this.invalidate(
       'expectedReturnAt',
-      hasReusable
+      requiresExpectedReturn
         ? 'Reusable material requires an expected Return time and due preset.'
-        : 'Consumable-only Issues cannot have a Return due time.',
+        : 'Permanent or consumable-only Issues cannot have a Return due time.',
     );
   }
 });
@@ -450,6 +451,7 @@ IssueSchema.index(
 IssueSchema.index({ createdByUserId: 1, issuedAt: -1 });
 IssueSchema.index({ 'returnEvents.performedBy.userId': 1, issuedAt: -1 });
 IssueSchema.index({ status: 1, expectedReturnAt: 1, issuedAt: -1 });
+IssueSchema.index({ status: 1, totalOutstandingQuantity: 1, issuedAt: -1 });
 IssueSchema.index({ issuedAt: -1, _id: -1 });
 IssueSchema.index({ status: 1, totalOutstandingQuantity: 1 });
 IssueSchema.index({ 'receiver.receiverCode': 1 });
@@ -457,5 +459,20 @@ IssueSchema.index({ 'receiver.fullName': 1 });
 IssueSchema.index({ 'lines.material.materialCode': 1 });
 IssueSchema.index({ 'lines.assets.assetTag': 1 });
 IssueSchema.index({ 'lines.assets.serialNumber': 1 });
+IssueSchema.index(
+  {
+    'receiver.fullName': 'text',
+    'receiver.universityId': 'text',
+    'lines.material.name': 'text',
+  },
+  {
+    name: 'issue_search_text',
+    weights: {
+      'receiver.fullName': 10,
+      'receiver.universityId': 8,
+      'lines.material.name': 6,
+    },
+  },
+);
 
 export const IssueModel = model<IssueRecord>('Issue', IssueSchema);

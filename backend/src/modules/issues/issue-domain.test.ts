@@ -6,7 +6,7 @@ import { AppError } from '../../middleware/error-handler.js';
 import { fingerprintRequest, hashIdempotencyKey, parseIdempotencyKey } from './idempotency.js';
 import { calculateExpectedReturnAt, issueYearInIst, istDayRange } from './issue-date.js';
 import { formatIssueId } from './issue-id.js';
-import { buildReturnSearchFilter } from './issue.service.js';
+import { buildIssueSearchFilter, buildReturnSearchFilter } from './issue.service.js';
 
 function expectProblem(run: () => unknown, code: string): void {
   try {
@@ -81,6 +81,17 @@ describe('Issue dates and identifiers', () => {
         }),
       'EXPECTED_RETURN_MUST_BE_FUTURE',
     );
+  });
+});
+
+describe('Issue list search', () => {
+  it('uses exact indexed identifiers and text search for names or materials', () => {
+    expect(buildIssueSearchFilter('geu-iss-2026-000001')).toEqual({
+      issueId: 'GEU-ISS-2026-000001',
+    });
+    expect(buildIssueSearchFilter('Anita Sharma')).toEqual({
+      $text: { $search: 'Anita Sharma' },
+    });
   });
 });
 

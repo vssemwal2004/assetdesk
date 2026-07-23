@@ -26,6 +26,8 @@ export const IssueReportRowSchema = z
     issuedByWorkerId: z.string().min(1),
     issuedByName: z.string().min(1),
     materials: z.array(z.string().min(1)).min(1),
+    materialTypes: z.array(z.enum(['IT Asset', 'IT Consumable'])).min(1),
+    serialNumbers: z.array(z.string().min(1)),
     totalIssuedQuantity: z.number().int().positive(),
     totalOutstandingQuantity: z.number().int().nonnegative(),
     returnEventCount: z.number().int().nonnegative(),

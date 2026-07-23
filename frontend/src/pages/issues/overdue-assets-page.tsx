@@ -84,7 +84,7 @@ export function OverdueAssetsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        description="Track expired short-term Issues where reusable material is still outstanding."
+        description="Track overdue return-by-date issues where reusable material is still outstanding."
         title="Overdue Assets"
       />
 
@@ -100,9 +100,7 @@ export function OverdueAssetsPage() {
         {query.data ? <PageCount count={query.data.meta.total} noun="overdue record" /> : null}
       </section>
 
-      {actionError ? (
-        <ErrorSummary message={actionError} title="Action failed" />
-      ) : null}
+      {actionError ? <ErrorSummary message={actionError} title="Action failed" /> : null}
 
       {query.isPending ? (
         <LoadingPanel label="Loading overdue assets" />
@@ -141,7 +139,10 @@ export function OverdueAssetsPage() {
           </div>
           <OverdueTable issues={issues} onRemind={setReminderTarget} onView={setViewIssue} />
           {query.data && query.data.meta.totalPages > 1 ? (
-            <nav aria-label="Overdue asset pages" className="flex items-center justify-between gap-3">
+            <nav
+              aria-label="Overdue asset pages"
+              className="flex items-center justify-between gap-3"
+            >
               <Button
                 disabled={page <= 1}
                 onClick={() => update({ page: String(page - 1) })}
@@ -205,7 +206,8 @@ function OverdueCard({
         <CatalogBadge value="OVERDUE" />
       </div>
       <p className="mt-3 text-sm font-semibold text-[var(--color-danger)]">
-        Due {formatIstDateTime(issue.expectedReturnAt)} · overdue {overdueDuration(issue.overdueMinutes)}
+        Due {formatIstDateTime(issue.expectedReturnAt)} · overdue{' '}
+        {overdueDuration(issue.overdueMinutes)}
       </p>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
         <Button onClick={() => onView(issue)} variant="secondary">
@@ -275,12 +277,24 @@ function OverdueTable({
         <caption className="sr-only">Overdue assets</caption>
         <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
           <tr>
-            <th className="h-11 px-4 font-bold" scope="col">Issue</th>
-            <th className="h-11 px-4 font-bold" scope="col">Receiver</th>
-            <th className="h-11 px-4 font-bold" scope="col">Material</th>
-            <th className="h-11 px-4 font-bold" scope="col">Expected return</th>
-            <th className="h-11 px-4 font-bold" scope="col">Reminder</th>
-            <th className="h-11 px-4 text-right font-bold" scope="col">Action</th>
+            <th className="h-11 px-4 font-bold" scope="col">
+              Issue
+            </th>
+            <th className="h-11 px-4 font-bold" scope="col">
+              Receiver
+            </th>
+            <th className="h-11 px-4 font-bold" scope="col">
+              Material
+            </th>
+            <th className="h-11 px-4 font-bold" scope="col">
+              Expected return
+            </th>
+            <th className="h-11 px-4 font-bold" scope="col">
+              Reminder
+            </th>
+            <th className="h-11 px-4 text-right font-bold" scope="col">
+              Action
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[var(--color-border)]">
@@ -292,7 +306,9 @@ function OverdueTable({
               tabIndex={0}
             >
               <td className="px-4">
-                <p className="text-sm font-bold text-[var(--color-primary-strong)]">{issue.issueId}</p>
+                <p className="text-sm font-bold text-[var(--color-primary-strong)]">
+                  {issue.issueId}
+                </p>
                 <p className="mt-1 text-xs font-semibold text-[var(--color-danger)]">
                   {overdueDuration(issue.overdueMinutes)} overdue
                 </p>
@@ -406,9 +422,15 @@ function OverdueDetails({ issue, onClose }: { issue: OverdueIssue; onClose: () =
           </div>
         </div>
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button onClick={onClose} variant="secondary">Close</Button>
-          <Link className="button-secondary" to={`/issues/${issue.issueId}`}>Full record</Link>
-          <Link className="button-primary" to={`/issues/${issue.issueId}/return`}>Record Return</Link>
+          <Button onClick={onClose} variant="secondary">
+            Close
+          </Button>
+          <Link className="button-secondary" to={`/issues/${issue.issueId}`}>
+            Full record
+          </Link>
+          <Link className="button-primary" to={`/issues/${issue.issueId}/return`}>
+            Record Return
+          </Link>
         </div>
       </div>
     </Dialog>
@@ -441,7 +463,8 @@ function ReminderDialog({
             </h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
               A reminder email will be queued for {issue.receiver.fullName} at{' '}
-              {issue.receiver.email}. This record is overdue by {overdueDuration(issue.overdueMinutes)}.
+              {issue.receiver.email}. This record is overdue by{' '}
+              {overdueDuration(issue.overdueMinutes)}.
             </p>
           </div>
         </div>
@@ -451,7 +474,9 @@ function ReminderDialog({
           </p>
         ) : null}
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button disabled={loading} onClick={onCancel} variant="secondary">Cancel</Button>
+          <Button disabled={loading} onClick={onCancel} variant="secondary">
+            Cancel
+          </Button>
           <Button loading={loading} onClick={onConfirm}>
             <Bell aria-hidden="true" size={18} />
             Send reminder

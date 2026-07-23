@@ -15,6 +15,7 @@ import type {
   UpdateMaterialRequest,
   UserRole,
 } from '@assetdesk/contracts';
+import { MaterialCodeSchema } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
 import { IssueModel } from '../issues/issue.model.js';
@@ -40,8 +41,7 @@ export interface MaterialListInput {
   status?: MaterialStatus;
   trackingMode?: TrackingMode;
   returnPolicy?: ReturnPolicy;
-  assignmentType?: 'LONG_TERM' | 'SHORT_TERM';
-  stockState?: 'IN_STOCK' | 'OUT_OF_STOCK';
+  stockState?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
   category?: string;
 }
 
@@ -71,6 +71,12 @@ export interface AssetUnitListResult {
 }
 
 export interface AssetUnitMutationResult {
+  unit: AssetUnit;
+  material: Material;
+  previousUnit?: AssetUnit;
+}
+
+export interface AssetUnitDeletionResult {
   unit: AssetUnit;
   material: Material;
 }
@@ -135,6 +141,25 @@ function normalizeSerial(serialNumber: string): string {
   return serialNumber.trim().toLocaleUpperCase('en-US');
 }
 
+function materialIdentity(trackingMode: TrackingMode, name: string, category: string): string {
+  return `${trackingMode}|${name.trim().toLocaleUpperCase('en-US')}|${category
+    .trim()
+    .toLocaleUpperCase('en-US')}`;
+}
+
+function materialConflict(): AppError {
+  return new AppError(
+    409,
+    'MATERIAL_ALREADY_EXISTS',
+    'A material with this name, group and type already exists.',
+    { name: 'Use the existing material or enter a different name or group.' },
+  );
+}
+
+export function translateMaterialDuplicateError(error: unknown): AppError | null {
+  return duplicateField(error) === 'identityKey' ? materialConflict() : null;
+}
+
 async function findMaterialRecord(materialCode: string): Promise<MaterialDocument> {
   const material = await MaterialModel.findOne({ materialCode });
   if (!material) throw materialNotFound();
@@ -162,18 +187,22 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
   else if (input.status) filter.status = input.status;
   if (input.trackingMode) filter.trackingMode = input.trackingMode;
   if (input.returnPolicy) filter.returnPolicy = input.returnPolicy;
-  if (input.assignmentType) filter.assignmentTypes = input.assignmentType;
-  if (input.stockState === 'IN_STOCK') filter.availableQuantity = { $gt: 0 };
+  if (input.stockState === 'AVAILABLE') filter.availableQuantity = { $gt: 0 };
+  if (input.stockState === 'LOW_STOCK') {
+    filter.availableQuantity = { $gt: 0 };
+    filter.$expr = { $lte: ['$availableQuantity', { $ceil: { $multiply: ['$totalQuantity', 0.2] } }] };
+  }
   if (input.stockState === 'OUT_OF_STOCK') filter.availableQuantity = 0;
+  if (input.stockState === 'ISSUED') filter.issuedQuantity = { $gt: 0 };
+  if (input.stockState === 'FULLY_ISSUED') {
+    filter.issuedQuantity = { $gt: 0 };
+    filter.$expr = { $eq: ['$issuedQuantity', '$totalQuantity'] };
+  }
   if (input.category) filter.category = exactCaseInsensitive(input.category);
   if (input.search) {
-    const search = new RegExp(escapeSearchRegex(input.search), 'i');
-    filter.$or = [
-      { materialCode: search },
-      { name: search },
-      { category: search },
-      { description: search },
-    ];
+    const normalized = input.search.trim().toUpperCase();
+    if (MaterialCodeSchema.safeParse(normalized).success) filter.materialCode = normalized;
+    else filter.$text = { $search: input.search.trim() };
   }
   return filter;
 }
@@ -248,15 +277,28 @@ export async function createMaterial(
   createdByUserId: string,
 ): Promise<Material> {
   const createdBy = objectId(createdByUserId);
+  const existing = await MaterialModel.exists({
+    trackingMode: input.trackingMode,
+    name: exactCaseInsensitive(input.name),
+    category: exactCaseInsensitive(input.category),
+  });
+  if (existing) throw materialConflict();
 
   for (let attempt = 0; attempt < MAX_IDENTIFIER_COLLISION_ATTEMPTS; attempt += 1) {
     const materialCode = await allocateMaterialCode();
+    const assetTags =
+      input.trackingMode === 'SERIALIZED'
+        ? await Promise.all(input.serialNumbers.map(() => allocateAssetTag()))
+        : [];
+    let createdMaterial: MaterialDocument | undefined;
     try {
-      const initialQuantity = input.trackingMode === 'QUANTITY' ? input.totalQuantity : 0;
-      const material = await MaterialModel.create({
+      const initialQuantity =
+        input.trackingMode === 'QUANTITY' ? input.totalQuantity : input.serialNumbers.length;
+      createdMaterial = await MaterialModel.create({
         materialCode,
         name: input.name,
         category: input.category,
+        identityKey: materialIdentity(input.trackingMode, input.name, input.category),
         ...(input.description ? { description: input.description } : {}),
         trackingMode: input.trackingMode,
         returnPolicy: input.returnPolicy,
@@ -268,9 +310,41 @@ export async function createMaterial(
         ...(input.trackingMode === 'QUANTITY' ? { unitLabel: input.unitLabel } : {}),
         createdBy,
       });
-      return toMaterial(material);
+
+      if (input.trackingMode === 'SERIALIZED') {
+        const material = createdMaterial;
+        await AssetUnitModel.insertMany(
+          input.serialNumbers.map((serialNumber, index) => {
+            const assetTag = assetTags[index];
+            if (!assetTag) throw new Error('Asset tag allocation failed.');
+            return {
+              assetTag,
+              materialId: material._id,
+              materialCode: material.materialCode,
+              serialNumber,
+              serialNumberNormalized: normalizeSerial(serialNumber),
+              condition: 'Good',
+              status: 'AVAILABLE',
+              createdBy,
+            };
+          }),
+        );
+      }
+
+      return toMaterial(createdMaterial);
     } catch (error) {
+      if (createdMaterial) {
+        await Promise.all([
+          AssetUnitModel.deleteMany({ materialId: createdMaterial._id }),
+          MaterialModel.deleteOne({ _id: createdMaterial._id }),
+        ]);
+      }
       if (duplicateField(error) === 'materialCode') continue;
+      if (duplicateField(error) === 'assetTag') continue;
+      const materialDuplicate = translateMaterialDuplicateError(error);
+      if (materialDuplicate) throw materialDuplicate;
+      const translated = translateAssetUnitDuplicateError(error);
+      if (translated) throw translated;
       throw error;
     }
   }
@@ -312,60 +386,62 @@ export async function updateMaterial(
   materialCode: string,
   input: UpdateMaterialRequest,
 ): Promise<Material> {
-  const session = await mongoose.startSession();
-  let updatedMaterial: MaterialDocument | undefined;
-
   try {
-    await session.withTransaction(async () => {
-      const material = await MaterialModel.findOne({ materialCode }).session(session);
-      if (!material) throw materialNotFound();
+    const material = await MaterialModel.findOne({ materialCode });
+    if (!material) throw materialNotFound();
 
-      if (input.returnPolicy !== undefined && input.returnPolicy !== material.returnPolicy) {
-        if (material.trackingMode === 'SERIALIZED' && input.returnPolicy !== 'REUSABLE') {
-          throw new AppError(
-            409,
-            'SERIALIZED_MATERIAL_MUST_BE_REUSABLE',
-            'Serialized material must use the reusable return policy.',
-          );
-        }
-        if (material.issuedQuantity > 0) {
-          throw new AppError(
-            409,
-            'MATERIAL_HAS_ISSUED_STOCK',
-            'The return policy cannot change while stock is issued.',
-          );
-        }
-        material.returnPolicy = input.returnPolicy;
+    if (input.returnPolicy !== undefined && input.returnPolicy !== material.returnPolicy) {
+      if (material.trackingMode === 'SERIALIZED' && input.returnPolicy !== 'REUSABLE') {
+        throw new AppError(
+          409,
+          'SERIALIZED_MATERIAL_MUST_BE_REUSABLE',
+          'Serialized material must use the reusable return policy.',
+        );
       }
+      if (material.issuedQuantity > 0) {
+        throw new AppError(
+          409,
+          'MATERIAL_HAS_ISSUED_STOCK',
+          'The return policy cannot change while stock is issued.',
+        );
+      }
+      material.returnPolicy = input.returnPolicy;
+    }
 
-      if (input.unitLabel !== undefined) {
-        if (material.trackingMode !== 'QUANTITY') {
-          throw new AppError(
-            409,
-            'SERIALIZED_MATERIAL_HAS_NO_UNIT_LABEL',
-            'A unit label only applies to quantity-tracked material.',
-          );
-        }
-        material.unitLabel = input.unitLabel;
+    if (input.unitLabel !== undefined) {
+      if (material.trackingMode !== 'QUANTITY') {
+        throw new AppError(
+          409,
+          'SERIALIZED_MATERIAL_HAS_NO_UNIT_LABEL',
+          'A unit label only applies to quantity-tracked material.',
+        );
       }
-      if (input.name !== undefined) material.name = input.name;
-      if (input.category !== undefined) material.category = input.category;
-      if (input.assignmentTypes !== undefined) material.assignmentTypes = input.assignmentTypes;
-      if (Object.hasOwn(input, 'description')) {
-        material.set('description', input.description ?? undefined);
-      }
+      material.unitLabel = input.unitLabel;
+    }
+    if (input.name !== undefined) material.name = input.name;
+    if (input.category !== undefined) material.category = input.category;
+    if (input.name !== undefined || input.category !== undefined) {
+      const duplicate = await MaterialModel.exists({
+        _id: { $ne: material._id },
+        trackingMode: material.trackingMode,
+        name: exactCaseInsensitive(material.name),
+        category: exactCaseInsensitive(material.category),
+      });
+      if (duplicate) throw materialConflict();
+      material.identityKey = materialIdentity(material.trackingMode, material.name, material.category);
+    }
+    if (input.assignmentTypes !== undefined) material.assignmentTypes = input.assignmentTypes;
+    if (Object.hasOwn(input, 'description')) {
+      material.set('description', input.description ?? undefined);
+    }
 
-      await material.save({ session });
-      updatedMaterial = material;
-    });
-  } finally {
-    await session.endSession();
+    await material.save();
+    return toMaterial(material);
+  } catch (error) {
+    const duplicate = translateMaterialDuplicateError(error);
+    if (duplicate) throw duplicate;
+    throw error;
   }
-
-  if (!updatedMaterial) {
-    throw new AppError(500, 'MATERIAL_UPDATE_FAILED', 'The material could not be updated.');
-  }
-  return toMaterial(updatedMaterial);
 }
 
 export async function updateMaterialStatus(
@@ -557,52 +633,48 @@ export async function createAssetUnit(
   const createdBy = objectId(createdByUserId);
   for (let attempt = 0; attempt < MAX_IDENTIFIER_COLLISION_ATTEMPTS; attempt += 1) {
     const assetTag = await allocateAssetTag();
-    const session = await mongoose.startSession();
     let createdUnit: InstanceType<typeof AssetUnitModel> | undefined;
     let updatedMaterial: MaterialDocument | undefined;
 
     try {
-      await session.withTransaction(async () => {
-        const currentMaterial = await MaterialModel.findOneAndUpdate(
-          { _id: material._id, status: 'ACTIVE', trackingMode: 'SERIALIZED' },
-          { $inc: { totalQuantity: 1, availableQuantity: 1 } },
-          { returnDocument: 'after', session },
+      const currentMaterial = await MaterialModel.findOneAndUpdate(
+        { _id: material._id, status: 'ACTIVE', trackingMode: 'SERIALIZED' },
+        { $inc: { totalQuantity: 1, availableQuantity: 1 } },
+        { returnDocument: 'after' },
+      );
+      if (!currentMaterial) {
+        throw new AppError(
+          409,
+          'MATERIAL_NOT_ACTIVE_SERIALIZED',
+          'The material is no longer active serialized inventory.',
         );
-        if (!currentMaterial) {
-          throw new AppError(
-            409,
-            'MATERIAL_NOT_ACTIVE_SERIALIZED',
-            'The material is no longer active serialized inventory.',
-          );
-        }
+      }
 
-        const created = await AssetUnitModel.create(
-          [
-            {
-              assetTag,
-              materialId: material._id,
-              materialCode: material.materialCode,
-              ...(input.serialNumber
-                ? {
-                    serialNumber: input.serialNumber,
-                    serialNumberNormalized: normalizeSerial(input.serialNumber),
-                  }
-                : {}),
-              condition: input.condition,
-              status: 'AVAILABLE',
-              createdBy,
-            },
-          ],
-          { session },
-        );
-        const unit = created[0];
-        if (!unit) throw new Error('Asset unit insert returned no document.');
-        createdUnit = unit;
+      try {
+        createdUnit = await AssetUnitModel.create({
+          assetTag,
+          materialId: material._id,
+          materialCode: material.materialCode,
+          ...(input.serialNumber
+            ? {
+                serialNumber: input.serialNumber,
+                serialNumberNormalized: normalizeSerial(input.serialNumber),
+              }
+            : {}),
+          condition: input.condition,
+          status: 'AVAILABLE',
+          createdBy,
+        });
         updatedMaterial = currentMaterial;
-      });
-
+      } catch (error) {
+        await MaterialModel.updateOne(
+          { _id: material._id },
+          { $inc: { totalQuantity: -1, availableQuantity: -1 } },
+        );
+        throw error;
+      }
       if (!createdUnit || !updatedMaterial) {
-        throw new Error('Asset unit transaction completed without a result.');
+        throw new Error('Asset unit creation completed without a result.');
       }
       return { unit: toAssetUnit(createdUnit), material: toMaterial(updatedMaterial) };
     } catch (error) {
@@ -611,8 +683,6 @@ export async function createAssetUnit(
       const translated = translateAssetUnitDuplicateError(error);
       if (translated) throw translated;
       throw error;
-    } finally {
-      await session.endSession();
     }
   }
 
@@ -623,15 +693,66 @@ export async function createAssetUnit(
   );
 }
 
+export async function deleteAssetUnit(
+  materialCode: string,
+  assetTag: string,
+): Promise<AssetUnitDeletionResult> {
+  const material = await findActiveSerializedMaterial(materialCode);
+  const unit = await AssetUnitModel.findOne({ assetTag, materialId: material._id });
+  if (!unit) throw assetUnitNotFound();
+  if (unit.status === 'ISSUED') {
+    throw new AppError(
+      409,
+      'ISSUED_ASSET_CANNOT_BE_REMOVED',
+      'Return this IT Asset before removing it from inventory.',
+    );
+  }
+  const hasIssueHistory = await IssueModel.exists({ 'lines.assets.assetTag': assetTag });
+  if (hasIssueHistory) {
+    throw new AppError(
+      409,
+      'ASSET_UNIT_HAS_ISSUE_HISTORY',
+      'This IT Asset has issue history. Change its status instead of deleting it.',
+    );
+  }
+
+  const wasAvailable = unit.status === 'AVAILABLE';
+  const deletedUnit = toAssetUnit(unit);
+  const deleted = await AssetUnitModel.deleteOne({ _id: unit._id, status: unit.status });
+  if (deleted.deletedCount !== 1) {
+    throw new AppError(500, 'ASSET_UNIT_DELETE_FAILED', 'The IT Asset could not be removed.');
+  }
+  const updatedMaterial = await MaterialModel.findOneAndUpdate(
+    {
+      _id: material._id,
+      status: 'ACTIVE',
+      trackingMode: 'SERIALIZED',
+      totalQuantity: { $gte: 1 },
+      ...(wasAvailable ? { availableQuantity: { $gte: 1 } } : {}),
+    },
+    { $inc: { totalQuantity: -1, ...(wasAvailable ? { availableQuantity: -1 } : {}) } },
+    { returnDocument: 'after' },
+  );
+  if (!updatedMaterial) {
+    await AssetUnitModel.create(unit.toObject());
+    throw new AppError(
+      409,
+      'INVENTORY_STATE_CONFLICT',
+      'The asset state changed while this update was being saved. Try again.',
+    );
+  }
+  return { unit: deletedUnit, material: toMaterial(updatedMaterial) };
+}
+
 const ALLOWED_MANUAL_STATUS_TRANSITIONS: Record<
   ManualAssetUnitStatus,
   ReadonlySet<ManualAssetUnitStatus>
 > = {
   AVAILABLE: new Set(['UNDER_REPAIR', 'DAMAGED', 'LOST', 'SCRAPPED']),
   RETURNED: new Set(['AVAILABLE', 'UNDER_REPAIR', 'DAMAGED', 'LOST', 'SCRAPPED']),
-  UNDER_REPAIR: new Set(['AVAILABLE', 'SCRAPPED']),
-  DAMAGED: new Set(['AVAILABLE', 'SCRAPPED']),
-  LOST: new Set(['AVAILABLE', 'SCRAPPED']),
+  UNDER_REPAIR: new Set(['AVAILABLE', 'DAMAGED', 'LOST', 'SCRAPPED']),
+  DAMAGED: new Set(['AVAILABLE', 'UNDER_REPAIR', 'LOST', 'SCRAPPED']),
+  LOST: new Set(['AVAILABLE', 'UNDER_REPAIR', 'DAMAGED', 'SCRAPPED']),
   SCRAPPED: new Set(),
 };
 
@@ -677,86 +798,70 @@ export async function updateAssetUnit(
   input: UpdateAssetUnitRequest,
 ): Promise<AssetUnitMutationResult> {
   const material = await findActiveSerializedMaterial(materialCode);
-  const session = await mongoose.startSession();
-  let updatedUnit: InstanceType<typeof AssetUnitModel> | undefined;
-  let updatedMaterial: MaterialDocument | undefined;
-
   try {
-    await session.withTransaction(async () => {
-      const unit = await AssetUnitModel.findOne({
-        assetTag,
-        materialId: material._id,
-      }).session(session);
-      if (!unit) throw assetUnitNotFound();
-      if (unit.status === 'ISSUED') {
-        throw new AppError(
-          409,
-          'ISSUED_ASSET_IS_SYSTEM_CONTROLLED',
-          'An issued asset unit can only change through the issue and return workflow.',
-        );
-      }
+    const unit = await AssetUnitModel.findOne({ assetTag, materialId: material._id });
+    if (!unit) throw assetUnitNotFound();
+    const previousUnit = toAssetUnit(unit);
+    if (unit.status === 'ISSUED' && (input.status !== undefined || input.serialNumber !== undefined)) {
+      throw new AppError(
+        409,
+        'ISSUED_ASSET_IS_SYSTEM_CONTROLLED',
+        'An issued asset unit cannot change serial number or status.',
+      );
+    }
 
-      let availabilityDelta = 0;
-      if (input.status !== undefined) {
-        availabilityDelta = manualAvailabilityDelta(unit.status, input.status);
-        if (input.status !== unit.status) {
-          unit.status = input.status;
-        }
+    let availabilityDelta = 0;
+    if (input.status !== undefined) {
+      availabilityDelta = manualAvailabilityDelta(unit.status, input.status);
+      if (input.status !== unit.status) {
+        unit.status = input.status;
       }
-      if (input.condition !== undefined) unit.condition = input.condition;
-      if (Object.hasOwn(input, 'serialNumber')) {
-        if (input.serialNumber === null) {
-          unit.set('serialNumber', undefined);
-          unit.set('serialNumberNormalized', undefined);
-        } else if (input.serialNumber !== undefined) {
-          unit.serialNumber = input.serialNumber;
-          unit.serialNumberNormalized = normalizeSerial(input.serialNumber);
-        }
+    }
+    if (input.condition !== undefined) unit.condition = input.condition;
+    if (Object.hasOwn(input, 'serialNumber')) {
+      if (input.serialNumber === null) {
+        unit.set('serialNumber', undefined);
+        unit.set('serialNumberNormalized', undefined);
+      } else if (input.serialNumber !== undefined) {
+        unit.serialNumber = input.serialNumber;
+        unit.serialNumberNormalized = normalizeSerial(input.serialNumber);
       }
+    }
 
-      let currentMaterial: MaterialDocument | null;
-      if (availabilityDelta === 0) {
-        currentMaterial = await MaterialModel.findOne({
-          _id: material._id,
-          status: 'ACTIVE',
-          trackingMode: 'SERIALIZED',
-        }).session(session);
-      } else {
-        const filter: Record<string, unknown> = {
-          _id: material._id,
-          status: 'ACTIVE',
-          trackingMode: 'SERIALIZED',
-        };
-        if (availabilityDelta < 0) filter.availableQuantity = { $gte: 1 };
-        else filter.$expr = { $lt: ['$availableQuantity', '$totalQuantity'] };
-        currentMaterial = await MaterialModel.findOneAndUpdate(
-          filter,
-          { $inc: { availableQuantity: availabilityDelta } },
-          { returnDocument: 'after', session },
-        );
-      }
-      if (!currentMaterial) {
-        throw new AppError(
-          409,
-          'INVENTORY_STATE_CONFLICT',
-          'The asset state changed while this update was being saved. Try again.',
-        );
-      }
+    let currentMaterial: MaterialDocument | null;
+    if (availabilityDelta === 0) {
+      currentMaterial = await MaterialModel.findOne({
+        _id: material._id,
+        status: 'ACTIVE',
+        trackingMode: 'SERIALIZED',
+      });
+    } else {
+      const filter: Record<string, unknown> = {
+        _id: material._id,
+        status: 'ACTIVE',
+        trackingMode: 'SERIALIZED',
+      };
+      if (availabilityDelta < 0) filter.availableQuantity = { $gte: 1 };
+      else filter.$expr = { $lt: ['$availableQuantity', '$totalQuantity'] };
+      currentMaterial = await MaterialModel.findOneAndUpdate(
+        filter,
+        { $inc: { availableQuantity: availabilityDelta } },
+        { returnDocument: 'after' },
+      );
+    }
+    if (!currentMaterial) {
+      throw new AppError(
+        409,
+        'INVENTORY_STATE_CONFLICT',
+        'The asset state changed while this update was being saved. Try again.',
+      );
+    }
 
-      await unit.save({ session });
-      updatedUnit = unit;
-      updatedMaterial = currentMaterial;
-    });
+    await unit.save();
+    return { unit: toAssetUnit(unit), material: toMaterial(currentMaterial), previousUnit };
   } catch (error) {
     const translated = translateAssetUnitDuplicateError(error);
     if (translated) throw translated;
     throw error;
-  } finally {
-    await session.endSession();
   }
-
-  if (!updatedUnit || !updatedMaterial) {
-    throw new AppError(500, 'ASSET_UNIT_UPDATE_FAILED', 'The asset unit could not be updated.');
-  }
-  return { unit: toAssetUnit(updatedUnit), material: toMaterial(updatedMaterial) };
 }

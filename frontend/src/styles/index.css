@@ -494,6 +494,11 @@ dialog::backdrop {
 }
 
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
   html,
   body {
     background: #fff !important;
@@ -522,6 +527,84 @@ dialog::backdrop {
     border: 0;
     padding: 0;
     box-shadow: none;
+    font-size: 9pt;
+  }
+
+  .bill-sheet h1 {
+    font-size: 18pt;
+    line-height: 1.15;
+  }
+
+  .bill-sheet h2 {
+    margin: 10px 0 5px;
+    padding-bottom: 3px;
+    font-size: 9pt;
+    line-height: 1.2;
+    break-after: avoid;
+  }
+
+  .bill-header {
+    padding-bottom: 8px;
+  }
+
+  .bill-summary-grid {
+    margin-top: 8px;
+  }
+
+  .bill-field {
+    min-height: 42px;
+    padding: 4px 6px;
+  }
+
+  .bill-field strong,
+  .bill-id-box strong {
+    font-size: 9pt;
+    line-height: 1.25;
+  }
+
+  .bill-two-column {
+    gap: 10px;
+  }
+
+  .bill-detail-list div {
+    min-height: 24px;
+  }
+
+  .bill-detail-list dt,
+  .bill-detail-list dd,
+  .bill-table {
+    font-size: 8pt;
+    line-height: 1.25;
+  }
+
+  .bill-detail-list dt,
+  .bill-detail-list dd,
+  .bill-table th,
+  .bill-table td {
+    padding: 3px 4px;
+  }
+
+  .bill-table {
+    min-width: 0;
+  }
+
+  .bill-table tr,
+  .bill-detail-list div,
+  .bill-signatures {
+    break-inside: avoid;
+  }
+
+  .bill-signatures {
+    margin-top: 12px;
+  }
+
+  .bill-signatures div {
+    min-height: 42px;
+  }
+
+  .bill-footer {
+    margin-top: 8px;
+    padding-top: 5px;
   }
 
   .bill-table-wrap {

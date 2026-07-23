@@ -18,6 +18,7 @@ const materialBase = {
   availableQuantity: 1,
   issuedQuantity: 1,
   unitLabel: null,
+  assignmentTypes: ['LONG_TERM', 'SHORT_TERM'] as const,
   createdAt: '2026-07-15T10:00:00.000Z',
   updatedAt: '2026-07-15T10:00:00.000Z',
 };
@@ -30,6 +31,7 @@ describe('inventory contracts', () => {
         category: 'Networking',
         trackingMode: 'SERIALIZED',
         returnPolicy: 'CONSUMABLE',
+        serialNumbers: ['SW-001'],
       }).success,
     ).toBe(false);
   });

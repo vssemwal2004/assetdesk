@@ -1,11 +1,11 @@
-import { Router, type Request } from 'express';
+import { Router, type Request, type RequestHandler } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 
 import {
   AdjustQuantityRequestSchema,
   AssetTagSchema,
   AssetUnitStatusSchema,
-  AssignmentTypeSchema,
   CreateAssetUnitRequestSchema,
   CreateMaterialRequestSchema,
   MaterialCodeSchema,
@@ -31,6 +31,7 @@ import {
 import {
   adjustQuantity,
   createAssetUnit,
+  deleteAssetUnit,
   createMaterial,
   deleteMaterial,
   getMaterial,
@@ -40,6 +41,24 @@ import {
   updateMaterial,
   updateMaterialStatus,
 } from './inventory.service.js';
+import { commitInventoryImport, previewInventoryImport } from './inventory-import.service.js';
+
+const inventoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 1 },
+});
+const uploadInventoryFile: RequestHandler = (request, _response, next) => {
+  inventoryUpload.single('file')(request, _response, (error: unknown) => {
+    if (!error) return next();
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE')
+      return next(
+        new AppError(413, 'INVENTORY_IMPORT_TOO_LARGE', 'Upload a file no larger than 5 MB.'),
+      );
+    return next(
+      new AppError(400, 'INVENTORY_IMPORT_UPLOAD_INVALID', 'Upload one CSV or XLSX file.'),
+    );
+  });
+};
 
 const OptionalQueryTextSchema = z.preprocess(
   (value) => (value === '' ? undefined : value),
@@ -63,13 +82,11 @@ const MaterialListQuerySchema = z
       (value) => (value === '' ? undefined : value),
       ReturnPolicySchema.optional(),
     ),
-    assignmentType: z.preprocess(
-      (value) => (value === '' ? undefined : value),
-      AssignmentTypeSchema.optional(),
-    ),
     stockState: z.preprocess(
       (value) => (value === '' ? undefined : value),
-      z.enum(['IN_STOCK', 'OUT_OF_STOCK']).optional(),
+      z
+        .enum(['AVAILABLE', 'LOW_STOCK', 'OUT_OF_STOCK', 'ISSUED', 'FULLY_ISSUED'])
+        .optional(),
     ),
     category: OptionalQueryTextSchema,
   })
@@ -155,7 +172,6 @@ export function createInventoryRouter(): Router {
         ...(input.status ? { status: input.status } : {}),
         ...(input.trackingMode ? { trackingMode: input.trackingMode } : {}),
         ...(input.returnPolicy ? { returnPolicy: input.returnPolicy } : {}),
-        ...(input.assignmentType ? { assignmentType: input.assignmentType } : {}),
         ...(input.stockState ? { stockState: input.stockState } : {}),
         ...(input.category ? { category: input.category } : {}),
       });
@@ -187,14 +203,68 @@ export function createInventoryRouter(): Router {
     },
   );
 
-  router.get('/:materialCode', requirePermission('INVENTORY_VIEW'), async (request, response, next) => {
-    try {
-      const material = await getMaterial(materialCode(request), authenticatedRole(request));
-      response.json({ data: { material } });
-    } catch (error) {
-      next(error);
-    }
-  });
+  router.post(
+    '/imports/preview',
+    requireRole('ADMIN'),
+    requirePermission('INVENTORY_MANAGE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    uploadInventoryFile,
+    async (request, response, next) => {
+      try {
+        if (!request.file)
+          throw new AppError(400, 'INVENTORY_IMPORT_FILE_REQUIRED', 'Choose a CSV or XLSX file.');
+        const mode = TrackingModeSchema.parse(request.body.mode);
+        const result = await previewInventoryImport(
+          request.file,
+          mode,
+          authenticated(request).userId,
+        );
+        await audit(request, 'INVENTORY_IMPORT_PREVIEWED', 'INVENTORY_IMPORT', result.importId, {
+          trackingMode: mode,
+          validRows: result.validRows,
+          invalidRows: result.invalidRows,
+        });
+        response.status(201).json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    '/imports/:importId/commit',
+    requireRole('ADMIN'),
+    requirePermission('INVENTORY_MANAGE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const importId = z.string().parse(request.params.importId);
+        const result = await commitInventoryImport(importId, authenticated(request).userId);
+        await audit(request, 'MATERIALS_IMPORTED', 'INVENTORY_IMPORT', importId, {
+          createdCount: result.created.length,
+          failedCount: result.failed.length,
+        });
+        response.json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    '/:materialCode',
+    requirePermission('INVENTORY_VIEW'),
+    async (request, response, next) => {
+      try {
+        const material = await getMaterial(materialCode(request), authenticatedRole(request));
+        response.json({ data: { material } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.patch(
     '/:materialCode',
@@ -287,22 +357,26 @@ export function createInventoryRouter(): Router {
     },
   );
 
-  router.get('/:materialCode/units', requirePermission('INVENTORY_VIEW'), async (request, response, next) => {
-    try {
-      const query = AssetUnitListQuerySchema.parse(request.query);
-      const result = await listAssetUnits({
-        materialCode: materialCode(request),
-        page: query.page,
-        pageSize: query.pageSize,
-        role: authenticatedRole(request),
-        ...(query.search ? { search: query.search } : {}),
-        ...(query.status ? { status: query.status } : {}),
-      });
-      response.json({ data: result.units, meta: pageMeta(result) });
-    } catch (error) {
-      next(error);
-    }
-  });
+  router.get(
+    '/:materialCode/units',
+    requirePermission('INVENTORY_VIEW'),
+    async (request, response, next) => {
+      try {
+        const query = AssetUnitListQuerySchema.parse(request.query);
+        const result = await listAssetUnits({
+          materialCode: materialCode(request),
+          page: query.page,
+          pageSize: query.pageSize,
+          role: authenticatedRole(request),
+          ...(query.search ? { search: query.search } : {}),
+          ...(query.status ? { status: query.status } : {}),
+        });
+        response.json({ data: result.units, meta: pageMeta(result) });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.post(
     '/:materialCode/units',
@@ -340,10 +414,39 @@ export function createInventoryRouter(): Router {
         const result = await updateAssetUnit(code, tag, input);
         await audit(request, 'ASSET_UNIT_UPDATED', 'ASSET_UNIT', tag, {
           materialCode: code,
-          fields: Object.keys(input),
-          ...(input.status ? { status: input.status } : {}),
+          fields: Object.keys(input).filter((field) => field !== 'reason'),
+          reason: input.reason,
+          previousStatus: result.previousUnit?.status,
+          status: result.unit.status,
+          previousCondition: result.previousUnit?.condition,
+          condition: result.unit.condition,
+          previousSerialNumber: result.previousUnit?.serialNumber,
+          serialNumber: result.unit.serialNumber,
         });
         response.json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.delete(
+    '/:materialCode/units/:assetTag',
+    requireRole('ADMIN'),
+    requirePermission('INVENTORY_MANAGE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const code = materialCode(request);
+        const tag = assetTag(request);
+        const result = await deleteAssetUnit(code, tag);
+        await audit(request, 'ASSET_UNIT_DELETED', 'ASSET_UNIT', tag, {
+          materialCode: code,
+          serialNumber: result.unit.serialNumber,
+          status: result.unit.status,
+        });
+        response.json({ data: { material: result.material, unit: result.unit } });
       } catch (error) {
         next(error);
       }

@@ -16,7 +16,7 @@
   "packageManager": "npm@10.9.2",
   "scripts": {
     "predev": "npm run build:contracts",
-    "dev": "concurrently --kill-others -n backend,frontend -c magenta,blue \"npm run dev --workspace @assetdesk/backend\" \"npm run dev --workspace @assetdesk/frontend\"",
+    "dev": "concurrently --kill-others -n backend,frontend,worker -c magenta,blue,green \"npm run dev --workspace @assetdesk/backend\" \"npm run dev --workspace @assetdesk/frontend\" \"npm run worker:dev --workspace @assetdesk/backend\"",
     "build": "npm run build --workspace @assetdesk/contracts && npm run build --workspace @assetdesk/backend && npm run build --workspace @assetdesk/frontend",
     "build:contracts": "npm run build --workspace @assetdesk/contracts",
     "worker:dev": "npm run worker:dev --workspace @assetdesk/backend",

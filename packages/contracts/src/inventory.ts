@@ -29,6 +29,15 @@ export const CreateMaterialRequestSchema = z.discriminatedUnion('trackingMode', 
   CreateMaterialBaseSchema.extend({
     trackingMode: z.literal('SERIALIZED'),
     returnPolicy: z.literal('REUSABLE'),
+    serialNumbers: z
+      .array(SerialNumberSchema)
+      .min(1)
+      .max(1_000)
+      .refine(
+        (values) =>
+          new Set(values.map((value) => value.toLocaleUpperCase('en-US'))).size === values.length,
+        'Serial numbers must be unique.',
+      ),
   }).strict(),
   CreateMaterialBaseSchema.extend({
     trackingMode: z.literal('QUANTITY'),
@@ -67,7 +76,7 @@ export const AdjustQuantityRequestSchema = z
 
 export const CreateAssetUnitRequestSchema = z
   .object({
-    serialNumber: SerialNumberSchema.optional(),
+    serialNumber: SerialNumberSchema,
     condition: ConditionSchema.default('Good'),
   })
   .strict();
@@ -76,9 +85,10 @@ export const ManualAssetUnitStatusSchema = AssetUnitStatusSchema.exclude(['ISSUE
 
 export const UpdateAssetUnitRequestSchema = z
   .object({
-    serialNumber: SerialNumberSchema.nullable().optional(),
+    serialNumber: SerialNumberSchema.optional(),
     condition: ConditionSchema.optional(),
     status: ManualAssetUnitStatusSchema.optional(),
+    reason: z.string().trim().min(5).max(500).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'Provide at least one field to update');

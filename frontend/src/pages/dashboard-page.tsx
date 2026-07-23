@@ -72,7 +72,7 @@ function AdminDashboard({ adminName }: { adminName: string }) {
             </Link>
           </div>
         }
-      description="Live assignment, return, and asset quantity overview. All dates use IST."
+        description="Live assignment, return, and asset quantity overview. All dates use IST."
         title={`Good to see you, ${adminName}`}
       />
 
@@ -86,7 +86,7 @@ function AdminDashboard({ adminName }: { adminName: string }) {
       ) : (
         <DashboardContent
           generatedAt={query.data.data.generatedAt}
-      attentionIssues={query.data.data.attentionIssues}
+          attentionIssues={query.data.data.attentionIssues}
           recentIssues={query.data.data.recentIssues}
           stats={query.data.data.stats}
         />
@@ -211,12 +211,7 @@ function DashboardContent({
           title="Needs attention"
           viewAll="/issues?returnState=DUE_TODAY"
         />
-        <IssuePanel
-          issues={recentIssues}
-          kind="recent"
-          title="Recent Issues"
-          viewAll="/issues"
-        />
+        <IssuePanel issues={recentIssues} kind="recent" title="Recent Issues" viewAll="/issues" />
       </div>
     </>
   );
@@ -387,7 +382,7 @@ function IssuePanel({
           <EmptyState
             message={
               kind === 'attention'
-                ? 'No short-term assignments are due today.'
+                ? 'No return-by-date issues are due today.'
                 : 'New Issue Records will appear here.'
             }
             title={kind === 'attention' ? 'All clear' : 'No recent Issues'}
@@ -438,9 +433,7 @@ function DashboardIssueRow({
           </p>
         </div>
         {showDueState ? (
-          <span
-            className="shrink-0 rounded-full bg-[var(--color-warning-soft)] px-2.5 py-1 text-[11px] font-extrabold text-[var(--color-warning)]"
-          >
+          <span className="shrink-0 rounded-full bg-[var(--color-warning-soft)] px-2.5 py-1 text-[11px] font-extrabold text-[var(--color-warning)]">
             Due today
           </span>
         ) : (
