@@ -40,6 +40,13 @@ Required now:
 - `APP_ORIGIN`
 - `PORT`
 
+Optional production networking:
+
+- `TRUST_PROXY` defaults to `true` in production and `false` elsewhere. Leave it
+  enabled when the API is behind Nginx, a load balancer, or another reverse
+  proxy so Express and `express-rate-limit` can derive client IPs from forwarded
+  headers.
+
 `MONGODB_DB_NAME` is optional and defaults to `assetdesk`, preventing a URI
 without a path from writing to MongoDB's generic fallback database.
 

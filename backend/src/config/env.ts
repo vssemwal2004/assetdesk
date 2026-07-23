@@ -73,8 +73,8 @@ const EnvSchema = z.object({
   TEMP_PASSWORD_TTL_HOURS: z.coerce.number().int().min(1).max(72).default(24),
   TRUST_PROXY: z
     .enum(['true', 'false'])
-    .default('false')
-    .transform((value) => value === 'true'),
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === 'true')),
   DATABASE_REQUIRED_ON_START: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
     z
@@ -91,8 +91,13 @@ if (!result.success) {
   throw new Error(`Invalid server configuration: ${JSON.stringify(fields)}`);
 }
 
-if (result.data.NODE_ENV === 'production' && !result.data.JWT_ACCESS_SECRET) {
+const parsedEnv = Object.freeze({
+  ...result.data,
+  TRUST_PROXY: result.data.TRUST_PROXY ?? result.data.NODE_ENV === 'production',
+});
+
+if (parsedEnv.NODE_ENV === 'production' && !parsedEnv.JWT_ACCESS_SECRET) {
   throw new Error('Invalid server configuration: JWT_ACCESS_SECRET is required in production');
 }
 
-export const env = Object.freeze(result.data);
+export const env = parsedEnv;
