@@ -49,7 +49,7 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
   const { start, end } = istDayRange(now);
   const hasOutstanding = {
     $and: [
-      { $gt: ['$totalOutstandingQuantity', 0] },
+      { $gt: [{ $ifNull: ['$totalOutstandingQuantity', 0] }, 0] },
       { $in: ['$status', ['ISSUED', 'PARTIALLY_RETURNED']] },
     ],
   };
@@ -104,7 +104,7 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
             $sum: {
               $size: {
                 $filter: {
-                  input: '$returnEvents',
+                  input: { $ifNull: ['$returnEvents', []] },
                   as: 'event',
                   cond: {
                     $and: [
@@ -117,7 +117,9 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
             },
           },
           outstandingItems: {
-            $sum: { $cond: [hasOutstanding, '$totalOutstandingQuantity', 0] },
+            $sum: {
+              $cond: [hasOutstanding, { $ifNull: ['$totalOutstandingQuantity', 0] }, 0],
+            },
           },
         },
       },
