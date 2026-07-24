@@ -12,6 +12,8 @@ const materialBase = {
   name: 'Core switch',
   category: 'Networking',
   typeModelName: null,
+  location: null,
+  block: null,
   locationBlock: null,
   description: null,
   returnPolicy: 'REUSABLE' as const,

@@ -2,12 +2,15 @@ import {
   AdjustQuantityResponseSchema,
   AssetUnitMutationResponseSchema,
   AssetUnitsListResponseSchema,
+  AssetDetailsResponseSchema,
   AssetTypeImportPreviewResponseSchema,
   AssetTypeImportResponseSchema,
   AssetTypesResponseSchema,
   MaterialResponseSchema,
   MaterialsListResponseSchema,
   type AdjustQuantityRequest,
+  type AssetDetail,
+  type AssetDetailKind,
   type AssetUnitMutationResponse,
   type AssetUnitsListResponse,
   type AssetType,
@@ -115,6 +118,36 @@ export async function deleteAssetType(assetTypeId: string): Promise<void> {
   });
 }
 
+export async function getAssetDetails(
+  kind?: AssetDetailKind,
+  signal?: AbortSignal,
+): Promise<AssetDetail[]> {
+  const parameters = new URLSearchParams();
+  if (kind) parameters.set('kind', kind);
+  const payload = await apiRequest<unknown>(
+    `/api/v1/inventory/asset-details${parameters.size ? `?${parameters.toString()}` : ''}`,
+    { ...(signal ? { signal } : {}) },
+  );
+  return AssetDetailsResponseSchema.parse(payload).data;
+}
+
+export async function createAssetDetail(
+  kind: AssetDetailKind,
+  name: string,
+): Promise<AssetDetail> {
+  const payload = await apiRequest<{ data: { detail: AssetDetail } }>(
+    '/api/v1/inventory/asset-details',
+    { method: 'POST', json: { kind, name } },
+  );
+  return payload.data.detail;
+}
+
+export async function deleteAssetDetail(assetDetailId: string): Promise<void> {
+  await apiRequest<unknown>(`/api/v1/inventory/asset-details/${encodeURIComponent(assetDetailId)}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function previewAssetTypeImport(
   file: File,
 ): Promise<AssetTypeImportPreviewResponse['data']> {
@@ -155,6 +188,8 @@ export interface InventoryImportPreview {
     category: string;
     serialNumber?: string;
     typeModelName?: string;
+    location?: string;
+    block?: string;
     locationBlock?: string;
     quantity?: number;
     unitLabel?: string;

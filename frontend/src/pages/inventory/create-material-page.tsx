@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, FileSpreadsheet, PackagePlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
@@ -14,7 +14,7 @@ import {
 import { SelectField } from '../../components/catalog-ui';
 import { AppCard, Button, ErrorSummary, PageHeader, TextField } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
-import { createMaterial } from '../../lib/inventory-api';
+import { createMaterial, getAssetDetails } from '../../lib/inventory-api';
 import { inventoryStatusLabel } from '../../lib/inventory-status';
 import { MaterialCategoryField } from './material-category-field';
 
@@ -22,7 +22,8 @@ interface MaterialForm {
   name: string;
   category: string;
   typeModelName: string;
-  locationBlock: string;
+  location: string;
+  block: string;
   description: string;
   trackingMode: TrackingMode;
   returnPolicy: ReturnPolicy;
@@ -36,7 +37,8 @@ const initialForm: MaterialForm = {
   name: '',
   category: '',
   typeModelName: '',
-  locationBlock: '',
+  location: '',
+  block: '',
   description: '',
   trackingMode: 'SERIALIZED',
   returnPolicy: 'REUSABLE',
@@ -75,7 +77,8 @@ export function serialFieldsForQuantity(current: string[], rawQuantity: string):
 function materialFormMessage(form: MaterialForm): string | null {
   if (form.category.trim().length < 2) return 'Choose an asset type, or add a new asset type.';
   if (form.typeModelName.trim().length < 2) return 'Enter a type/model name with at least 2 characters.';
-  if (form.locationBlock.trim().length < 1) return 'Enter the location or block.';
+  if (form.location.trim().length < 1) return 'Choose a location from Add asset details.';
+  if (form.block.trim().length < 1) return 'Choose a block from Add asset details.';
   if (form.trackingMode === 'SERIALIZED') {
     const quantity = Number(form.totalQuantity);
     const serialNumbers = normalizedSerialNumbers(form.serialNumbers);
@@ -101,6 +104,12 @@ export function CreateMaterialPage() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(initialForm);
   const [message, setMessage] = useState<string | null>(null);
+  const detailsQuery = useQuery({
+    queryKey: ['asset-details'],
+    queryFn: ({ signal }) => getAssetDetails(undefined, signal),
+  });
+  const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
+  const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
 
   const mutation = useMutation({
     mutationFn: (input: CreateMaterialRequest) => createMaterial(input),
@@ -129,7 +138,8 @@ export function CreateMaterialPage() {
       name: materialName(form.category, form.typeModelName),
       category: form.category,
       typeModelName: form.typeModelName,
-      locationBlock: form.locationBlock,
+      location: form.location,
+      block: form.block,
       ...(form.description.trim() ? { description: form.description } : {}),
       status: form.status,
       assignmentTypes:
@@ -244,14 +254,32 @@ export function CreateMaterialPage() {
               required
               value={form.typeModelName}
             />
-            <TextField
-              label="Location / block"
-              onChange={(event) =>
-                setForm((value) => ({ ...value, locationBlock: event.target.value }))
-              }
-              required
-              value={form.locationBlock}
-            />
+            <SelectField
+              id="material-location"
+              label="Location"
+              onChange={(location) => setForm((value) => ({ ...value, location }))}
+              value={form.location}
+            >
+              <option value="">Choose location</option>
+              {locations.map((location) => (
+                <option key={location.id} value={location.name}>
+                  {location.name}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              id="material-block"
+              label="Block"
+              onChange={(block) => setForm((value) => ({ ...value, block }))}
+              value={form.block}
+            >
+              <option value="">Choose block</option>
+              {blocks.map((block) => (
+                <option key={block.id} value={block.name}>
+                  {block.name}
+                </option>
+              ))}
+            </SelectField>
           </div>
 
           <div className="space-y-1.5">

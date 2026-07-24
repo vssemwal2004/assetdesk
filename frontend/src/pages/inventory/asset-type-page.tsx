@@ -3,16 +3,17 @@ import { ArrowLeft, Download, FileSpreadsheet, PackagePlus, Trash2, Upload } fro
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link } from 'react-router';
 
-import type { AssetType } from '@assetdesk/contracts';
+import type { AssetDetail, AssetDetailKind } from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
 import { hasPermission } from '../../auth/permissions';
 import { AppCard, Button, ErrorState, ErrorSummary, LoadingPanel, PageHeader, TextField } from '../../components/ui';
 import {
   commitAssetTypeImport,
+  createAssetDetail,
   createAssetType,
-  deleteAssetType,
-  getAssetTypes,
+  deleteAssetDetail,
+  getAssetDetails,
   previewAssetTypeImport,
   type AssetTypeImportPreviewResponse,
   type AssetTypeImportResponse,
@@ -21,36 +22,55 @@ import { isApiError } from '../../lib/api-client';
 
 type Mode = 'individual' | 'bulk';
 
-const ASSET_TYPE_TEMPLATE = 'Asset Type\r\nComputer\r\nPrinter\r\nNetwork Device\r\n';
+const ASSET_TYPE_TEMPLATE =
+  'IT Asset,Location,Block\r\nComputer,Computer Centre,A Block\r\nPrinter,Store Room,B Block\r\nUPS,Electrical Room,C Block\r\n';
+
+const detailLabels: Record<AssetDetailKind, string> = {
+  ASSET_TYPE: 'IT Asset',
+  LOCATION: 'Location',
+  BLOCK: 'Block',
+};
+
+function detailLabel(value: string | undefined): string {
+  return value === 'LOCATION' || value === 'BLOCK' || value === 'ASSET_TYPE'
+    ? detailLabels[value]
+    : 'IT Asset';
+}
 
 export function AssetTypePage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<Mode>('individual');
+  const [kind, setKind] = useState<AssetDetailKind>('ASSET_TYPE');
   const [name, setName] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [preview, setPreview] = useState<AssetTypeImportPreviewResponse['data'] | null>(null);
   const [result, setResult] = useState<AssetTypeImportResponse['data'] | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AssetType | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AssetDetail | null>(null);
   const canAddAssetTypes = hasPermission(user, 'ASSET_TYPES_ADD');
   const canDeleteAssetTypes = hasPermission(user, 'ASSET_TYPES_DELETE');
 
   const query = useQuery({
     queryKey: ['asset-types'],
-    queryFn: ({ signal }) => getAssetTypes(signal),
+    queryFn: ({ signal }) => getAssetDetails(undefined, signal),
   });
 
   const createMutation = useMutation({
-    mutationFn: (assetTypeName: string) => createAssetType(assetTypeName),
-    onSuccess: async (assetType) => {
+    mutationFn: ({ detailKind, detailName }: { detailKind: AssetDetailKind; detailName: string }) =>
+      createAssetDetail(detailKind, detailName),
+    onSuccess: async (detail) => {
+      if (detail.kind === 'ASSET_TYPE') await createAssetType(detail.name);
       setName('');
-      setMessage(`${assetType.name} saved as an asset type.`);
-      await queryClient.invalidateQueries({ queryKey: ['asset-types'] });
+      setMessage(`${detail.name} saved as ${detailLabels[detail.kind]}.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['asset-types'] }),
+        queryClient.invalidateQueries({ queryKey: ['asset-details'] }),
+      ]);
     },
     onError: (error) =>
-      setMessage(isApiError(error) ? error.message : 'The asset type could not be saved.'),
+      setMessage(isApiError(error) ? error.message : 'The asset detail could not be saved.'),
   });
 
   const previewMutation = useMutation({
@@ -67,18 +87,24 @@ export function AssetTypePage() {
     onSuccess: async (importResult) => {
       setResult(importResult);
       setPreview(null);
-      await queryClient.invalidateQueries({ queryKey: ['asset-types'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['asset-types'] }),
+        queryClient.invalidateQueries({ queryKey: ['asset-details'] }),
+      ]);
     },
     onError: (error) =>
       setMessage(isApiError(error) ? error.message : 'The asset type sheet could not be uploaded.'),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (assetType: AssetType) => deleteAssetType(assetType.id),
+    mutationFn: (assetDetail: AssetDetail) => deleteAssetDetail(assetDetail.id),
     onSuccess: async () => {
       setDeleteTarget(null);
-      setMessage('Asset type deleted.');
-      await queryClient.invalidateQueries({ queryKey: ['asset-types'] });
+      setMessage('Asset detail deleted.');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['asset-types'] }),
+        queryClient.invalidateQueries({ queryKey: ['asset-details'] }),
+      ]);
     },
     onError: (error) =>
       setMessage(isApiError(error) ? error.message : 'The asset type could not be deleted.'),
@@ -90,8 +116,8 @@ export function AssetTypePage() {
     setResult(null);
     setPreview(null);
     const trimmed = name.trim();
-    if (trimmed.length < 2) return setMessage('Enter an asset type with at least 2 characters.');
-    createMutation.mutate(trimmed);
+    if (trimmed.length < 1) return setMessage('Enter a name.');
+    createMutation.mutate({ detailKind: kind, detailName: trimmed });
   }
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
@@ -135,7 +161,7 @@ export function AssetTypePage() {
     );
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'assetdesk-asset-types-template.csv';
+    anchor.download = 'assetdesk-asset-details-template.csv';
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -149,8 +175,8 @@ export function AssetTypePage() {
             Back to Inventory
           </Link>
         }
-        description="Save reusable asset type names for the inventory dropdown."
-        title="Add asset type"
+        description="Save allowed IT Asset, Location, and Block dropdown values for inventory."
+        title="Add asset details"
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -182,25 +208,37 @@ export function AssetTypePage() {
             </Button> : null}
           </div>
 
-          {message ? <ErrorSummary message={message} title={mode === 'individual' ? 'Asset type' : 'Upload'} /> : null}
+          {message ? <ErrorSummary message={message} title={mode === 'individual' ? 'Asset detail' : 'Upload'} /> : null}
 
           {!canAddAssetTypes ? (
             <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-sm font-semibold text-[var(--color-text-muted)]">
-              You can view saved asset types. Add/upload access is not enabled for this account.
+              You can view saved asset details. Add/upload access is not enabled for this account.
             </p>
           ) : mode === 'individual' ? (
             <form className="mt-5 space-y-5" onSubmit={submitIndividual}>
+              <label className="block space-y-1.5">
+                <span className="field-label">Detail type</span>
+                <select
+                  className="field-input"
+                  onChange={(event) => setKind(event.target.value as AssetDetailKind)}
+                  value={kind}
+                >
+                  <option value="ASSET_TYPE">IT Asset</option>
+                  <option value="LOCATION">Location</option>
+                  <option value="BLOCK">Block</option>
+                </select>
+              </label>
               <TextField
-                label="Asset type"
+                label="Name"
                 maxLength={120}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Computer, Printer, UPS"
+                placeholder="Computer, Computer Centre, A Block"
                 required
                 value={name}
               />
               <div className="flex justify-end">
                 <Button loading={createMutation.isPending} type="submit">
-                  {createMutation.isPending ? 'Saving...' : 'Save asset type'}
+                  {createMutation.isPending ? 'Saving...' : 'Save detail'}
                 </Button>
               </div>
             </form>
@@ -208,9 +246,9 @@ export function AssetTypePage() {
             <form className="mt-5 space-y-5" onSubmit={submitBulk}>
               <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="rounded-[8px] border border-[var(--color-border)] p-5">
-                  <p className="font-bold text-[var(--color-text-strong)]">Upload asset type list</p>
+                  <p className="font-bold text-[var(--color-text-strong)]">Upload asset detail list</p>
                   <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                    CSV and XLSX, maximum 5 MB and 1,000 rows. Required column: Asset Type.
+                    CSV and XLSX, maximum 5 MB and 1,000 rows. Columns: IT Asset, Location, Block.
                   </p>
                   <input
                     accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -244,7 +282,7 @@ export function AssetTypePage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-                    Review asset type data
+                    Review asset detail data
                   </h2>
                   <p className="text-sm text-[var(--color-text-muted)]">
                     {preview.validRows} ready · {preview.invalidRows} invalid
@@ -263,7 +301,8 @@ export function AssetTypePage() {
                   <thead className="sticky top-0 bg-[var(--color-surface-tint)]">
                     <tr>
                       <th className="p-3">Row</th>
-                      <th className="p-3">Asset type</th>
+                      <th className="p-3">Detail type</th>
+                      <th className="p-3">Name</th>
                       <th className="p-3">Validation</th>
                     </tr>
                   </thead>
@@ -271,6 +310,7 @@ export function AssetTypePage() {
                     {preview.rows.map((row) => (
                       <tr className="border-t border-[var(--color-border)]" key={row.rowNumber}>
                         <td className="p-3">{row.rowNumber}</td>
+                        <td className="p-3">{detailLabel(row.kind)}</td>
                         <td className="p-3 font-semibold">{row.name || 'Missing'}</td>
                         <td
                           className={`p-3 font-bold ${
@@ -325,13 +365,13 @@ export function AssetTypePage() {
         </AppCard>
 
         <AppCard>
-          <h2 className="font-extrabold text-[var(--color-primary-strong)]">Saved asset types</h2>
+          <h2 className="font-extrabold text-[var(--color-primary-strong)]">Saved asset details</h2>
           {query.isPending ? (
-            <LoadingPanel label="Loading asset types" />
+            <LoadingPanel label="Loading asset details" />
           ) : query.isError ? (
-            <ErrorState message="Asset types could not be loaded." onRetry={() => void query.refetch()} />
+            <ErrorState message="Asset details could not be loaded." onRetry={() => void query.refetch()} />
           ) : query.data.length === 0 ? (
-            <p className="mt-3 text-sm text-[var(--color-text-muted)]">No asset types saved yet.</p>
+            <p className="mt-3 text-sm text-[var(--color-text-muted)]">No asset details saved yet.</p>
           ) : (
             <ul className="mt-4 max-h-[480px] space-y-2 overflow-auto">
               {query.data.map((assetType) => (
@@ -339,7 +379,12 @@ export function AssetTypePage() {
                   className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--color-border)] px-3 py-2 text-sm font-bold text-[var(--color-text-strong)]"
                   key={assetType.id}
                 >
-                  <span className="min-w-0 break-words">{assetType.name}</span>
+                  <span className="min-w-0 break-words">
+                    <span className="mr-2 rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-xs text-[var(--color-primary)]">
+                      {detailLabels[assetType.kind]}
+                    </span>
+                    {assetType.name}
+                  </span>
                   {canDeleteAssetTypes ? <Button
                     aria-label={`Delete ${assetType.name}`}
                     onClick={() => {
@@ -371,10 +416,10 @@ export function AssetTypePage() {
               </span>
               <div>
                 <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-                  Delete asset type?
+                  Delete asset detail?
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-                  {deleteTarget.name} will be removed from the asset type dropdown. It cannot be
+                  {deleteTarget.name} will be removed from the {detailLabels[deleteTarget.kind]} dropdown. It cannot be
                   deleted while inventory data is using it.
                 </p>
               </div>

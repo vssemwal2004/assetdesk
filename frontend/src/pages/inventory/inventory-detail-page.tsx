@@ -53,6 +53,7 @@ import {
   adjustMaterialQuantity,
   deleteAssetUnit,
   deleteMaterial,
+  getAssetDetails,
   getAssetUnits,
   getMaterial,
   setMaterialStatus,
@@ -646,14 +647,16 @@ function editMaterialMessage(
     name: string;
     category: string;
     typeModelName: string;
-    locationBlock: string;
+    location: string;
+    block: string;
     unitLabel: string;
   },
   material: Material,
 ): string | null {
   if (form.category.trim().length < 2) return 'Choose an asset type, or add a new asset type.';
   if (form.typeModelName.trim().length < 2) return 'Enter a type/model name with at least 2 characters.';
-  if (form.locationBlock.trim().length < 1) return 'Enter the location or block.';
+  if (form.location.trim().length < 1) return 'Choose a location from Add asset details.';
+  if (form.block.trim().length < 1) return 'Choose a block from Add asset details.';
   if (material.trackingMode === 'QUANTITY' && form.unitLabel.trim().length < 1) {
     return 'Enter a unit label, for example units, boxes, meters, or pieces.';
   }
@@ -673,12 +676,19 @@ function EditMaterialForm({
     name: material.name,
     category: material.category,
     typeModelName: material.typeModelName ?? material.name,
-    locationBlock: material.locationBlock ?? '',
+    location: material.location ?? '',
+    block: material.block ?? '',
     description: material.description ?? '',
     returnPolicy: material.returnPolicy,
     unitLabel: material.unitLabel ?? '',
   });
   const [message, setMessage] = useState<string | null>(null);
+  const detailsQuery = useQuery({
+    queryKey: ['asset-details'],
+    queryFn: ({ signal }) => getAssetDetails(undefined, signal),
+  });
+  const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
+  const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
   const mutation = useMutation({
     mutationFn: (input: UpdateMaterialRequest) => updateMaterial(material.materialCode, input),
     onSuccess: onSaved,
@@ -696,7 +706,8 @@ function EditMaterialForm({
       name: form.typeModelName,
       category: form.category,
       typeModelName: form.typeModelName,
-      locationBlock: form.locationBlock,
+      location: form.location,
+      block: form.block,
       description: form.description.trim() || null,
       returnPolicy: form.returnPolicy,
       ...(material.trackingMode === 'QUANTITY' ? { unitLabel: form.unitLabel } : {}),
@@ -727,13 +738,32 @@ function EditMaterialForm({
           onChange={(category) => setForm((value) => ({ ...value, category }))}
           value={form.category}
         />
-        <TextField
-          label="Location / block"
-          onChange={(event) =>
-            setForm((value) => ({ ...value, locationBlock: event.target.value }))
-          }
-          value={form.locationBlock}
-        />
+        <SelectField
+          id="edit-material-location"
+          label="Location"
+          onChange={(location) => setForm((value) => ({ ...value, location }))}
+          value={form.location}
+        >
+          <option value="">Choose location</option>
+          {locations.map((location) => (
+            <option key={location.id} value={location.name}>
+              {location.name}
+            </option>
+          ))}
+        </SelectField>
+        <SelectField
+          id="edit-material-block"
+          label="Block"
+          onChange={(block) => setForm((value) => ({ ...value, block }))}
+          value={form.block}
+        >
+          <option value="">Choose block</option>
+          {blocks.map((block) => (
+            <option key={block.id} value={block.name}>
+              {block.name}
+            </option>
+          ))}
+        </SelectField>
       </div>
       <div className="space-y-1.5">
         <label className="field-label" htmlFor="edit-material-description">

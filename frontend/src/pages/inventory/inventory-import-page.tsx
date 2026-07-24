@@ -12,9 +12,9 @@ import {
 } from '../../lib/inventory-api';
 
 const ASSET_TEMPLATE =
-  'Asset Type,Type/Model Name,Serial Number,Location / Block,Description,Inventory Status\r\nComputer,Dell Latitude 5450,DL5450-001,Computer Centre,Staff laptop,Active / in use\r\nComputer,Dell Latitude 5450,DL5450-002,Computer Centre,Spare laptop,Faulty (scrap)\r\nPrinter,HP LaserJet 1020,HPLJ1020-OLD-01,Store Room,Old printer not in regular use,Outdated (not in use)\r\n';
+  'Asset Type,Type/Model Name,Serial Number,Location,Block,Description,Inventory Status\r\nComputer,Dell Latitude 5450,DL5450-001,Computer Centre,A Block,Staff laptop,Active / in use\r\nComputer,Dell Latitude 5450,DL5450-002,Computer Centre,A Block,Spare laptop,Faulty (scrap)\r\nPrinter,HP LaserJet 1020,HPLJ1020-OLD-01,Store Room,B Block,Old printer not in regular use,Outdated (not in use)\r\n';
 const CONSUMABLE_TEMPLATE =
-  'Asset Type,Type/Model Name,Quantity,Unit Label,Return Policy,Location / Block,Description,Inventory Status\r\nConsumable,USB-C Cable,50,pieces,CONSUMABLE,Computer Centre,One metre cable,Active / in use\r\nConsumable,Printer Toner,12,pieces,CONSUMABLE,Store Room,Reserve stock,Outdated (not in use)\r\n';
+  'Asset Type,Type/Model Name,Quantity,Unit Label,Return Policy,Location,Block,Description,Inventory Status\r\nConsumable,USB-C Cable,50,pieces,CONSUMABLE,Computer Centre,A Block,One metre cable,Active / in use\r\nConsumable,Printer Toner,12,pieces,CONSUMABLE,Store Room,B Block,Reserve stock,Outdated (not in use)\r\n';
 
 export function InventoryImportPage() {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -135,8 +135,8 @@ export function InventoryImportPage() {
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
               CSV and XLSX, maximum 5 MB and 1,000 rows.
               {mode === 'SERIALIZED'
-                ? ' Required columns: Asset Type, Type/Model Name, Serial Number, Location / Block. Optional columns: Description, Inventory Status.'
-                : ' Required columns: Asset Type, Type/Model Name, Quantity, Unit Label, Location / Block. Optional columns: Return Policy, Description, Inventory Status.'}
+                ? ' Required columns: Asset Type, Type/Model Name, Serial Number, Location, Block. Optional columns: Description, Inventory Status.'
+                : ' Required columns: Asset Type, Type/Model Name, Quantity, Unit Label, Location, Block. Optional columns: Return Policy, Description, Inventory Status.'}
             </p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
               Inventory Status accepts Active / in use, Faulty (scrap), and Outdated (not in use).

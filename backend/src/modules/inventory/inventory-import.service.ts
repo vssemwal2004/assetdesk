@@ -12,6 +12,7 @@ import {
 
 import { AppError } from '../../middleware/error-handler.js';
 import { AssetUnitModel } from './asset-unit.model.js';
+import { AssetDetailModel } from './asset-detail.model.js';
 import { AssetTypeModel } from './asset-type.model.js';
 import {
   InventoryImportModel,
@@ -28,6 +29,8 @@ type Field =
   | 'name'
   | 'category'
   | 'typeModelName'
+  | 'location'
+  | 'block'
   | 'locationBlock'
   | 'description'
   | 'serialNumber'
@@ -51,8 +54,8 @@ const HEADER_ALIASES: Record<string, Field> = {
   'model name': 'typeModelName',
   'location block': 'locationBlock',
   'location / block': 'locationBlock',
-  location: 'locationBlock',
-  block: 'locationBlock',
+  location: 'location',
+  block: 'block',
   description: 'description',
   serial: 'serialNumber',
   'serial number': 'serialNumber',
@@ -131,8 +134,8 @@ export function parseInventoryImportTable(
   });
   const required: Field[] =
     mode === 'SERIALIZED'
-      ? ['category', 'serialNumber']
-      : ['category', 'quantity', 'unitLabel'];
+      ? ['category', 'location', 'block', 'serialNumber']
+      : ['category', 'location', 'block', 'quantity', 'unitLabel'];
   const missing = required.filter((field) => !columns.has(field));
   if (missing.length)
     throw new AppError(
@@ -213,7 +216,9 @@ export function importInputToCreateMaterialRequest(input: InventoryImportInput):
     name: record.name,
     category: record.category,
     typeModelName: record.typeModelName,
-    locationBlock: record.locationBlock,
+    location: record.location,
+    block: record.block,
+    ...(record.locationBlock ? { locationBlock: record.locationBlock } : {}),
     ...(record.description ? { description: record.description } : {}),
     assignmentTypes: record.assignmentTypes,
     trackingMode: record.trackingMode,
@@ -237,6 +242,20 @@ function exact(value: string): RegExp {
 
 function normalizedAssetType(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
+}
+
+function normalizedLookup(value: string): string {
+  return value.trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
+}
+
+async function savedLookup(kind: 'ASSET_TYPE' | 'LOCATION' | 'BLOCK', value: string): Promise<string | null> {
+  const detail = await AssetDetailModel.findOne({ kind, normalizedName: normalizedLookup(value) });
+  if (detail) return detail.name;
+  if (kind === 'ASSET_TYPE') {
+    const assetType = await AssetTypeModel.findOne({ normalizedName: normalizedAssetType(value) });
+    return assetType?.name ?? null;
+  }
+  return null;
 }
 
 function materialName(assetType: string, typeModelName: string): string {
@@ -299,6 +318,8 @@ export async function previewInventoryImport(
         name: row.values.typeModelName || row.values.name,
         category: row.values.category,
         ...(row.values.typeModelName ? { typeModelName: row.values.typeModelName } : {}),
+        ...(row.values.location ? { location: row.values.location } : {}),
+        ...(row.values.block ? { block: row.values.block } : {}),
         ...(row.values.locationBlock ? { locationBlock: row.values.locationBlock } : {}),
         ...(row.values.serialNumber ? { serialNumber: row.values.serialNumber } : {}),
         ...(row.values.quantity ? { quantity: Number(row.values.quantity) } : {}),
@@ -320,22 +341,23 @@ export async function previewInventoryImport(
       const values = first.values;
       const itemName = values.typeModelName || values.name;
       const displayName = materialName(values.category, itemName);
-      const locationBlock = values.locationBlock || 'Not provided';
       if (!itemName) throw new Error('Type/model name is required.');
-      const normalizedCategory = normalizedAssetType(values.category);
-      const savedAssetType = await AssetTypeModel.exists({ normalizedName: normalizedCategory });
-      const assetTypeAllowed =
-        DEFAULT_ASSET_TYPES.includes(normalizedCategory) || Boolean(savedAssetType);
-      if (!assetTypeAllowed)
+      const category = await savedLookup('ASSET_TYPE', values.category);
+      const location = await savedLookup('LOCATION', values.location);
+      const block = await savedLookup('BLOCK', values.block);
+      if (!category)
         throw new Error('Asset type does not match the saved asset type dropdown.');
-      const materialIdentity = identity(mode, displayName, values.category);
+      if (!location) throw new Error('Location does not match the saved location dropdown.');
+      if (!block) throw new Error('Block does not match the saved block dropdown.');
+      const locationBlock = `${location} / ${block}`;
+      const materialIdentity = identity(mode, displayName, category);
       if (fileIdentities.has(materialIdentity))
         throw new Error('Duplicate material in this import file.');
       fileIdentities.add(materialIdentity);
       const existingMaterial = await MaterialModel.exists({
         trackingMode: mode,
         name: exact(displayName),
-        category: exact(values.category),
+        category: exact(category),
       });
       if (existingMaterial) throw new Error('This material already exists in Inventory.');
       let draft: CreateMaterialRequest;
@@ -355,8 +377,10 @@ export async function previewInventoryImport(
         if (existingSerial) throw new Error('A serial number in this material already exists.');
         draft = CreateMaterialRequestSchema.parse({
           name: displayName,
-          category: values.category,
+          category,
           typeModelName: itemName,
+          location,
+          block,
           locationBlock,
           ...(values.description ? { description: values.description } : {}),
           status: materialStatus(values.status),
@@ -368,8 +392,10 @@ export async function previewInventoryImport(
       } else {
         draft = CreateMaterialRequestSchema.parse({
           name: displayName,
-          category: values.category,
+          category,
           typeModelName: itemName,
+          location,
+          block,
           locationBlock,
           ...(values.description ? { description: values.description } : {}),
           status: materialStatus(values.status),

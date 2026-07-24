@@ -58,7 +58,7 @@ const navigation: NavigationItem[] = [
 const inventoryNavigation: NavigationItem[] = [
   { label: 'Inventory data', to: '/inventory', icon: Boxes, end: true, ariaLabel: 'Inventory', permission: 'INVENTORY_VIEW' },
   { label: 'Add material', to: '/inventory/new', icon: PackagePlus, permission: 'INVENTORY_ADD' },
-  { label: 'Add asset type', to: '/inventory/asset-types', icon: Boxes, permission: 'ASSET_TYPES_MANAGE' },
+  { label: 'Add asset details', to: '/inventory/asset-types', icon: Boxes, permission: 'ASSET_TYPES_MANAGE' },
 ];
 
 const issueNavigation: NavigationItem[] = [
@@ -94,7 +94,7 @@ function pageTitle(pathname: string): string {
   if (pathname === '/reports') return 'Reports';
   if (pathname === '/inventory/new') return 'Add material';
   if (pathname === '/inventory/import') return 'Bulk inventory upload';
-  if (pathname === '/inventory/asset-types') return 'Add asset type';
+  if (pathname === '/inventory/asset-types') return 'Add asset details';
   if (pathname.startsWith('/inventory/')) return 'Material details';
   if (pathname === '/inventory') return 'Inventory';
   if (pathname === '/receivers/new') return 'Add receiver';

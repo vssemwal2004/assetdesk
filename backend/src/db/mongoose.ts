@@ -6,6 +6,7 @@ import { AuditEventModel } from '../modules/audit/audit-event.model.js';
 import { AuthSessionModel } from '../modules/auth/auth-session.model.js';
 import { AssetUnitModel } from '../modules/inventory/asset-unit.model.js';
 import { AssetTypeImportModel } from '../modules/inventory/asset-type-import.model.js';
+import { AssetDetailModel } from '../modules/inventory/asset-detail.model.js';
 import { AssetTypeModel } from '../modules/inventory/asset-type.model.js';
 import { InventoryCounterModel } from '../modules/inventory/inventory-counter.model.js';
 import { InventoryImportModel } from '../modules/inventory/inventory-import.model.js';
@@ -29,6 +30,7 @@ const indexedModels: Array<{
   WorkerImportModel,
   InventoryCounterModel,
   AssetTypeModel,
+  AssetDetailModel,
   AssetTypeImportModel,
   InventoryImportModel,
   MaterialModel,

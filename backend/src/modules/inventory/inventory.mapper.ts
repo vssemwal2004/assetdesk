@@ -10,7 +10,10 @@ export function toMaterial(material: MaterialDocument): Material {
     name: material.name,
     category: material.category,
     typeModelName: material.typeModelName ?? null,
-    locationBlock: material.locationBlock ?? null,
+    location: material.location ?? null,
+    block: material.block ?? null,
+    locationBlock:
+      material.locationBlock ?? ([material.location, material.block].filter(Boolean).join(' / ') || null),
     description: material.description ?? null,
     trackingMode: material.trackingMode,
     returnPolicy: material.returnPolicy,

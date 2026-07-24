@@ -5,7 +5,9 @@ import { z } from 'zod';
 import {
   AdjustQuantityRequestSchema,
   AssetTagSchema,
+  AssetDetailKindSchema,
   AssetUnitStatusSchema,
+  CreateAssetDetailRequestSchema,
   CreateAssetTypeRequestSchema,
   CreateAssetUnitRequestSchema,
   CreateMaterialRequestSchema,
@@ -32,14 +34,17 @@ import {
 } from '../auth/auth.middleware.js';
 import {
   adjustQuantity,
+  createAssetDetail,
   createAssetType,
   createAssetUnit,
+  deleteAssetDetail,
   deleteAssetType,
   deleteAssetUnit,
   createMaterial,
   deleteMaterial,
   exportMaterialsCsv,
   getMaterial,
+  listAssetDetails,
   listAssetTypes,
   listAssetUnits,
   listMaterials,
@@ -233,6 +238,18 @@ export function createInventoryRouter(): Router {
     }
   });
 
+  router.get('/asset-details', requirePermission('INVENTORY_VIEW'), async (request, response, next) => {
+    try {
+      const kind = request.query.kind
+        ? AssetDetailKindSchema.parse(request.query.kind)
+        : undefined;
+      const result = await listAssetDetails(kind);
+      response.json({ data: result.assetDetails });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get('/export', requirePermission('INVENTORY_EXPORT'), async (request, response, next) => {
     try {
       const input = MaterialListQuerySchema.parse(request.query);
@@ -269,6 +286,51 @@ export function createInventoryRouter(): Router {
         const assetType = await createAssetType(input.name, authenticated(request).userId);
         await audit(request, 'ASSET_TYPE_SAVED', 'ASSET_TYPE', assetType.id, { name: assetType.name });
         response.status(201).json({ data: { assetType } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    '/asset-details',
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ASSET_TYPES_ADD'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const input = CreateAssetDetailRequestSchema.parse(request.body);
+        const detail = await createAssetDetail(input.kind, input.name, authenticated(request).userId);
+        if (input.kind === 'ASSET_TYPE') {
+          await createAssetType(input.name, authenticated(request).userId);
+        }
+        await audit(request, 'ASSET_DETAIL_SAVED', 'ASSET_DETAIL', detail.id, {
+          kind: detail.kind,
+          name: detail.name,
+        });
+        response.status(201).json({ data: { detail } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.delete(
+    '/asset-details/:assetDetailId',
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ASSET_TYPES_DELETE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const assetDetailId = z.string().parse(request.params.assetDetailId);
+        const detail = await deleteAssetDetail(assetDetailId);
+        await audit(request, 'ASSET_DETAIL_DELETED', 'ASSET_DETAIL', detail.id, {
+          kind: detail.kind,
+          name: detail.name,
+        });
+        response.status(204).send();
       } catch (error) {
         next(error);
       }

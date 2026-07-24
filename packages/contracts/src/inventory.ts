@@ -13,6 +13,8 @@ const CategorySchema = z.string().trim().min(2).max(120);
 const DescriptionSchema = z.string().trim().max(1_000);
 const AssetTypeNameSchema = z.string().trim().min(2).max(120);
 const LocationBlockSchema = z.string().trim().min(1).max(120);
+const LocationSchema = z.string().trim().min(1).max(120);
+const BlockSchema = z.string().trim().min(1).max(120);
 const UnitLabelSchema = z.string().trim().min(1).max(40);
 const ConditionSchema = z.string().trim().min(1).max(120);
 const SerialNumberSchema = z.string().trim().min(1).max(120);
@@ -24,7 +26,9 @@ const CreateMaterialBaseSchema = z.object({
   name: NameSchema,
   category: CategorySchema,
   typeModelName: NameSchema,
-  locationBlock: LocationBlockSchema,
+  location: LocationSchema,
+  block: BlockSchema,
+  locationBlock: LocationBlockSchema.optional(),
   description: DescriptionSchema.optional(),
   status: MaterialStatusSchema.exclude(['ARCHIVED']).default('ACTIVE'),
   assignmentTypes: z.array(AssignmentTypeSchema).min(1).max(2),
@@ -57,6 +61,8 @@ export const UpdateMaterialRequestSchema = z
     name: NameSchema.optional(),
     category: CategorySchema.optional(),
     typeModelName: NameSchema.optional(),
+    location: LocationSchema.optional(),
+    block: BlockSchema.optional(),
     locationBlock: LocationBlockSchema.optional(),
     description: DescriptionSchema.nullable().optional(),
     returnPolicy: ReturnPolicySchema.optional(),
@@ -107,6 +113,8 @@ export const MaterialSchema = z
     name: z.string().min(1),
     category: z.string().min(1),
     typeModelName: z.string().nullable().optional().default(null),
+    location: z.string().nullable().optional().default(null),
+    block: z.string().nullable().optional().default(null),
     locationBlock: z.string().nullable().optional().default(null),
     description: z.string().nullable(),
     trackingMode: TrackingModeSchema,
@@ -223,6 +231,18 @@ export const AssetTypeSchema = z.object({
 
 export const AssetTypesResponseSchema = z.object({ data: z.array(AssetTypeSchema) });
 export const CreateAssetTypeRequestSchema = z.object({ name: AssetTypeNameSchema }).strict();
+export const AssetDetailKindSchema = z.enum(['ASSET_TYPE', 'LOCATION', 'BLOCK']);
+export const AssetDetailSchema = z.object({
+  id: z.string().min(1),
+  kind: AssetDetailKindSchema,
+  name: z.string().trim().min(1).max(120),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export const AssetDetailsResponseSchema = z.object({ data: z.array(AssetDetailSchema) });
+export const CreateAssetDetailRequestSchema = z
+  .object({ kind: AssetDetailKindSchema, name: z.string().trim().min(1).max(120) })
+  .strict();
 export const AssetTypeImportResponseSchema = z.object({
   data: z.object({
     created: z.array(AssetTypeSchema),
@@ -240,6 +260,7 @@ export const AssetTypeImportPreviewResponseSchema = z.object({
     rows: z.array(
       z.object({
         rowNumber: z.number().int().positive(),
+        kind: z.string().optional(),
         name: z.string(),
         valid: z.boolean(),
         errors: z.array(z.string()),
@@ -259,6 +280,9 @@ export type Material = z.infer<typeof MaterialSchema>;
 export type AssetUnit = z.infer<typeof AssetUnitSchema>;
 export type AssetType = z.infer<typeof AssetTypeSchema>;
 export type CreateAssetTypeRequest = z.infer<typeof CreateAssetTypeRequestSchema>;
+export type AssetDetailKind = z.infer<typeof AssetDetailKindSchema>;
+export type AssetDetail = z.infer<typeof AssetDetailSchema>;
+export type CreateAssetDetailRequest = z.infer<typeof CreateAssetDetailRequestSchema>;
 export type AssetTypeImportResponse = z.infer<typeof AssetTypeImportResponseSchema>;
 export type AssetTypeImportPreviewResponse = z.infer<typeof AssetTypeImportPreviewResponseSchema>;
 export type MaterialResponse = z.infer<typeof MaterialResponseSchema>;

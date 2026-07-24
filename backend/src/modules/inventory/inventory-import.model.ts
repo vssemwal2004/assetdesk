@@ -7,6 +7,8 @@ export interface InventoryImportPreviewRow {
   name: string;
   category: string;
   typeModelName?: string;
+  location?: string;
+  block?: string;
   locationBlock?: string;
   serialNumber?: string;
   quantity?: number;
@@ -20,6 +22,8 @@ export interface InventoryImportInput {
   name: string;
   category: string;
   typeModelName?: string | undefined;
+  location?: string | undefined;
+  block?: string | undefined;
   locationBlock?: string | undefined;
   description?: string | undefined;
   assignmentTypes: string[];
@@ -51,6 +55,8 @@ const PreviewRowSchema = new Schema<InventoryImportPreviewRow>(
     name: { type: String, default: '' },
     category: { type: String, default: '' },
     typeModelName: { type: String },
+    location: { type: String },
+    block: { type: String },
     locationBlock: { type: String },
     serialNumber: { type: String },
     quantity: { type: Number },
@@ -67,6 +73,8 @@ const ImportInputSchema = new Schema<InventoryImportInput>(
     name: { type: String, required: true },
     category: { type: String, required: true },
     typeModelName: { type: String },
+    location: { type: String },
+    block: { type: String },
     locationBlock: { type: String },
     description: { type: String },
     assignmentTypes: { type: [String], required: true },

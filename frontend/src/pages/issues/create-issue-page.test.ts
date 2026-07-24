@@ -10,6 +10,8 @@ const assetMaterial: Material = {
   name: 'Dell Latitude',
   category: 'Laptops',
   typeModelName: null,
+  location: null,
+  block: null,
   locationBlock: null,
   description: null,
   trackingMode: 'SERIALIZED',

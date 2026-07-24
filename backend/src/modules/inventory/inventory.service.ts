@@ -2,6 +2,8 @@ import mongoose, { Types } from 'mongoose';
 
 import type {
   AdjustQuantityRequest,
+  AssetDetail,
+  AssetDetailKind,
   AssetUnit,
   AssetType,
   AssetUnitStatus,
@@ -20,6 +22,7 @@ import { MaterialCodeSchema } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
 import { IssueModel } from '../issues/issue.model.js';
+import { AssetDetailModel, type AssetDetailDocument } from './asset-detail.model.js';
 import { AssetTypeModel, type AssetTypeDocument } from './asset-type.model.js';
 import { AssetUnitModel } from './asset-unit.model.js';
 import { allocateAssetTag, allocateMaterialCode } from './inventory-id.js';
@@ -62,6 +65,10 @@ export type MaterialExportInput = Omit<MaterialListInput, 'page' | 'pageSize'>;
 
 export interface AssetTypeListResult {
   assetTypes: AssetType[];
+}
+
+export interface AssetDetailListResult {
+  assetDetails: AssetDetail[];
 }
 
 export interface AssetUnitListInput {
@@ -128,12 +135,26 @@ function normalizeAssetType(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
 }
 
+export function normalizeLookupValue(value: string): string {
+  return value.trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
+}
+
 function toAssetType(assetType: AssetTypeDocument): AssetType {
   return {
     id: assetType._id.toString(),
     name: assetType.name,
     createdAt: assetType.createdAt.toISOString(),
     updatedAt: assetType.updatedAt.toISOString(),
+  };
+}
+
+function toAssetDetail(detail: AssetDetailDocument): AssetDetail {
+  return {
+    id: detail._id.toString(),
+    kind: detail.kind,
+    name: detail.name,
+    createdAt: detail.createdAt.toISOString(),
+    updatedAt: detail.updatedAt.toISOString(),
   };
 }
 
@@ -157,6 +178,82 @@ export async function createAssetType(name: string, createdByUserId: string): Pr
     }
     throw error;
   }
+}
+
+export async function listAssetDetails(kind?: AssetDetailKind): Promise<AssetDetailListResult> {
+  const records = await AssetDetailModel.find(kind ? { kind } : {}).sort({ kind: 1, name: 1, _id: 1 });
+  return { assetDetails: records.map((record) => toAssetDetail(record)) };
+}
+
+export async function createAssetDetail(
+  kind: AssetDetailKind,
+  name: string,
+  createdByUserId: string,
+): Promise<AssetDetail> {
+  const normalizedName = normalizeLookupValue(name);
+  const createdBy = objectId(createdByUserId);
+  const existing = await AssetDetailModel.findOne({ kind, normalizedName });
+  if (existing) return toAssetDetail(existing);
+  try {
+    const detail = await AssetDetailModel.create({ kind, name: name.trim(), normalizedName, createdBy });
+    return toAssetDetail(detail);
+  } catch (error) {
+    if (duplicateField(error) === 'kind' || duplicateField(error) === 'normalizedName') {
+      const detail = await AssetDetailModel.findOne({ kind, normalizedName });
+      if (detail) return toAssetDetail(detail);
+    }
+    throw error;
+  }
+}
+
+export async function deleteAssetDetail(assetDetailId: string): Promise<AssetDetail> {
+  if (!Types.ObjectId.isValid(assetDetailId))
+    throw new AppError(404, 'ASSET_DETAIL_NOT_FOUND', 'This asset detail was not found.');
+  const detail = await AssetDetailModel.findById(assetDetailId);
+  if (!detail) throw new AppError(404, 'ASSET_DETAIL_NOT_FOUND', 'This asset detail was not found.');
+  const normalized = normalizeLookupValue(detail.name);
+  const inUse =
+    detail.kind === 'ASSET_TYPE'
+      ? await MaterialModel.exists({ category: exactCaseInsensitive(detail.name) })
+      : await MaterialModel.exists({
+          [detail.kind === 'LOCATION' ? 'location' : 'block']: exactCaseInsensitive(detail.name),
+        });
+  if (inUse) {
+    throw new AppError(
+      409,
+      'ASSET_DETAIL_IN_USE',
+      'This detail is used by inventory data. Change or archive those materials before deleting it.',
+    );
+  }
+  const deleted = toAssetDetail(detail);
+  await AssetDetailModel.deleteOne({ _id: detail._id });
+  if (detail.kind === 'ASSET_TYPE') {
+    const assetType = await AssetTypeModel.findOne({ normalizedName: normalized });
+    if (assetType) await AssetTypeModel.deleteOne({ _id: assetType._id });
+  }
+  return deleted;
+}
+
+async function savedDetailName(kind: AssetDetailKind, value: string): Promise<string | null> {
+  const normalizedName = normalizeLookupValue(value);
+  const detail = await AssetDetailModel.findOne({ kind, normalizedName });
+  if (detail) return detail.name;
+  if (kind === 'ASSET_TYPE') {
+    const assetType = await AssetTypeModel.findOne({ normalizedName: normalizeAssetType(value) });
+    return assetType?.name ?? null;
+  }
+  return null;
+}
+
+async function requireSavedDetail(kind: AssetDetailKind, value: string): Promise<string> {
+  const saved = await savedDetailName(kind, value);
+  if (saved) return saved;
+  const label = kind === 'ASSET_TYPE' ? 'IT asset' : kind.toLowerCase();
+  throw new AppError(
+    400,
+    'INVENTORY_DETAIL_NOT_ALLOWED',
+    `${label} does not match the saved dropdown data.`,
+  );
 }
 
 export async function deleteAssetType(assetTypeId: string): Promise<AssetType> {
@@ -367,10 +464,14 @@ export async function createMaterial(
   createdByUserId: string,
 ): Promise<Material> {
   const createdBy = objectId(createdByUserId);
+  const category = await requireSavedDetail('ASSET_TYPE', input.category);
+  const location = await requireSavedDetail('LOCATION', input.location);
+  const block = await requireSavedDetail('BLOCK', input.block);
+  const locationBlock = `${location} / ${block}`;
   const existing = await MaterialModel.exists({
     trackingMode: input.trackingMode,
     name: exactCaseInsensitive(input.name),
-    category: exactCaseInsensitive(input.category),
+    category: exactCaseInsensitive(category),
   });
   if (existing) throw materialConflict();
 
@@ -387,10 +488,12 @@ export async function createMaterial(
       createdMaterial = await MaterialModel.create({
         materialCode,
         name: input.name,
-        category: input.category,
+        category,
         typeModelName: input.typeModelName,
-        locationBlock: input.locationBlock,
-        identityKey: materialIdentity(input.trackingMode, input.name, input.category),
+        location,
+        block,
+        locationBlock,
+        identityKey: materialIdentity(input.trackingMode, input.name, category),
         ...(input.description ? { description: input.description } : {}),
         trackingMode: input.trackingMode,
         returnPolicy: input.returnPolicy,
@@ -402,7 +505,7 @@ export async function createMaterial(
         ...(input.trackingMode === 'QUANTITY' ? { unitLabel: input.unitLabel } : {}),
         createdBy,
       });
-      await createAssetType(input.category, createdByUserId);
+      await createAssetType(category, createdByUserId);
 
       if (input.trackingMode === 'SERIALIZED') {
         const material = createdMaterial;
@@ -563,9 +666,16 @@ export async function updateMaterial(
       material.unitLabel = input.unitLabel;
     }
     if (input.name !== undefined) material.name = input.name;
-    if (input.category !== undefined) material.category = input.category;
+    if (input.category !== undefined) material.category = await requireSavedDetail('ASSET_TYPE', input.category);
     if (input.typeModelName !== undefined) material.typeModelName = input.typeModelName;
-    if (input.locationBlock !== undefined) material.locationBlock = input.locationBlock;
+    if (input.location !== undefined) material.location = await requireSavedDetail('LOCATION', input.location);
+    if (input.block !== undefined) material.block = await requireSavedDetail('BLOCK', input.block);
+    if (input.locationBlock !== undefined && input.location === undefined && input.block === undefined) {
+      material.locationBlock = input.locationBlock;
+    }
+    if (input.location !== undefined || input.block !== undefined) {
+      material.locationBlock = [material.location, material.block].filter(Boolean).join(' / ');
+    }
     if (input.name !== undefined || input.category !== undefined) {
       const duplicate = await MaterialModel.exists({
         _id: { $ne: material._id },
