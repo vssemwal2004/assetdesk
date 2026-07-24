@@ -92,7 +92,7 @@ export function LoginPage() {
                 }
                 label="Worker ID or Admin email"
                 onChange={(event) => setIdentifier(event.target.value)}
-                placeholder="GEU-WRK-A7K4 or admin@university.edu"
+                placeholder="GEU-CC-ANITASHARMA or admin@university.edu"
                 ref={identifierRef}
                 spellCheck={false}
                 value={identifier}

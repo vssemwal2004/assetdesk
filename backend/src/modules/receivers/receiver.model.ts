@@ -44,7 +44,7 @@ const ReceiverSchema = new Schema<ReceiverRecord>(
     universityIdNormalized: { type: String, trim: true, maxlength: 64 },
     type: {
       type: String,
-      enum: ['FACULTY', 'STAFF', 'STUDENT', 'DEPARTMENT', 'AUTHORIZED_EXTERNAL'],
+      enum: ['FACULTY', 'STAFF', 'STUDENT', 'DEPARTMENT', 'AUTHORIZED_EXTERNAL', 'MANAGEMENT', 'GEHU'],
       required: true,
     },
     department: { type: String, trim: true, maxlength: 120 },

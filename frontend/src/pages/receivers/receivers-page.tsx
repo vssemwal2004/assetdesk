@@ -19,6 +19,8 @@ const receiverTypes: ReceiverType[] = [
   'STUDENT',
   'DEPARTMENT',
   'AUTHORIZED_EXTERNAL',
+  'MANAGEMENT',
+  'GEHU',
 ];
 
 function receiverStatus(value: string): ReceiverStatus | undefined {
@@ -41,7 +43,8 @@ export function ReceiversPage() {
   const type = receiverType(parameters.get('type') ?? '');
   const department = parameters.get('department') ?? '';
   const admin = user?.role === 'ADMIN';
-  const canManageReceivers = hasPermission(user, 'RECEIVERS_MANAGE');
+  const canAddReceivers = hasPermission(user, 'RECEIVERS_ADD');
+  const canDeleteReceivers = hasPermission(user, 'RECEIVERS_DELETE');
 
   const query = useQuery({
     queryKey: ['receivers', { page, search, status, type, department }],
@@ -92,7 +95,7 @@ export function ReceiversPage() {
     <div className="space-y-6">
       <PageHeader
         actions={
-          canManageReceivers ? (
+          canAddReceivers ? (
             <Link className="button-primary" to="/receivers/new">
               <Plus aria-hidden="true" size={18} />
               Add receiver
@@ -169,7 +172,7 @@ export function ReceiversPage() {
               <Button onClick={() => setParameters({ page: '1' })} variant="secondary">
                 Clear filters
               </Button>
-            ) : canManageReceivers ? (
+            ) : canAddReceivers ? (
               <Link className="button-primary" to="/receivers/new">
                 <Plus aria-hidden="true" size={18} />
                 Add receiver
@@ -190,7 +193,7 @@ export function ReceiversPage() {
           <div className="space-y-3 min-[840px]:hidden">
             {receivers.map((receiver) => (
               <ReceiverCard
-                admin={canManageReceivers}
+                canDelete={canDeleteReceivers}
                 key={receiver.receiverCode}
                 onDelete={setDeleteTarget}
                 receiver={receiver}
@@ -198,7 +201,7 @@ export function ReceiversPage() {
             ))}
           </div>
           <ReceiverTable
-            admin={canManageReceivers}
+            canDelete={canDeleteReceivers}
             onDelete={setDeleteTarget}
             receivers={receivers}
           />
@@ -300,11 +303,11 @@ function ReceiverFilters({
 }
 
 function ReceiverCard({
-  admin,
+  canDelete,
   receiver,
   onDelete,
 }: {
-  admin: boolean;
+  canDelete: boolean;
   receiver: Receiver;
   onDelete: (receiver: Receiver) => void;
 }) {
@@ -332,7 +335,7 @@ function ReceiverCard({
         <Link className="button-secondary flex-1" to={`/receivers/${receiver.receiverCode}`}>
           View Receiver details
         </Link>
-        {admin ? (
+        {canDelete ? (
           <Button onClick={() => onDelete(receiver)} type="button" variant="danger">
             <Trash2 aria-hidden="true" size={17} />
           </Button>
@@ -343,11 +346,11 @@ function ReceiverCard({
 }
 
 function ReceiverTable({
-  admin,
+  canDelete,
   receivers,
   onDelete,
 }: {
-  admin: boolean;
+  canDelete: boolean;
   receivers: Receiver[];
   onDelete: (receiver: Receiver) => void;
 }) {
@@ -402,7 +405,7 @@ function ReceiverTable({
                   <Link className="button-quiet" to={`/receivers/${receiver.receiverCode}`}>
                     View details
                   </Link>
-                  {admin ? (
+                  {canDelete ? (
                     <Button onClick={() => onDelete(receiver)} type="button" variant="danger">
                       <Trash2 aria-hidden="true" size={17} />
                     </Button>

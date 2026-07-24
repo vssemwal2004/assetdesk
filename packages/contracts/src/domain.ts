@@ -12,6 +12,8 @@ export const ReceiverTypeSchema = z.enum([
   'STUDENT',
   'DEPARTMENT',
   'AUTHORIZED_EXTERNAL',
+  'MANAGEMENT',
+  'GEHU',
 ]);
 export type ReceiverType = z.infer<typeof ReceiverTypeSchema>;
 

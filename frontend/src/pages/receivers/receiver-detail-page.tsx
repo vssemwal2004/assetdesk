@@ -21,6 +21,7 @@ import {
 } from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
+import { hasPermission } from '../../auth/permissions';
 import { CatalogBadge, DetailRow, SelectField } from '../../components/catalog-ui';
 import {
   AppCard,
@@ -41,6 +42,8 @@ const receiverTypes: ReceiverType[] = [
   'STUDENT',
   'DEPARTMENT',
   'AUTHORIZED_EXTERNAL',
+  'MANAGEMENT',
+  'GEHU',
 ];
 
 export function ReceiverDetailPage() {
@@ -54,7 +57,8 @@ export function ReceiverDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const notice = (location.state as { notice?: string } | null)?.notice;
-  const admin = user?.role === 'ADMIN';
+  const canEditReceiver = hasPermission(user, 'RECEIVERS_EDIT');
+  const canDeleteReceiver = hasPermission(user, 'RECEIVERS_DELETE');
 
   const query = useQuery({
     queryKey: ['receiver', receiverCode],
@@ -149,7 +153,7 @@ export function ReceiverDetailPage() {
                 <CatalogBadge value={receiver.status} />
               </div>
             </div>
-            {admin && !editing ? (
+            {canEditReceiver && !editing ? (
               <Button onClick={() => setEditing(true)} variant="secondary">
                 <Pencil aria-hidden="true" size={18} />
                 Edit details
@@ -185,9 +189,9 @@ export function ReceiverDetailPage() {
                 ? 'This Receiver is available in operational searches.'
                 : 'This Receiver is retained for records but hidden from active operational searches.'}
             </p>
-            {admin ? (
+            {canEditReceiver || canDeleteReceiver ? (
               <div className="mt-4 space-y-2">
-                <Button
+                {canEditReceiver ? <Button
                   className="w-full"
                   onClick={() => {
                     setActionError(null);
@@ -197,8 +201,8 @@ export function ReceiverDetailPage() {
                 >
                   <ShieldCheck aria-hidden="true" size={18} />
                   {receiver.status === 'ACTIVE' ? 'Deactivate Receiver' : 'Reactivate Receiver'}
-                </Button>
-                <Button
+                </Button> : null}
+                {canDeleteReceiver ? <Button
                   className="w-full"
                   onClick={() => {
                     setActionError(null);
@@ -208,7 +212,7 @@ export function ReceiverDetailPage() {
                 >
                   <Trash2 aria-hidden="true" size={18} />
                   Delete Receiver
-                </Button>
+                </Button> : null}
               </div>
             ) : (
               <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-xs font-semibold text-[var(--color-text-muted)]">

@@ -4,9 +4,9 @@ import { formatAssetTag, formatMaterialCode } from './inventory-id.js';
 
 describe('inventory identifier formatting', () => {
   it('formats sequential public identifiers with fixed-width digits', () => {
-    expect(formatMaterialCode(1)).toBe('GEU-MAT-000001');
-    expect(formatMaterialCode(999_999)).toBe('GEU-MAT-999999');
-    expect(formatAssetTag(42)).toBe('GEU-AST-000042');
+    expect(formatMaterialCode(1, 2026)).toBe('GEU-2026-000001');
+    expect(formatMaterialCode(999_999, 2026)).toBe('GEU-2026-999999');
+    expect(formatAssetTag(42, 2026)).toBe('GEU-2026-000042');
   });
 
   it('rejects invalid or exhausted sequence values', () => {

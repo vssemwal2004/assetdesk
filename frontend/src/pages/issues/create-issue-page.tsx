@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Check, ClipboardCheck, PackagePlus, Plus, Printer, Trash2 } from 'lucide-react';
+import { ArrowLeft, ClipboardCheck, PackagePlus, Plus, Printer, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 
@@ -53,6 +53,8 @@ const receiverTypes: ReceiverType[] = [
   'STAFF',
   'DEPARTMENT',
   'AUTHORIZED_EXTERNAL',
+  'MANAGEMENT',
+  'GEHU',
 ];
 
 export function CreateIssuePage() {
@@ -374,17 +376,29 @@ export function CreateIssuePage() {
 
       <AppCard className="issue-panel">
         <SectionTitle number="3" title="Issue duration" />
-        <div className="mt-4 grid grid-cols-2 gap-1.5 rounded-[10px] bg-[var(--color-surface-tint)] p-1">
-          <TypeButton
-            active={assignmentType === 'LONG_TERM'}
-            label="Permanent issue"
-            onClick={() => setAssignmentType('LONG_TERM')}
-          />
-          <TypeButton
-            active={assignmentType === 'SHORT_TERM'}
-            label="Return by date"
-            onClick={() => setAssignmentType('SHORT_TERM')}
-          />
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="space-y-1.5">
+            <span className="field-label">Issue type</span>
+            <select
+              className="field-input field-input-compact"
+              onChange={(event) => {
+                setAssignmentType(event.target.value as AssignmentType);
+                setMessage(null);
+              }}
+              value={assignmentType}
+            >
+              <option value="LONG_TERM">Permanent issue</option>
+              <option value="SHORT_TERM">Return by date</option>
+            </select>
+          </label>
+          {assignmentType === 'LONG_TERM' ? (
+            <div className="rounded-[12px] bg-[var(--color-surface-tint)] p-4">
+              <p className="text-xs font-bold text-[var(--color-text-muted)]">Expected return</p>
+              <p className="mt-1 text-sm font-extrabold text-[var(--color-primary-strong)]">
+                No fixed return date
+              </p>
+            </div>
+          ) : null}
         </div>
         {assignmentType === 'SHORT_TERM' ? (
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -439,27 +453,6 @@ export function CreateIssuePage() {
         </Button>
       </StickyWorkflowActions>
     </div>
-  );
-}
-
-function TypeButton({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={`min-h-10 rounded-[9px] px-3 text-sm font-extrabold transition ${active ? 'bg-white text-[var(--color-primary)] shadow-[var(--shadow-card)]' : 'text-[var(--color-text-muted)]'}`}
-      onClick={onClick}
-      type="button"
-    >
-      {active ? <Check aria-hidden="true" className="mr-1 inline" size={16} /> : null}
-      {label}
-    </button>
   );
 }
 

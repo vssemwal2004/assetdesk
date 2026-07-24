@@ -15,17 +15,38 @@ export const WorkerPermissionSchema = z.enum([
   'RETURNS_VIEW',
   'INVENTORY_VIEW',
   'INVENTORY_MANAGE',
+  'INVENTORY_ADD',
+  'INVENTORY_EDIT',
+  'INVENTORY_DELETE',
+  'INVENTORY_QUANTITY_ADJUST',
   'ASSET_TYPES_MANAGE',
+  'ASSET_TYPES_ADD',
+  'ASSET_TYPES_DELETE',
   'INVENTORY_IMPORT',
   'INVENTORY_EXPORT',
   'ASSET_UNITS_MANAGE',
+  'ASSET_UNITS_ADD',
+  'ASSET_UNITS_EDIT',
+  'ASSET_UNITS_DELETE',
   'RECEIVERS_VIEW',
   'RECEIVERS_MANAGE',
+  'RECEIVERS_ADD',
+  'RECEIVERS_EDIT',
+  'RECEIVERS_DELETE',
   'REPORTS_VIEW',
 ]);
 
 export const WorkerPermissionsSchema = z.array(WorkerPermissionSchema).min(1);
-export const DEFAULT_WORKER_PERMISSIONS = WorkerPermissionSchema.options;
+const LEGACY_BROAD_PERMISSIONS = [
+  'INVENTORY_MANAGE',
+  'ASSET_TYPES_MANAGE',
+  'ASSET_UNITS_MANAGE',
+  'RECEIVERS_MANAGE',
+] satisfies string[];
+
+export const DEFAULT_WORKER_PERMISSIONS = WorkerPermissionSchema.options.filter(
+  (permission) => !LEGACY_BROAD_PERMISSIONS.includes(permission),
+);
 
 export const WorkerDataScopeSchema = z.enum(['OWN', 'ALL']);
 export const WorkerDataAccessSchema = z.object({

@@ -17,13 +17,13 @@ export function BillPage() {
     enabled: Boolean(issueId),
   });
 
-  if (query.isPending) return <LoadingPanel label="Loading issue/return slip" />;
+  if (query.isPending) return <LoadingPanel label="Loading issue/return receipt" />;
   if (query.isError || !query.data) {
     return (
       <ErrorState
-        message="This issue/return slip could not be generated from the Issue Record."
+        message="This issue/return receipt could not be generated from the Issue Record."
         onRetry={() => void query.refetch()}
-        title="Issue/return slip not available"
+        title="Issue/return receipt not available"
       />
     );
   }
@@ -37,9 +37,9 @@ export function BillPage() {
   if (billType === 'return' && !returnEvent) {
     return (
       <ErrorState
-        message="This return slip could not be generated because the selected Return event was not found."
+        message="This return receipt could not be generated because the selected Return event was not found."
         onRetry={() => void query.refetch()}
-        title="Return slip not available"
+        title="Return receipt not available"
       />
     );
   }
@@ -49,7 +49,7 @@ export function BillPage() {
       <div className="flex flex-wrap justify-end gap-2 print:hidden">
         <Link className="button-quiet" to="/bills">
           <ArrowLeft aria-hidden="true" size={18} />
-          Back to Issue/Return Slip
+          Back to Issue/Return Receipt
         </Link>
         <Button onClick={() => window.print()}>
           <Download aria-hidden="true" size={18} />

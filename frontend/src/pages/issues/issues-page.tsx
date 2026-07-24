@@ -337,6 +337,13 @@ function materialSummary(issue: IssueSummary): string {
   return extra > 0 ? `${first} + ${extra} more` : first;
 }
 
+function receiptTarget(issue: IssueSummary): string {
+  if (issue.latestReturnEventId && issue.status !== 'ISSUED') {
+    return `/bills/${issue.issueId}?type=return&returnEventId=${issue.latestReturnEventId}`;
+  }
+  return `/bills/${issue.issueId}`;
+}
+
 function canRecordReturn(issue: IssueSummary): boolean {
   return issue.totalOutstandingQuantity > 0;
 }
@@ -472,7 +479,7 @@ function IssueActionsMenu({
         {canOpenSlip ? (
           <Link
             className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
-            to={`/bills/${issue.issueId}`}
+            to={receiptTarget(issue)}
           >
             <Printer aria-hidden="true" size={16} />
             Generate receipt
@@ -700,7 +707,7 @@ function IssueQuickViewDialog({
           {canEditIssue ? <Link className="button-secondary" to={`/issues/${issue.issueId}?edit=1`}>
             Edit
           </Link> : null}
-          {canOpenSlip ? <Link className="button-secondary" to={`/bills/${issue.issueId}`}>
+          {canOpenSlip ? <Link className="button-secondary" to={receiptTarget(issue)}>
             Generate receipt
           </Link> : null}
           {canReturn && canRecordReturn(issue) ? (

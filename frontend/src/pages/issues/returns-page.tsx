@@ -122,7 +122,7 @@ export function ReturnsPage() {
           onSearch={submitLookup}
           placeholder={
             exactLookupRequired
-              ? 'GEU-ISS-2026-000123 or GEU-AST-000123'
+              ? 'GEU-ISS-2026-000123 or GEU-2026-000123'
               : 'Issue ID, Receiver, asset tag or material'
           }
           transform={(value) => value.toUpperCase()}

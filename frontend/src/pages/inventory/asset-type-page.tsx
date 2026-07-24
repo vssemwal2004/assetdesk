@@ -5,6 +5,8 @@ import { Link } from 'react-router';
 
 import type { AssetType } from '@assetdesk/contracts';
 
+import { useAuth } from '../../auth/auth-context';
+import { hasPermission } from '../../auth/permissions';
 import { AppCard, Button, ErrorState, ErrorSummary, LoadingPanel, PageHeader, TextField } from '../../components/ui';
 import {
   commitAssetTypeImport,
@@ -22,6 +24,7 @@ type Mode = 'individual' | 'bulk';
 const ASSET_TYPE_TEMPLATE = 'Asset Type\r\nComputer\r\nPrinter\r\nNetwork Device\r\n';
 
 export function AssetTypePage() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<Mode>('individual');
@@ -31,6 +34,8 @@ export function AssetTypePage() {
   const [preview, setPreview] = useState<AssetTypeImportPreviewResponse['data'] | null>(null);
   const [result, setResult] = useState<AssetTypeImportResponse['data'] | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AssetType | null>(null);
+  const canAddAssetTypes = hasPermission(user, 'ASSET_TYPES_ADD');
+  const canDeleteAssetTypes = hasPermission(user, 'ASSET_TYPES_DELETE');
 
   const query = useQuery({
     queryKey: ['asset-types'],
@@ -151,7 +156,7 @@ export function AssetTypePage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <AppCard>
           <div className="mb-5 grid grid-cols-2 gap-2">
-            <Button
+            {canAddAssetTypes ? <Button
               onClick={() => {
                 setMode('individual');
                 setMessage(null);
@@ -162,8 +167,8 @@ export function AssetTypePage() {
             >
               <PackagePlus aria-hidden="true" size={18} />
               Individual
-            </Button>
-            <Button
+            </Button> : null}
+            {canAddAssetTypes ? <Button
               onClick={() => {
                 setMode('bulk');
                 setMessage(null);
@@ -174,12 +179,16 @@ export function AssetTypePage() {
             >
               <FileSpreadsheet aria-hidden="true" size={18} />
               Bulk upload
-            </Button>
+            </Button> : null}
           </div>
 
           {message ? <ErrorSummary message={message} title={mode === 'individual' ? 'Asset type' : 'Upload'} /> : null}
 
-          {mode === 'individual' ? (
+          {!canAddAssetTypes ? (
+            <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-sm font-semibold text-[var(--color-text-muted)]">
+              You can view saved asset types. Add/upload access is not enabled for this account.
+            </p>
+          ) : mode === 'individual' ? (
             <form className="mt-5 space-y-5" onSubmit={submitIndividual}>
               <TextField
                 label="Asset type"
@@ -331,7 +340,7 @@ export function AssetTypePage() {
                   key={assetType.id}
                 >
                   <span className="min-w-0 break-words">{assetType.name}</span>
-                  <Button
+                  {canDeleteAssetTypes ? <Button
                     aria-label={`Delete ${assetType.name}`}
                     onClick={() => {
                       setMessage(null);
@@ -341,7 +350,7 @@ export function AssetTypePage() {
                     variant="danger"
                   >
                     <Trash2 aria-hidden="true" size={16} />
-                  </Button>
+                  </Button> : null}
                 </li>
               ))}
             </ul>

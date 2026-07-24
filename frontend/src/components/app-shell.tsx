@@ -47,7 +47,7 @@ interface NavigationGroup {
 const navigation: NavigationItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: Home, end: true },
   { label: 'Return', to: '/returns', icon: RotateCcw, permission: 'RETURNS_VIEW' },
-  { label: 'Issue/Return Slip', to: '/bills', icon: ReceiptText, permission: 'ISSUE_SLIPS_VIEW' },
+  { label: 'Issue/Return Receipt', to: '/bills', icon: ReceiptText, permission: 'ISSUE_SLIPS_VIEW' },
   { label: 'Receivers', to: '/receivers', icon: ContactRound, permission: 'RECEIVERS_VIEW' },
   { label: 'Workers', to: '/workers', icon: UsersRound, adminOnly: true },
   { label: 'Audit logs', to: '/audit', icon: FileClock, adminOnly: true },
@@ -57,7 +57,7 @@ const navigation: NavigationItem[] = [
 
 const inventoryNavigation: NavigationItem[] = [
   { label: 'Inventory data', to: '/inventory', icon: Boxes, end: true, ariaLabel: 'Inventory', permission: 'INVENTORY_VIEW' },
-  { label: 'Add material', to: '/inventory/new', icon: PackagePlus, permission: 'INVENTORY_MANAGE' },
+  { label: 'Add material', to: '/inventory/new', icon: PackagePlus, permission: 'INVENTORY_ADD' },
   { label: 'Add asset type', to: '/inventory/asset-types', icon: Boxes, permission: 'ASSET_TYPES_MANAGE' },
 ];
 
@@ -72,7 +72,7 @@ const mobileNavigation: NavigationItem[] = [
   { label: 'Issues', to: '/issues', icon: ClipboardList, end: true, permission: 'ISSUES_VIEW' },
   { label: 'Issue', to: '/issues/new', icon: PackagePlus, emphasized: true, permission: 'ASSIGNMENTS_CREATE' },
   { label: 'Return', to: '/returns', icon: RotateCcw, permission: 'RETURNS_VIEW' },
-  { label: 'Slip', to: '/bills', icon: ReceiptText, permission: 'ISSUE_SLIPS_VIEW' },
+  { label: 'Receipt', to: '/bills', icon: ReceiptText, permission: 'ISSUE_SLIPS_VIEW' },
   { label: 'Profile', to: '/profile', icon: UserRound },
 ];
 
@@ -88,8 +88,8 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith('/issues/')) return 'Issue details';
   if (pathname === '/issues') return 'Issues';
   if (pathname === '/returns') return 'Returns';
-  if (pathname.startsWith('/bills/')) return 'Issue/Return Slip';
-  if (pathname === '/bills') return 'Issue/Return Slip';
+  if (pathname.startsWith('/bills/')) return 'Issue/Return Receipt';
+  if (pathname === '/bills') return 'Issue/Return Receipt';
   if (pathname === '/audit') return 'Audit logs';
   if (pathname === '/reports') return 'Reports';
   if (pathname === '/inventory/new') return 'Add material';

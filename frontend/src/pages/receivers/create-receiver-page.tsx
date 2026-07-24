@@ -39,6 +39,8 @@ const receiverTypes: ReceiverType[] = [
   'STUDENT',
   'DEPARTMENT',
   'AUTHORIZED_EXTERNAL',
+  'MANAGEMENT',
+  'GEHU',
 ];
 
 export function CreateReceiverPage() {

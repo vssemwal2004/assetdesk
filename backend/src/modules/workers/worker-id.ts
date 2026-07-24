@@ -1,12 +1,14 @@
-import { randomInt } from 'node:crypto';
+function normalizeWorkerName(name: string): string {
+  const normalized = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '')
+    .slice(0, 24);
+  return normalized || 'WORKER';
+}
 
-const WORKER_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-
-export function generateWorkerIdCandidate(): string {
-  const suffix = Array.from({ length: 4 }, () => {
-    const index = randomInt(0, WORKER_ID_ALPHABET.length);
-    return WORKER_ID_ALPHABET[index] ?? 'X';
-  }).join('');
-
-  return `GEU-WRK-${suffix}`;
+export function generateWorkerIdCandidate(name: string, attempt = 0): string {
+  const base = `GEU-CC-${normalizeWorkerName(name)}`;
+  return attempt === 0 ? base : `${base}-${String(attempt + 1).padStart(2, '0')}`;
 }

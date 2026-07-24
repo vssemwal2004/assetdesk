@@ -42,26 +42,26 @@ export function BillsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        description="Generate and print issue/return slips from Issue Records."
-        title="Issue/Return Slip"
+        description="Generate and print issue/return receipts from Issue Records."
+        title="Issue/Return Receipt"
       />
 
       <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)] sm:p-4">
         <SearchForm
           id="bill-search"
           key={search}
-          label="Search issue/return slips"
+          label="Search issue/return receipts"
           onSearch={(value) => update({ search: value })}
           placeholder="Issue ID, Receiver or material"
           value={search}
         />
-        {query.data ? <PageCount count={query.data.meta.total} noun="slip" /> : null}
+        {query.data ? <PageCount count={query.data.meta.total} noun="receipt" /> : null}
       </section>
 
       {query.isPending ? (
-        <LoadingPanel label="Loading issue/return slips" />
+        <LoadingPanel label="Loading issue/return receipts" />
       ) : query.isError ? (
-        <ErrorState message="Issue/return slips could not be loaded." onRetry={() => void query.refetch()} />
+        <ErrorState message="Issue/return receipts could not be loaded." onRetry={() => void query.refetch()} />
       ) : issues.length === 0 ? (
         <EmptyState
           action={
@@ -74,9 +74,9 @@ export function BillsPage() {
           message={
             search
               ? 'Try another Issue ID, Receiver or material name.'
-              : 'Issue/return slips will appear after material is issued.'
+              : 'Issue/return receipts will appear after material is issued.'
           }
-          title={search ? 'No slips match' : 'No issue/return slips yet'}
+          title={search ? 'No receipts match' : 'No issue/return receipts yet'}
         />
       ) : (
         <>
@@ -86,7 +86,7 @@ export function BillsPage() {
             ))}
           </div>
           {query.data && query.data.meta.totalPages > 1 ? (
-            <nav aria-label="Issue/return slip pages" className="flex items-center justify-between gap-3">
+            <nav aria-label="Issue/return receipt pages" className="flex items-center justify-between gap-3">
               <Button
                 disabled={page <= 1}
                 onClick={() => update({ page: String(page - 1) })}
@@ -118,6 +118,13 @@ function materialSummary(issue: IssueSummary): string {
   return extra > 0 ? `${first} + ${extra} more` : first;
 }
 
+function receiptTarget(issue: IssueSummary): string {
+  if (issue.latestReturnEventId && issue.status !== 'ISSUED') {
+    return `/bills/${issue.issueId}?type=return&returnEventId=${issue.latestReturnEventId}`;
+  }
+  return `/bills/${issue.issueId}`;
+}
+
 function BillListItem({ issue }: { issue: IssueSummary }) {
   return (
     <article className="flex flex-col gap-3 rounded-[10px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between">
@@ -144,9 +151,9 @@ function BillListItem({ issue }: { issue: IssueSummary }) {
         <Link className="button-secondary" to={`/issues/${issue.issueId}`}>
           View issue
         </Link>
-        <Link className="button-primary" to={`/bills/${issue.issueId}`}>
+        <Link className="button-primary" to={receiptTarget(issue)}>
           <Printer aria-hidden="true" size={17} />
-          Generate slip
+          Generate receipt
         </Link>
       </div>
     </article>

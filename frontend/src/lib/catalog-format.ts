@@ -18,6 +18,8 @@ const labels: Record<string, string> = {
   STUDENT: 'Student',
   DEPARTMENT: 'Department',
   AUTHORIZED_EXTERNAL: 'Authorized external',
+  MANAGEMENT: 'Management',
+  GEHU: 'GEHU',
   PARTIALLY_RETURNED: 'Partially returned',
   RETURNED: 'Returned',
   CANCELLED: 'Cancelled',

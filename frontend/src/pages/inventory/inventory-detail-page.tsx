@@ -32,6 +32,7 @@ import {
 } from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
+import { hasPermission } from '../../auth/permissions';
 import { CatalogBadge, DetailRow, SelectField } from '../../components/catalog-ui';
 import {
   AppCard,
@@ -78,7 +79,14 @@ export function InventoryDetailPage() {
   const [unitStatus, setUnitStatus] = useState<AssetUnitStatus | ''>('');
   const [actionError, setActionError] = useState<string | null>(null);
   const notice = (location.state as { notice?: string } | null)?.notice;
-  const admin = user?.role === 'ADMIN';
+  const canEditInventory = hasPermission(user, 'INVENTORY_EDIT');
+  const canDeleteInventory = hasPermission(user, 'INVENTORY_DELETE');
+  const canAdjustQuantity = hasPermission(user, 'INVENTORY_QUANTITY_ADJUST');
+  const canAddAssetUnits = hasPermission(user, 'ASSET_UNITS_ADD');
+  const canEditAssetUnits = hasPermission(user, 'ASSET_UNITS_EDIT');
+  const canDeleteAssetUnits = hasPermission(user, 'ASSET_UNITS_DELETE');
+  const canChangeStatus = canEditInventory;
+  const canManageUnits = canAddAssetUnits || canEditAssetUnits || canDeleteAssetUnits;
 
   const query = useQuery({
     queryKey: ['material', materialCode],
@@ -201,7 +209,7 @@ export function InventoryDetailPage() {
                 <CatalogBadge value={material.status} />
               </div>
             </div>
-            {admin && !editing ? (
+            {canEditInventory && !editing ? (
               <Button onClick={() => setEditing(true)} variant="secondary">
                 <Pencil aria-hidden="true" size={18} />
                 Edit details
@@ -252,7 +260,7 @@ export function InventoryDetailPage() {
                 Values shown in {material.unitLabel}
               </p>
             ) : null}
-            {admin && material.status === 'ACTIVE' ? (
+            {canAdjustQuantity && material.status === 'ACTIVE' ? (
               <Button
                 className="mt-4 w-full"
                 onClick={() => setDialog('quantity')}
@@ -270,9 +278,9 @@ export function InventoryDetailPage() {
                 ? 'This material appears in active inventory searches.'
                 : 'This material is archived and retained for history.'}
             </p>
-            {admin ? (
+            {canChangeStatus || canDeleteInventory ? (
               <div className="mt-4 space-y-2">
-                <Button
+                {canChangeStatus ? <Button
                   className="w-full"
                   onClick={() => setDialog('status')}
                   variant={material.status === 'ACTIVE' ? 'danger' : 'secondary'}
@@ -283,11 +291,11 @@ export function InventoryDetailPage() {
                     <RotateCcw aria-hidden="true" size={18} />
                   )}
                   {material.status === 'ACTIVE' ? 'Archive material' : 'Restore material'}
-                </Button>
-                <Button className="w-full" onClick={() => setDialog('delete')} variant="danger">
+                </Button> : null}
+                {canDeleteInventory ? <Button className="w-full" onClick={() => setDialog('delete')} variant="danger">
                   <Trash2 aria-hidden="true" size={18} />
                   Delete material
-                </Button>
+                </Button> : null}
               </div>
             ) : (
               <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-xs font-semibold text-[var(--color-text-muted)]">
@@ -302,7 +310,10 @@ export function InventoryDetailPage() {
 
       {material.trackingMode === 'SERIALIZED' ? (
         <SerializedUnits
-          admin={admin && material.status === 'ACTIVE'}
+          canAdd={canAddAssetUnits && material.status === 'ACTIVE'}
+          canDelete={canDeleteAssetUnits && material.status === 'ACTIVE'}
+          canEdit={canEditAssetUnits && material.status === 'ACTIVE'}
+          canManage={canManageUnits && material.status === 'ACTIVE'}
           material={material}
           onAdd={() => setDialog('add-unit')}
           onEdit={setEditUnit}
@@ -770,7 +781,8 @@ function EditMaterialForm({
 
 function SerializedUnits({
   material,
-  admin,
+  canAdd,
+  canEdit,
   page,
   status,
   onPage,
@@ -780,7 +792,10 @@ function SerializedUnits({
   query,
 }: {
   material: Material;
-  admin: boolean;
+  canAdd: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canManage: boolean;
   page: number;
   status: AssetUnitStatus | '';
   onPage: (page: number) => void;
@@ -800,7 +815,7 @@ function SerializedUnits({
             Each physical item has its own serial number, asset tag, condition and status.
           </p>
         </div>
-        {admin && material.status === 'ACTIVE' ? (
+        {canAdd && material.status === 'ACTIVE' ? (
           <Button onClick={onAdd}>
             <Plus aria-hidden="true" size={18} />
             Add IT Asset
@@ -835,7 +850,7 @@ function SerializedUnits({
         ) : !query.data?.data.length ? (
           <EmptyState
             action={
-              admin ? (
+              canAdd ? (
                 <Button onClick={onAdd}>
                   <PackagePlus aria-hidden="true" size={18} />
                   Add first unit
@@ -843,7 +858,7 @@ function SerializedUnits({
               ) : undefined
             }
             message={
-              admin
+              canAdd
                 ? 'Add each physical item to begin tracking availability.'
                 : 'No available IT Asset units are shown.'
             }
@@ -853,10 +868,10 @@ function SerializedUnits({
           <>
             <div className="space-y-3 min-[840px]:hidden">
               {query.data.data.map((unit) => (
-                <UnitCard admin={admin} key={unit.assetTag} onEdit={onEdit} unit={unit} />
+                <UnitCard canEdit={canEdit} key={unit.assetTag} onEdit={onEdit} unit={unit} />
               ))}
             </div>
-            <UnitTable admin={admin} onEdit={onEdit} units={query.data.data} />
+            <UnitTable canEdit={canEdit} onEdit={onEdit} units={query.data.data} />
             {query.data.meta.totalPages > 1 ? (
               <nav
                 aria-label="Serialized unit pages"
@@ -886,11 +901,11 @@ function SerializedUnits({
 
 function UnitCard({
   unit,
-  admin,
+  canEdit,
   onEdit,
 }: {
   unit: AssetUnit;
-  admin: boolean;
+  canEdit: boolean;
   onEdit: (unit: AssetUnit) => void;
 }) {
   return (
@@ -911,7 +926,7 @@ function UnitCard({
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
         Registered {formatIstDateTime(unit.createdAt)}
       </p>
-      {admin ? (
+      {canEdit ? (
         <Button className="mt-3 w-full" onClick={() => onEdit(unit)} variant="secondary">
           <Pencil aria-hidden="true" size={17} />
           Edit unit
@@ -923,11 +938,11 @@ function UnitCard({
 
 function UnitTable({
   units,
-  admin,
+  canEdit,
   onEdit,
 }: {
   units: AssetUnit[];
-  admin: boolean;
+  canEdit: boolean;
   onEdit: (unit: AssetUnit) => void;
 }) {
   return (
@@ -951,7 +966,7 @@ function UnitTable({
             <th className="h-11 px-4 font-bold" scope="col">
               Registered
             </th>
-            {admin ? (
+            {canEdit ? (
               <th className="h-11 px-4 text-right font-bold" scope="col">
                 Action
               </th>
@@ -974,7 +989,7 @@ function UnitTable({
               <td className="px-4 text-sm text-[var(--color-text-muted)]">
                 {formatIstDateTime(unit.createdAt)}
               </td>
-              {admin ? (
+              {canEdit ? (
                 <td className="px-4 text-right">
                   <Button onClick={() => onEdit(unit)} variant="quiet">
                     Edit

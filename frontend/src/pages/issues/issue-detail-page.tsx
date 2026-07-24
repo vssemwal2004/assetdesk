@@ -49,6 +49,19 @@ function displayIssueStatus(issue: Pick<Issue, 'status' | 'totalOutstandingQuant
   return issue.status;
 }
 
+function receiptTarget(issue: Issue): string {
+  const latestReturnEvent = issue.returnEvents
+    ?.slice()
+    .sort(
+      (left, right) =>
+        new Date(right.returnedAt).getTime() - new Date(left.returnedAt).getTime(),
+    )[0];
+  if (latestReturnEvent && issue.status !== 'ISSUED') {
+    return `/bills/${issue.issueId}?type=return&returnEventId=${latestReturnEvent.returnEventId}`;
+  }
+  return `/bills/${issue.issueId}`;
+}
+
 function returnProgressText(
   issue: Pick<Issue, 'status' | 'totalOutstandingQuantity'>,
   totalIssued: number,
@@ -135,7 +148,7 @@ export function IssueDetailPage() {
               <ArrowLeft aria-hidden="true" size={18} />
               Back to Issues
             </Link>
-            <Link className="button-secondary" to={`/bills/${issue.issueId}`}>
+            <Link className="button-secondary" to={full ? receiptTarget(full) : `/bills/${issue.issueId}`}>
               <Printer aria-hidden="true" size={18} />
               Generate receipt
             </Link>
@@ -547,6 +560,8 @@ function EditIssueCard({
               <option value="STAFF">Staff</option>
               <option value="DEPARTMENT">Department</option>
               <option value="AUTHORIZED_EXTERNAL">Authorized external</option>
+              <option value="MANAGEMENT">Management</option>
+              <option value="GEHU">GEHU</option>
             </select>
           </label>
           <EditField label="Department" onChange={setDepartment} optional value={department} />

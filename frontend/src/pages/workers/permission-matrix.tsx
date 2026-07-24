@@ -1,9 +1,4 @@
-import {
-  DEFAULT_WORKER_PERMISSIONS,
-  type WorkerDataAccess,
-  type WorkerDataScope,
-  type WorkerPermission,
-} from '@assetdesk/contracts';
+import type { WorkerDataAccess, WorkerDataScope, WorkerPermission } from '@assetdesk/contracts';
 
 import { Button, cn } from '../../components/ui';
 
@@ -48,8 +43,8 @@ export const permissionDefinitions: PermissionDefinition[] = [
   {
     permission: 'ISSUE_SLIPS_VIEW',
     group: 'Issues',
-    label: 'Open issue/return slips',
-    description: 'Generate and print Issue/Return Slip from issue actions.',
+    label: 'Open issue/return receipts',
+    description: 'Generate and print Issue/Return Receipt from issue actions.',
   },
   {
     permission: 'RETURN_DATES_EXTEND',
@@ -76,16 +71,40 @@ export const permissionDefinitions: PermissionDefinition[] = [
     description: 'Search inventory, stock, and asset units.',
   },
   {
-    permission: 'INVENTORY_MANAGE',
+    permission: 'INVENTORY_ADD',
     group: 'Inventory',
-    label: 'Add/edit inventory material',
-    description: 'Add material, edit material, archive/delete material, and adjust quantity.',
+    label: 'Add inventory material',
+    description: 'Add new IT Assets and IT Consumables individually.',
   },
   {
-    permission: 'ASSET_TYPES_MANAGE',
+    permission: 'INVENTORY_EDIT',
     group: 'Inventory',
-    label: 'Manage asset types',
-    description: 'Add, bulk upload, and delete asset type dropdown values.',
+    label: 'Edit inventory material',
+    description: 'Edit material details and inventory status.',
+  },
+  {
+    permission: 'INVENTORY_DELETE',
+    group: 'Inventory',
+    label: 'Delete inventory material',
+    description: 'Delete inventory material when no issue history blocks it.',
+  },
+  {
+    permission: 'INVENTORY_QUANTITY_ADJUST',
+    group: 'Inventory',
+    label: 'Adjust inventory quantity',
+    description: 'Increase or reduce quantity-tracked consumable stock.',
+  },
+  {
+    permission: 'ASSET_TYPES_ADD',
+    group: 'Inventory',
+    label: 'Add asset types',
+    description: 'Add asset type dropdown values individually or by bulk upload.',
+  },
+  {
+    permission: 'ASSET_TYPES_DELETE',
+    group: 'Inventory',
+    label: 'Delete asset types',
+    description: 'Delete unused asset type dropdown values.',
   },
   {
     permission: 'INVENTORY_IMPORT',
@@ -100,10 +119,22 @@ export const permissionDefinitions: PermissionDefinition[] = [
     description: 'Export inventory data according to filters.',
   },
   {
-    permission: 'ASSET_UNITS_MANAGE',
+    permission: 'ASSET_UNITS_ADD',
     group: 'Inventory',
-    label: 'Manage asset units',
-    description: 'Add, edit, delete, and update serialized asset units.',
+    label: 'Add asset units',
+    description: 'Add serialized IT Asset units to existing material.',
+  },
+  {
+    permission: 'ASSET_UNITS_EDIT',
+    group: 'Inventory',
+    label: 'Edit asset units',
+    description: 'Edit serial number, condition, and manual status of asset units.',
+  },
+  {
+    permission: 'ASSET_UNITS_DELETE',
+    group: 'Inventory',
+    label: 'Delete asset units',
+    description: 'Delete available asset units with no issue history.',
   },
   {
     permission: 'RECEIVERS_VIEW',
@@ -112,10 +143,22 @@ export const permissionDefinitions: PermissionDefinition[] = [
     description: 'Search and open receiver records.',
   },
   {
-    permission: 'RECEIVERS_MANAGE',
+    permission: 'RECEIVERS_ADD',
     group: 'Receivers',
-    label: 'Manage receivers',
-    description: 'Add and edit receiver records.',
+    label: 'Add receivers',
+    description: 'Create new receiver records.',
+  },
+  {
+    permission: 'RECEIVERS_EDIT',
+    group: 'Receivers',
+    label: 'Edit receivers',
+    description: 'Edit receiver details and active status.',
+  },
+  {
+    permission: 'RECEIVERS_DELETE',
+    group: 'Receivers',
+    label: 'Delete receivers',
+    description: 'Delete receivers when they are not linked to issue history.',
   },
   {
     permission: 'REPORTS_VIEW',
@@ -137,8 +180,10 @@ const groupedPermissions = permissionDefinitions.reduce<Record<string, Permissio
   {},
 );
 
+const selectablePermissions = permissionDefinitions.map((definition) => definition.permission);
+
 function unique(values: WorkerPermission[]): WorkerPermission[] {
-  return DEFAULT_WORKER_PERMISSIONS.filter((permission) => values.includes(permission));
+  return selectablePermissions.filter((permission) => values.includes(permission));
 }
 
 export function PermissionMatrix({
@@ -170,7 +215,7 @@ export function PermissionMatrix({
     <div className="space-y-3">
       {!readonly ? (
         <div className="flex flex-wrap justify-end gap-2">
-          <Button onClick={() => onChange?.([...DEFAULT_WORKER_PERMISSIONS])} type="button" variant="secondary">
+          <Button onClick={() => onChange?.([...selectablePermissions])} type="button" variant="secondary">
             Select all
           </Button>
           <Button onClick={() => onChange?.(['DASHBOARD'])} type="button" variant="secondary">
@@ -281,7 +326,7 @@ export function DataAccessMatrix({
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         {[
           ['inventory', 'Inventory data', 'Controls inventory list, details, units, and exports.'],
-          ['issues', 'Issue data', 'Controls issue list, details, slips, and return search.'],
+          ['issues', 'Issue data', 'Controls issue list, details, receipts, and return search.'],
         ].map(([area, label, description]) => (
           <div className="rounded-[8px] border border-[var(--color-border)] p-3" key={area}>
             <p className="text-sm font-bold text-[var(--color-text-strong)]">{label}</p>

@@ -4,6 +4,7 @@ import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { connectDatabase, disconnectDatabase } from './db/mongoose.js';
+import { startEmailWorkerLoop } from './modules/notifications/email-worker.service.js';
 
 function databaseRequiredOnStart(): boolean {
   return env.DATABASE_REQUIRED_ON_START ?? env.NODE_ENV === 'production';
@@ -17,8 +18,10 @@ function startupError(error: unknown): { name: string; message: string } {
 }
 
 async function start(): Promise<void> {
+  let stopEmailWorker: (() => void) | undefined;
   try {
     await connectDatabase();
+    stopEmailWorker = startEmailWorkerLoop();
   } catch (error) {
     if (databaseRequiredOnStart()) {
       throw error;
@@ -45,6 +48,7 @@ async function start(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ signal }, 'Graceful shutdown started');
+    stopEmailWorker?.();
 
     server.close(async (closeError) => {
       if (closeError) {

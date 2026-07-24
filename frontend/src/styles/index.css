@@ -590,6 +590,11 @@ dialog::backdrop {
   align-items: flex-end;
 }
 
+.bill-signatures div:last-child {
+  justify-content: flex-end;
+  text-align: right;
+}
+
 .bill-signatures span {
   padding-bottom: 7px;
   font-size: 12px;

@@ -143,7 +143,7 @@ const ReceiverSnapshotSchema = new Schema<IssueReceiverSnapshotRecord>(
     universityId: { type: String, maxlength: 64 },
     type: {
       type: String,
-      enum: ['FACULTY', 'STAFF', 'STUDENT', 'DEPARTMENT', 'AUTHORIZED_EXTERNAL'],
+      enum: ['FACULTY', 'STAFF', 'STUDENT', 'DEPARTMENT', 'AUTHORIZED_EXTERNAL', 'MANAGEMENT', 'GEHU'],
       required: true,
     },
     department: { type: String, maxlength: 120 },

@@ -12,6 +12,8 @@ import {
 describe('shared contracts', () => {
   it('accepts public identifier formats', () => {
     expect(WorkerIdSchema.parse('GEU-WRK-A7K4')).toBe('GEU-WRK-A7K4');
+    expect(WorkerIdSchema.parse('GEU-CC-ANITASHARMA')).toBe('GEU-CC-ANITASHARMA');
+    expect(WorkerIdSchema.parse('GEU-CC-ANITASHARMA-02')).toBe('GEU-CC-ANITASHARMA-02');
     expect(IssueIdSchema.parse('GEU-ISS-2026-000123')).toBe('GEU-ISS-2026-000123');
   });
 

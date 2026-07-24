@@ -99,7 +99,7 @@ export async function createWorker(
   ]);
 
   for (let attempt = 0; attempt < MAX_WORKER_ID_ATTEMPTS; attempt += 1) {
-    const workerId = generateWorkerIdCandidate();
+    const workerId = generateWorkerIdCandidate(input.name, attempt);
     const session = await mongoose.startSession();
     try {
       let worker: UserDocument | undefined;

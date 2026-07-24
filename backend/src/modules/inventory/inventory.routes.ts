@@ -260,7 +260,7 @@ export function createInventoryRouter(): Router {
   router.post(
     '/asset-types',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('ASSET_TYPES_MANAGE'),
+    requirePermission('ASSET_TYPES_ADD'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -278,7 +278,7 @@ export function createInventoryRouter(): Router {
   router.delete(
     '/asset-types/:assetTypeId',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('ASSET_TYPES_MANAGE'),
+    requirePermission('ASSET_TYPES_DELETE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -298,7 +298,7 @@ export function createInventoryRouter(): Router {
   router.post(
     '/asset-types/imports/preview',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('ASSET_TYPES_MANAGE'),
+    requirePermission('ASSET_TYPES_ADD'),
     requireTrustedOrigin,
     requireCsrf,
     uploadInventoryFile,
@@ -321,7 +321,7 @@ export function createInventoryRouter(): Router {
   router.post(
     '/asset-types/imports/:importId/commit',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('ASSET_TYPES_MANAGE'),
+    requirePermission('ASSET_TYPES_ADD'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -343,7 +343,7 @@ export function createInventoryRouter(): Router {
   router.post(
     '/',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('INVENTORY_MANAGE'),
+    requirePermission('INVENTORY_ADD'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -449,7 +449,7 @@ export function createInventoryRouter(): Router {
   router.patch(
     '/:materialCode',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('INVENTORY_MANAGE'),
+    requirePermission('INVENTORY_EDIT'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -470,7 +470,7 @@ export function createInventoryRouter(): Router {
   router.patch(
     '/:materialCode/status',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('INVENTORY_MANAGE'),
+    requirePermission('INVENTORY_EDIT'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -492,7 +492,7 @@ export function createInventoryRouter(): Router {
   router.delete(
     '/:materialCode',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('INVENTORY_MANAGE'),
+    requirePermission('INVENTORY_DELETE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -514,7 +514,7 @@ export function createInventoryRouter(): Router {
   router.post(
     '/:materialCode/adjust-quantity',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('INVENTORY_MANAGE'),
+    requirePermission('INVENTORY_QUANTITY_ADJUST'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -564,7 +564,7 @@ export function createInventoryRouter(): Router {
   router.post(
     '/:materialCode/units',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('ASSET_UNITS_MANAGE'),
+    requirePermission('ASSET_UNITS_ADD'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -586,7 +586,7 @@ export function createInventoryRouter(): Router {
   router.patch(
     '/:materialCode/units/:assetTag',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('ASSET_UNITS_MANAGE'),
+    requirePermission('ASSET_UNITS_EDIT'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -616,7 +616,7 @@ export function createInventoryRouter(): Router {
   router.delete(
     '/:materialCode/units/:assetTag',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('ASSET_UNITS_MANAGE'),
+    requirePermission('ASSET_UNITS_DELETE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {

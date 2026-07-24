@@ -483,6 +483,7 @@ export const IssueSchema = IssueBaseSchema.superRefine((issue, context) => {
 
 export const IssueSummarySchema = IssueBaseSchema.omit({ lines: true, returnEvents: true }).extend({
   materialNames: z.array(z.string().min(1)).min(1),
+  latestReturnEventId: z.string().uuid().nullable().default(null),
 });
 
 export const IssuePeriodSchema = z.enum(['TODAY']);

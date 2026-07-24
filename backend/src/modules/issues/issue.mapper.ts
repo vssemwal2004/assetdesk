@@ -125,6 +125,10 @@ export function toIssue(issue: IssueDocument): Issue {
 }
 
 export function toIssueSummary(issue: IssueDocument): IssueSummary {
+  const latestReturnEvent = issue.returnEvents
+    .slice()
+    .sort((left, right) => right.returnedAt.getTime() - left.returnedAt.getTime())[0];
+
   return {
     id: issue._id.toString(),
     issueId: issue.issueId,
@@ -146,6 +150,7 @@ export function toIssueSummary(issue: IssueDocument): IssueSummary {
     createdAt: issue.createdAt.toISOString(),
     updatedAt: issue.updatedAt.toISOString(),
     materialNames: [...new Set(issue.lines.map((line) => line.material.name))],
+    latestReturnEventId: latestReturnEvent?.returnEventId ?? null,
   };
 }
 

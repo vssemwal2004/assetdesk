@@ -128,7 +128,10 @@ export function InventoryPage() {
   const mode = trackingMode(parameters.get('trackingMode') ?? '');
   const policy = returnPolicy(parameters.get('returnPolicy') ?? '');
   const stock = stockState(parameters.get('stockState') ?? '');
-  const admin = hasPermission(user, 'INVENTORY_MANAGE');
+  const canAddInventory = hasPermission(user, 'INVENTORY_ADD');
+  const canEditInventory = hasPermission(user, 'INVENTORY_EDIT');
+  const canDeleteInventory = hasPermission(user, 'INVENTORY_DELETE');
+  const canManageInventory = canEditInventory || canDeleteInventory;
   const canExportInventory = hasPermission(user, 'INVENTORY_EXPORT');
 
   const query = useQuery({
@@ -217,7 +220,7 @@ export function InventoryPage() {
               <Download aria-hidden="true" size={18} />
               {downloading ? 'Downloading...' : 'Download data'}
             </Button> : null}
-            {admin ? (
+            {canAddInventory ? (
               <Link aria-label="Add material to inventory" className="button-primary" to="/inventory/new">
                 <PackagePlus aria-hidden="true" size={18} />
                 Add material
@@ -226,7 +229,7 @@ export function InventoryPage() {
           </div>
         }
         description={
-          admin
+          canAddInventory || canManageInventory
             ? 'Track IT Assets, IT Consumables, availability, and stock health.'
             : 'Search current university material availability.'
         }
@@ -268,7 +271,7 @@ export function InventoryPage() {
                 value={category}
               />
             </FilterField>
-            {admin ? (
+            {canAddInventory ? (
               <FilterField label="Status">
                 <FilterSelect
                   id="inventory-status-filter"
@@ -353,7 +356,7 @@ export function InventoryPage() {
               <Button onClick={() => setParameters({ page: '1' })} variant="secondary">
                 Clear filters
               </Button>
-            ) : admin ? (
+            ) : canAddInventory ? (
               <Link className="button-primary" to="/inventory/new">
                 <PackagePlus aria-hidden="true" size={18} />
                 Add material
@@ -389,7 +392,8 @@ export function InventoryPage() {
                 </div>
                 {group.materials.map((material) => (
                   <MaterialCard
-                    admin={admin}
+                    canDelete={canDeleteInventory}
+                    canEdit={canEditInventory}
                     key={material.materialCode}
                     material={material}
                     onDelete={confirmDelete}
@@ -399,7 +403,8 @@ export function InventoryPage() {
             ))}
           </div>
           <MaterialTable
-            admin={admin}
+            canDelete={canDeleteInventory}
+            canEdit={canEditInventory}
             materials={materials}
             onDelete={confirmDelete}
             onView={setViewMaterial}
@@ -437,7 +442,8 @@ export function InventoryPage() {
       ) : null}
       {viewMaterial ? (
         <MaterialQuickViewDialog
-          admin={admin}
+          canDelete={canDeleteInventory}
+          canEdit={canEditInventory}
           material={viewMaterial}
           onClose={() => setViewMaterial(null)}
           onDelete={(material) => {
@@ -554,12 +560,14 @@ function DetailItem({ label, value }: { label: string; value: ReactNode }) {
 
 function MaterialQuickViewDialog({
   material,
-  admin,
+  canEdit,
+  canDelete,
   onClose,
   onDelete,
 }: {
   material: Material;
-  admin: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   onClose: () => void;
   onDelete: (material: Material) => void;
 }) {
@@ -640,15 +648,15 @@ function MaterialQuickViewDialog({
           <Link className="button-secondary" to={`/inventory/${material.materialCode}`}>
             Full record
           </Link>
-          {admin ? (
-            <>
+          {canEdit ? (
               <Link className="button-secondary" to={`/inventory/${material.materialCode}?edit=1`}>
                 Edit
               </Link>
+          ) : null}
+          {canDelete ? (
               <Button onClick={() => onDelete(material)} variant="danger">
                 Delete
               </Button>
-            </>
           ) : null}
         </div>
       </div>
@@ -729,11 +737,13 @@ function FilterField({ label, children }: { label: string; children: ReactNode }
 
 function MaterialActions({
   material,
-  admin,
+  canEdit,
+  canDelete,
   onDelete,
 }: {
   material: Material;
-  admin: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   onDelete: (material: Material) => void;
 }) {
   return (
@@ -749,12 +759,13 @@ function MaterialActions({
           <Eye aria-hidden="true" size={17} />
           View details
         </Link>
-        {admin ? (
-          <>
+        {canEdit ? (
             <Link className="menu-item" to={`/inventory/${material.materialCode}?edit=1`}>
               <Pencil aria-hidden="true" size={17} />
               Edit
             </Link>
+        ) : null}
+        {canDelete ? (
             <button
               className="menu-item w-full text-[var(--color-danger)]"
               onClick={() => onDelete(material)}
@@ -763,7 +774,6 @@ function MaterialActions({
               <Trash2 aria-hidden="true" size={17} />
               Delete
             </button>
-          </>
         ) : null}
       </div>
     </details>
@@ -772,11 +782,13 @@ function MaterialActions({
 
 function MaterialCard({
   material,
-  admin,
+  canEdit,
+  canDelete,
   onDelete,
 }: {
   material: Material;
-  admin: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   onDelete: (material: Material) => void;
 }) {
   return (
@@ -790,7 +802,7 @@ function MaterialCard({
             <h2 className="font-extrabold text-[var(--color-text-strong)]">{material.name}</h2>
             <div className="flex items-center gap-2">
               <CatalogBadge value={material.status} />
-              <MaterialActions admin={admin} material={material} onDelete={onDelete} />
+              <MaterialActions canDelete={canDelete} canEdit={canEdit} material={material} onDelete={onDelete} />
             </div>
           </div>
           <p className="mt-1 text-xs font-bold text-[var(--color-primary)]">
@@ -813,12 +825,14 @@ function MaterialCard({
 
 function MaterialTable({
   materials,
-  admin,
+  canEdit,
+  canDelete,
   onDelete,
   onView,
 }: {
   materials: Material[];
-  admin: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
 }) {
@@ -849,7 +863,8 @@ function MaterialTable({
         <tbody>
           {groups.map((group) => (
             <GroupedMaterialRows
-              admin={admin}
+              canDelete={canDelete}
+              canEdit={canEdit}
               group={group}
               key={group.category}
               onDelete={onDelete}
@@ -864,12 +879,14 @@ function MaterialTable({
 
 function GroupedMaterialRows({
   group,
-  admin,
+  canEdit,
+  canDelete,
   onDelete,
   onView,
 }: {
   group: MaterialGroup;
-  admin: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
 }) {
@@ -918,7 +935,7 @@ function GroupedMaterialRows({
           </td>
           <td className="px-4 text-right">
             <div onClick={(event) => event.stopPropagation()}>
-              <MaterialActions admin={admin} material={material} onDelete={onDelete} />
+              <MaterialActions canDelete={canDelete} canEdit={canEdit} material={material} onDelete={onDelete} />
             </div>
           </td>
         </tr>

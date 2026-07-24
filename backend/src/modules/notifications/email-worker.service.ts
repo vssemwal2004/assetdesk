@@ -1,6 +1,7 @@
 import { logger } from '../../config/logger.js';
+import { env } from '../../config/env.js';
 import { EmailJobModel, type EmailJobDocument } from './email-job.model.js';
-import { EmailProviderError, sendWithSmtp } from './smtp.provider.js';
+import { EmailProviderError, assertSmtpConfiguration, sendWithSmtp } from './smtp.provider.js';
 import { UserModel } from '../users/user.model.js';
 
 const RETRY_DELAYS_MS = [60_000, 300_000, 900_000, 1_800_000, 7_200_000] as const;
@@ -106,4 +107,37 @@ export async function processNextEmailJob(): Promise<boolean> {
     }
   }
   return true;
+}
+
+function pause(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+export function startEmailWorkerLoop(): () => void {
+  try {
+    assertSmtpConfiguration();
+  } catch (error) {
+    logger.warn(
+      {
+        code: error instanceof EmailProviderError ? error.code : 'SMTP_CONFIGURATION_INVALID',
+      },
+      'Email worker not started because SMTP is not configured',
+    );
+    return () => undefined;
+  }
+
+  let stopped = false;
+  void (async () => {
+    logger.info('AssetDesk email worker started');
+    while (!stopped) {
+      const processed = await processNextEmailJob();
+      if (!processed) await pause(env.EMAIL_WORKER_POLL_MS);
+    }
+  })().catch((error: unknown) => {
+    logger.error({ error }, 'AssetDesk email worker stopped unexpectedly');
+  });
+
+  return () => {
+    stopped = true;
+  };
 }

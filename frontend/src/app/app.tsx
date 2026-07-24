@@ -268,7 +268,7 @@ export function App() {
                     path="/reports"
                   />
                 </Route>
-                <Route element={<PermissionRoute permission="RECEIVERS_MANAGE" />}>
+                <Route element={<PermissionRoute permission="RECEIVERS_ADD" />}>
                   <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>
@@ -278,7 +278,7 @@ export function App() {
                     path="/receivers/new"
                   />
                 </Route>
-                <Route element={<PermissionRoute permission="INVENTORY_MANAGE" />}>
+                <Route element={<PermissionRoute permission="INVENTORY_ADD" />}>
                   <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>

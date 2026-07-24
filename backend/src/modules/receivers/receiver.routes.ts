@@ -119,7 +119,7 @@ export function createReceiversRouter(): Router {
   router.post(
     '/',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('RECEIVERS_MANAGE'),
+    requirePermission('RECEIVERS_ADD'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -147,7 +147,7 @@ export function createReceiversRouter(): Router {
   router.patch(
     '/:receiverCode',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('RECEIVERS_MANAGE'),
+    requirePermission('RECEIVERS_EDIT'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -166,7 +166,7 @@ export function createReceiversRouter(): Router {
   router.patch(
     '/:receiverCode/status',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('RECEIVERS_MANAGE'),
+    requirePermission('RECEIVERS_EDIT'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -192,7 +192,7 @@ export function createReceiversRouter(): Router {
   router.delete(
     '/:receiverCode',
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('RECEIVERS_MANAGE'),
+    requirePermission('RECEIVERS_DELETE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {

@@ -511,7 +511,7 @@ export function buildReturnSearchFilter(search: string, actorRole: UserRole): Qu
       400,
       'RETURN_LOOKUP_IDENTIFIER_REQUIRED',
       'Enter a complete Issue ID or asset tag to accept a cross-shift Return.',
-      { search: 'Use a value such as GEU-ISS-2026-000001 or GEU-AST-000001.' },
+      { search: 'Use a value such as GEU-ISS-2026-000001 or GEU-2026-000001.' },
     );
   }
 
@@ -597,6 +597,8 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
           'createdAt',
           'updatedAt',
           'lines.material.name',
+          'returnEvents.returnEventId',
+          'returnEvents.returnedAt',
         ].join(' '),
       )
       .sort({ issuedAt: -1, _id: -1 })

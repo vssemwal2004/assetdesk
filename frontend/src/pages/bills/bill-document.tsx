@@ -36,12 +36,12 @@ export function BillDocument({
   if (returnEvent) return <ReturnBillDocument issue={issue} returnEvent={returnEvent} />;
 
   return (
-    <article className="bill-sheet" aria-label={`Issue/return slip for ${issue.issueId}`}>
+    <article className="bill-sheet" aria-label={`Issue/return receipt for ${issue.issueId}`}>
       <ReceiptHeader
-        documentLabel="IT Asset Issue Receipt"
-        documentNumberLabel="Slip / Issue No."
+        documentLabel="IT ASSET ISSUE RECEIPT"
+        documentNumberLabel="Receipt / Issue No."
         documentNumber={issue.issueId}
-        note="GRAPHIC ERA DEEMED TO BE UNIVERSITY."
+        note="Graphic Era Deemed to be University"
       />
 
       <section className="bill-grid bill-summary-grid">
@@ -209,12 +209,12 @@ function ReturnBillDocument({
   returnEvent: ReturnEvent;
 }) {
   return (
-    <article className="bill-sheet" aria-label={`Return slip for ${issue.issueId}`}>
+    <article className="bill-sheet" aria-label={`Return receipt for ${issue.issueId}`}>
       <ReceiptHeader
-        documentLabel="IT Asset Return Receipt"
-        documentNumberLabel="Return / Issue No."
+        documentLabel="IT ASSET RETURN RECEIPT"
+        documentNumberLabel="Receipt / Issue No."
         documentNumber={issue.issueId}
-        note="Official return receipt for university material handover."
+        note="Graphic Era Deemed to be University"
       />
 
       <section className="bill-grid bill-summary-grid">
@@ -342,7 +342,7 @@ function ReceiptHeader({
         <img alt="AssetDesk logo" className="bill-logo" src="/logo.webp" />
         <div className="bill-brand-text">
           <p className="bill-brand-name">AssetDesk</p>
-          <p className="bill-brand-tagline">Graphic Era Asset Management System</p>
+          <p className="bill-brand-tagline">Graphic Era Deemed to be University</p>
         </div>
       </div>
       <div className="bill-title-block">
