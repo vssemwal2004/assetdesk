@@ -1,4 +1,8 @@
-import { CreateWorkerRequestSchema, WorkerIdSchema } from '@assetdesk/contracts';
+import {
+  CreateWorkerRequestSchema,
+  DEFAULT_WORKER_PERMISSIONS,
+  WorkerIdSchema,
+} from '@assetdesk/contracts';
 
 import { logger } from '../config/logger.js';
 import { connectDatabase, disconnectDatabase } from '../db/mongoose.js';
@@ -24,6 +28,8 @@ async function bootstrapAdmin(): Promise<void> {
     email: requiredEnvironment('ASSETDESK_ADMIN_EMAIL'),
     contact: process.env.ASSETDESK_ADMIN_CONTACT,
     department: process.env.ASSETDESK_ADMIN_DEPARTMENT,
+    permissions: DEFAULT_WORKER_PERMISSIONS,
+    dataAccess: { inventory: 'ALL', issues: 'ALL' },
   });
   // Do not trim passwords: leading/trailing spaces may be intentional and are
   // valid password characters.
@@ -69,6 +75,8 @@ async function bootstrapAdmin(): Promise<void> {
       ...(input.contact ? { contact: input.contact } : {}),
       ...(input.department ? { department: input.department } : {}),
       role: 'ADMIN',
+      permissions: [],
+      dataAccess: { inventory: 'ALL', issues: 'ALL' },
       status: 'ACTIVE',
       invitationStatus: 'SENT',
       passwordHash: await hashPassword(password),
