@@ -22,6 +22,7 @@ import {
 import { AppError } from '../../middleware/error-handler.js';
 import { appendAuditEvent } from '../audit/audit.service.js';
 import {
+  hasServerPermission,
   requireAuth,
   requireCsrf,
   requireFullAccess,
@@ -80,6 +81,14 @@ const MaterialListQuerySchema = z
     page: z.coerce.number().int().positive().default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20),
     search: OptionalQueryTextSchema,
+    issueable: z.preprocess(
+      (value) => {
+        if (value === 'true' || value === true) return true;
+        if (value === 'false' || value === false) return false;
+        return undefined;
+      },
+      z.boolean().optional(),
+    ),
     status: z.preprocess(
       (value) => (value === '' ? undefined : value),
       MaterialStatusSchema.optional(),
@@ -127,10 +136,6 @@ function authenticated(request: Request): NonNullable<Request['auth']> {
   return request.auth;
 }
 
-function authenticatedRole(request: Request): UserRole {
-  return authenticated(request).role;
-}
-
 async function audit(
   request: Request,
   action: string,
@@ -161,6 +166,29 @@ function pageMeta(result: { page: number; pageSize: number; total: number; total
   };
 }
 
+function ensureInventoryListAccess(request: Request, issueable: boolean | undefined): void {
+  const actor = authenticated(request);
+  const allowed =
+    hasServerPermission(actor, 'INVENTORY_VIEW') ||
+    (issueable === true && hasServerPermission(actor, 'ASSIGNMENTS_CREATE'));
+  if (!allowed) {
+    throw new AppError(403, 'PERMISSION_DENIED', 'You do not have access to this feature.');
+  }
+}
+
+function ensureAssetUnitListAccess(
+  request: Request,
+  status: z.infer<typeof AssetUnitStatusSchema> | undefined,
+): void {
+  const actor = authenticated(request);
+  const allowed =
+    hasServerPermission(actor, 'INVENTORY_VIEW') ||
+    (status === 'AVAILABLE' && hasServerPermission(actor, 'ASSIGNMENTS_CREATE'));
+  if (!allowed) {
+    throw new AppError(403, 'PERMISSION_DENIED', 'You do not have access to this feature.');
+  }
+}
+
 export function createInventoryRouter(): Router {
   const router = Router();
 
@@ -171,13 +199,18 @@ export function createInventoryRouter(): Router {
   });
   router.use(requireAuth, requireFullAccess);
 
-  router.get('/', requirePermission('INVENTORY_VIEW'), async (request, response, next) => {
+  router.get('/', async (request, response, next) => {
     try {
       const input = MaterialListQuerySchema.parse(request.query);
+      ensureInventoryListAccess(request, input.issueable);
+      const actor = authenticated(request);
       const result = await listMaterials({
         page: input.page,
         pageSize: input.pageSize,
-        role: authenticatedRole(request),
+        role: actor.role,
+        actorUserId: actor.userId,
+        dataScope: actor.dataAccess.inventory,
+        ...(input.issueable !== undefined ? { issueable: input.issueable } : {}),
         ...(input.search ? { search: input.search } : {}),
         ...(input.status ? { status: input.status } : {}),
         ...(input.trackingMode ? { trackingMode: input.trackingMode } : {}),
@@ -203,8 +236,12 @@ export function createInventoryRouter(): Router {
   router.get('/export', requirePermission('INVENTORY_EXPORT'), async (request, response, next) => {
     try {
       const input = MaterialListQuerySchema.parse(request.query);
+      const actor = authenticated(request);
       const csv = await exportMaterialsCsv({
-        role: authenticatedRole(request),
+        role: actor.role,
+        actorUserId: actor.userId,
+        dataScope: actor.dataAccess.inventory,
+        ...(input.issueable !== undefined ? { issueable: input.issueable } : {}),
         ...(input.search ? { search: input.search } : {}),
         ...(input.status ? { status: input.status } : {}),
         ...(input.trackingMode ? { trackingMode: input.trackingMode } : {}),
@@ -395,7 +432,13 @@ export function createInventoryRouter(): Router {
     requirePermission('INVENTORY_VIEW'),
     async (request, response, next) => {
       try {
-        const material = await getMaterial(materialCode(request), authenticatedRole(request));
+        const actor = authenticated(request);
+        const material = await getMaterial(
+          materialCode(request),
+          actor.role,
+          actor.userId,
+          actor.dataAccess.inventory,
+        );
         response.json({ data: { material } });
       } catch (error) {
         next(error);
@@ -496,15 +539,18 @@ export function createInventoryRouter(): Router {
 
   router.get(
     '/:materialCode/units',
-    requirePermission('INVENTORY_VIEW'),
     async (request, response, next) => {
       try {
         const query = AssetUnitListQuerySchema.parse(request.query);
+        ensureAssetUnitListAccess(request, query.status);
+        const actor = authenticated(request);
         const result = await listAssetUnits({
           materialCode: materialCode(request),
           page: query.page,
           pageSize: query.pageSize,
-          role: authenticatedRole(request),
+          role: actor.role,
+          actorUserId: actor.userId,
+          dataScope: actor.dataAccess.inventory,
           ...(query.search ? { search: query.search } : {}),
           ...(query.status ? { status: query.status } : {}),
         });

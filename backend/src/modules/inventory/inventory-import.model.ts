@@ -11,6 +11,7 @@ export interface InventoryImportPreviewRow {
   serialNumber?: string;
   quantity?: number;
   unitLabel?: string;
+  status?: string;
   valid: boolean;
   errors: string[];
 }
@@ -27,6 +28,7 @@ export interface InventoryImportInput {
   serialNumbers?: string[] | undefined;
   totalQuantity?: number | undefined;
   unitLabel?: string | undefined;
+  status?: string | undefined;
 }
 
 export interface InventoryImportRecord {
@@ -53,6 +55,7 @@ const PreviewRowSchema = new Schema<InventoryImportPreviewRow>(
     serialNumber: { type: String },
     quantity: { type: Number },
     unitLabel: { type: String },
+    status: { type: String },
     valid: { type: Boolean, required: true },
     errors: { type: [String], required: true, default: [] },
   },
@@ -72,6 +75,7 @@ const ImportInputSchema = new Schema<InventoryImportInput>(
     serialNumbers: { type: [String] },
     totalQuantity: { type: Number },
     unitLabel: { type: String },
+    status: { type: String, enum: ['ACTIVE', 'SCRAP', 'NOT_IN_USE'] },
   },
   { _id: false },
 );

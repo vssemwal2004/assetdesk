@@ -23,6 +23,14 @@ const permissionFallbacks: Partial<Record<WorkerPermission, WorkerPermission[]>>
   ASSET_UNITS_MANAGE: ['INVENTORY_MANAGE'],
 };
 
+export function hasServerPermission(
+  auth: NonNullable<Request['auth']>,
+  permission: WorkerPermission,
+): boolean {
+  const accepted = [permission, ...(permissionFallbacks[permission] ?? [])];
+  return auth.role === 'ADMIN' || accepted.some((allowed) => auth.permissions.includes(allowed));
+}
+
 function cookieValue(request: Request, name: string): string | undefined {
   const cookies = request.cookies as Record<string, unknown> | undefined;
   const value = cookies?.[name];
@@ -68,6 +76,13 @@ export const requireAuth: RequestHandler = async (request, _response, next) => {
       workerId: user.workerId,
       role: user.role,
       permissions: user.role === 'ADMIN' ? [] : (user.permissions ?? []),
+      dataAccess:
+        user.role === 'ADMIN'
+          ? { inventory: 'ALL', issues: 'ALL' }
+          : {
+              inventory: user.dataAccess?.inventory ?? 'OWN',
+              issues: user.dataAccess?.issues ?? 'OWN',
+            },
       sid: session.sid,
       authVersion: user.authVersion,
       mustChangePassword: user.mustChangePassword,
@@ -87,11 +102,7 @@ export function requirePermission(permission: WorkerPermission): RequestHandler 
       return;
     }
     const auth = request.auth;
-    const accepted = [permission, ...(permissionFallbacks[permission] ?? [])];
-    if (
-      auth.role === 'ADMIN' ||
-      accepted.some((allowed) => auth.permissions.includes(allowed))
-    ) {
+    if (hasServerPermission(auth, permission)) {
       next();
       return;
     }

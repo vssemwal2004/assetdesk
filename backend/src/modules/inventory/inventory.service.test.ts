@@ -5,6 +5,7 @@ import {
   assertMaterialCanArchive,
   assertManualTransition,
   buildAssetUnitListFilter,
+  buildAssetUnitMaterialFilter,
   buildMaterialListFilter,
   calculateQuantityAdjustment,
   manualAvailabilityDelta,
@@ -36,6 +37,24 @@ describe('inventory access filters', () => {
     expect(filter.$text).toEqual({ $search: 'switch.*' });
   });
 
+  it('lets the issue picker include active and outdated inventory only', () => {
+    const workerFilter = buildMaterialListFilter({
+      page: 1,
+      pageSize: 20,
+      role: 'WORKER',
+      issueable: true,
+    });
+    const adminFilter = buildMaterialListFilter({
+      page: 1,
+      pageSize: 20,
+      role: 'ADMIN',
+      issueable: true,
+    });
+
+    expect(workerFilter.status).toEqual({ $in: ['ACTIVE', 'NOT_IN_USE'] });
+    expect(adminFilter.status).toEqual({ $in: ['ACTIVE', 'NOT_IN_USE'] });
+  });
+
   it('forces Worker unit reads to AVAILABLE while Admin filters remain selectable', () => {
     expect(
       buildAssetUnitListFilter({ materialId: 'material', role: 'WORKER', status: 'LOST' }).status,
@@ -43,6 +62,23 @@ describe('inventory access filters', () => {
     expect(
       buildAssetUnitListFilter({ materialId: 'material', role: 'ADMIN', status: 'LOST' }).status,
     ).toBe('LOST');
+  });
+
+  it('lets Worker serial selection read active and outdated material, but not scrap', () => {
+    expect(
+      buildAssetUnitMaterialFilter({
+        materialCode: 'GEU-MAT-000001',
+        role: 'WORKER',
+        status: 'AVAILABLE',
+      }).status,
+    ).toEqual({ $in: ['ACTIVE', 'NOT_IN_USE'] });
+    expect(
+      buildAssetUnitMaterialFilter({
+        materialCode: 'GEU-MAT-000001',
+        role: 'WORKER',
+        status: 'LOST',
+      }).status,
+    ).toBe('ACTIVE');
   });
 });
 

@@ -35,7 +35,7 @@ import {
   setWorkerStatus,
   updateWorker,
 } from '../../lib/workers-api';
-import { PermissionMatrix } from './permission-matrix';
+import { DataAccessMatrix, PermissionMatrix } from './permission-matrix';
 
 function formatDate(value: string | null): string {
   if (!value) return 'Never';
@@ -259,6 +259,9 @@ export function WorkerDetailPage() {
             </p>
           </div>
           <PermissionMatrix readonly selected={worker.permissions} />
+          <div className="mt-3">
+            <DataAccessMatrix readonly value={worker.dataAccess} />
+          </div>
         </AppCard>
       ) : null}
 
@@ -342,6 +345,7 @@ function EditWorkerForm({
     contact: worker.contact ?? '',
     department: worker.department ?? '',
     permissions: worker.permissions,
+    dataAccess: worker.dataAccess,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
@@ -355,6 +359,7 @@ function EditWorkerForm({
       contact: form.contact.trim(),
       department: form.department.trim(),
       permissions: form.permissions,
+      dataAccess: form.dataAccess,
     };
     setSaving(true);
     setMessage(null);
@@ -414,6 +419,12 @@ function EditWorkerForm({
           onChange={(permissions) => setForm((value) => ({ ...value, permissions }))}
           selected={form.permissions}
         />
+        <div className="mt-3">
+          <DataAccessMatrix
+            onChange={(dataAccess) => setForm((value) => ({ ...value, dataAccess }))}
+            value={form.dataAccess}
+          />
+        </div>
       </section>
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button disabled={saving} onClick={onCancel} type="button" variant="secondary">

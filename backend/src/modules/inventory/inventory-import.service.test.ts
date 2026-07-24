@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { AppError } from '../../middleware/error-handler.js';
-import { parseInventoryImportTable } from './inventory-import.service.js';
+import {
+  importInputToCreateMaterialRequest,
+  parseInventoryImportTable,
+} from './inventory-import.service.js';
 
 describe('inventory import parsing', () => {
   it('accepts case-insensitive asset headers and preserves one serial per row', () => {
@@ -48,5 +51,29 @@ describe('inventory import parsing', () => {
         'SERIALIZED',
       ),
     ).toThrowError(AppError);
+  });
+
+  it('cleans quantity import inputs before strict material creation parsing', () => {
+    const input = importInputToCreateMaterialRequest({
+      name: 'Consumable USB-C Cable',
+      category: 'Consumable',
+      typeModelName: 'USB-C Cable',
+      locationBlock: 'Store',
+      assignmentTypes: ['SHORT_TERM'],
+      trackingMode: 'QUANTITY',
+      returnPolicy: 'CONSUMABLE',
+      serialNumbers: [],
+      totalQuantity: 50,
+      unitLabel: 'pieces',
+      status: 'ACTIVE',
+    });
+
+    expect(input).toMatchObject({
+      name: 'Consumable USB-C Cable',
+      trackingMode: 'QUANTITY',
+      totalQuantity: 50,
+      unitLabel: 'pieces',
+    });
+    expect('serialNumbers' in input).toBe(false);
   });
 });

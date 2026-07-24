@@ -18,6 +18,13 @@ export function toAuthUser(user: UserRecord): AuthUser {
     status: user.status,
     mustChangePassword: user.mustChangePassword,
     permissions: user.role === 'ADMIN' ? [] : (user.permissions ?? []),
+    dataAccess:
+      user.role === 'ADMIN'
+        ? { inventory: 'ALL', issues: 'ALL' }
+        : {
+            inventory: user.dataAccess?.inventory ?? 'OWN',
+            issues: user.dataAccess?.issues ?? 'OWN',
+          },
   };
 }
 
@@ -33,6 +40,10 @@ export function toWorker(user: UserRecord): Worker {
     invitationStatus: user.invitationStatus,
     mustChangePassword: user.mustChangePassword,
     permissions: user.permissions ?? [],
+    dataAccess: {
+      inventory: user.dataAccess?.inventory ?? 'OWN',
+      issues: user.dataAccess?.issues ?? 'OWN',
+    },
     temporaryPasswordExpiresAt: isoOrNull(user.temporaryPasswordExpiresAt),
     lastLoginAt: isoOrNull(user.lastLoginAt),
     createdAt: user.createdAt.toISOString(),

@@ -10,13 +10,22 @@ export function CatalogBadge({ value }: { value: string }) {
   const negative = [
     'ARCHIVED',
     'INACTIVE',
+    'SCRAP',
+    'FAULTY',
     'DAMAGED',
     'LOST',
     'RETIRED',
     'CANCELLED',
     'OVERDUE',
   ].includes(value);
-  const warning = ['ISSUED', 'UNDER_REPAIR', 'PARTIALLY_RETURNED', 'DUE_SOON'].includes(value);
+  const warning = [
+    'ISSUED',
+    'UNDER_REPAIR',
+    'PARTIALLY_RETURNED',
+    'DUE_SOON',
+    'NOT_IN_USE',
+    'OUTDATED',
+  ].includes(value);
 
   return (
     <span

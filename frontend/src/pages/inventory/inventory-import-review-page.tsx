@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2, Search, Upload, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
@@ -11,6 +11,7 @@ import {
   type InventoryImportPreview,
   type InventoryImportResult,
 } from '../../lib/inventory-api';
+import { inventoryStatusLabel } from '../../lib/inventory-status';
 
 type ReviewFilter = 'ALL' | 'READY' | 'FAILED';
 
@@ -22,6 +23,7 @@ function statePreview(value: unknown): InventoryImportPreview | undefined {
 export function InventoryImportReviewPage() {
   const { importId = '' } = useParams();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const initialPreview = statePreview(location.state);
   const [filter, setFilter] = useState<ReviewFilter>('ALL');
   const [search, setSearch] = useState('');
@@ -51,6 +53,7 @@ export function InventoryImportReviewPage() {
         row.serialNumber,
         row.quantity,
         row.unitLabel,
+        row.status,
         row.errors.join(' '),
       ]
         .join(' ')
@@ -61,9 +64,13 @@ export function InventoryImportReviewPage() {
 
   const commitMutation = useMutation({
     mutationFn: () => commitInventoryImport(importId),
-    onSuccess: (nextResult) => {
+    onSuccess: async (nextResult) => {
       setResult(nextResult);
       setActionError(null);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inventory'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+      ]);
     },
     onError: (error) => {
       setActionError(isApiError(error) ? error.message : 'The valid rows could not be uploaded.');
@@ -217,6 +224,7 @@ function ReviewTable({
             <th className="w-28 p-3 font-bold">Status</th>
             <th className="w-56 p-3 font-bold">Type/model name</th>
             <th className="w-44 p-3 font-bold">Asset type</th>
+            <th className="w-36 p-3 font-bold">Inventory status</th>
             <th className="w-44 p-3 font-bold">Location / block</th>
             <th className="w-44 p-3 font-bold">{mode === 'SERIALIZED' ? 'Serial number' : 'Quantity'}</th>
             <th className="p-3 font-bold">Reason</th>
@@ -240,6 +248,7 @@ function ReviewTable({
               </td>
               <td className="break-words p-3 font-bold">{row.name || 'Missing'}</td>
               <td className="break-words p-3">{row.category || 'Missing'}</td>
+              <td className="break-words p-3">{inventoryStatusLabel(row.status ?? 'ACTIVE')}</td>
               <td className="break-words p-3">{row.locationBlock || 'Missing'}</td>
               <td className="break-words p-3">
                 {mode === 'SERIALIZED'

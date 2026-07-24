@@ -12,11 +12,18 @@ import {
 import { useRef, useState, type ChangeEvent } from 'react';
 import { Link } from 'react-router';
 
-import type { WorkerImportCommitResponse, WorkerImportPreviewResponse } from '@assetdesk/contracts';
+import {
+  DEFAULT_WORKER_PERMISSIONS,
+  type WorkerDataAccess,
+  type WorkerImportCommitResponse,
+  type WorkerImportPreviewResponse,
+  type WorkerPermission,
+} from '@assetdesk/contracts';
 
 import { AppCard, Button, ErrorSummary, PageHeader, SuccessMark } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
-import { commitWorkerImport, previewWorkerImport } from '../../lib/workers-api';
+import { commitWorkerImport, previewWorkerImport, updateWorker } from '../../lib/workers-api';
+import { DataAccessMatrix, PermissionMatrix } from './permission-matrix';
 
 export function WorkerImportPage() {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -26,6 +33,12 @@ export function WorkerImportPage() {
   const [busy, setBusy] = useState<'preview' | 'commit' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [accessPermissions, setAccessPermissions] = useState<WorkerPermission[]>([
+    ...DEFAULT_WORKER_PERMISSIONS,
+  ]);
+  const [accessData, setAccessData] = useState<WorkerDataAccess>({ inventory: 'OWN', issues: 'OWN' });
+  const [accessSaving, setAccessSaving] = useState(false);
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0] ?? null;
@@ -79,6 +92,7 @@ export function WorkerImportPage() {
     try {
       const response = await commitWorkerImport(preview.importId, crypto.randomUUID());
       setResult(response.data);
+      if (response.data.created.length > 0) setAccessOpen(true);
     } catch (requestError) {
       setError(
         isApiError(requestError)
@@ -115,6 +129,31 @@ export function WorkerImportPage() {
       setCopied(true);
     } catch {
       setError('The credentials could not be copied. Copy each visible credential manually.');
+    }
+  }
+
+  async function saveCommonAccess() {
+    if (!result || result.created.length === 0) return;
+    setAccessSaving(true);
+    setError(null);
+    try {
+      await Promise.all(
+        result.created.map(({ worker }) =>
+          updateWorker(worker.workerId, {
+            permissions: accessPermissions,
+            dataAccess: accessData,
+          }),
+        ),
+      );
+      setAccessOpen(false);
+    } catch (requestError) {
+      setError(
+        isApiError(requestError)
+          ? requestError.message
+          : 'Common access could not be applied to uploaded workers.',
+      );
+    } finally {
+      setAccessSaving(false);
     }
   }
 
@@ -209,6 +248,11 @@ export function WorkerImportPage() {
             </div>
           ) : null}
           <div className="mt-6 flex flex-wrap gap-2">
+            {result.created.length > 0 ? (
+              <Button onClick={() => setAccessOpen(true)} variant="secondary">
+                Manage common access
+              </Button>
+            ) : null}
             <Link className="button-primary" to="/workers">
               View workers
             </Link>
@@ -226,6 +270,45 @@ export function WorkerImportPage() {
             </Button>
           </div>
         </AppCard>
+        {accessOpen ? (
+          <div
+            aria-labelledby="bulk-access-title"
+            className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+            role="dialog"
+          >
+            <div className="max-h-[88vh] w-full max-w-5xl overflow-y-auto rounded-[12px] bg-white p-5 shadow-xl">
+              <h2
+                className="text-lg font-extrabold text-[var(--color-primary-strong)]"
+                id="bulk-access-title"
+              >
+                Manage common access
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
+                Apply one permission and data visibility profile to all uploaded workers.
+              </p>
+              <div className="mt-5 space-y-3">
+                <PermissionMatrix onChange={setAccessPermissions} selected={accessPermissions} />
+                <DataAccessMatrix onChange={setAccessData} value={accessData} />
+              </div>
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  disabled={accessSaving}
+                  onClick={() => setAccessOpen(false)}
+                  variant="secondary"
+                >
+                  Later
+                </Button>
+                <Button
+                  disabled={accessPermissions.length === 0}
+                  loading={accessSaving}
+                  onClick={() => void saveCommonAccess()}
+                >
+                  {accessSaving ? 'Saving access...' : 'Apply to uploaded workers'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }

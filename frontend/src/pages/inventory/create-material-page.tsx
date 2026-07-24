@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router';
 import {
   CreateMaterialRequestSchema,
   type CreateMaterialRequest,
+  type MaterialStatus,
   type ReturnPolicy,
   type TrackingMode,
 } from '@assetdesk/contracts';
@@ -14,6 +15,7 @@ import { SelectField } from '../../components/catalog-ui';
 import { AppCard, Button, ErrorSummary, PageHeader, TextField } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
 import { createMaterial } from '../../lib/inventory-api';
+import { inventoryStatusLabel } from '../../lib/inventory-status';
 import { MaterialCategoryField } from './material-category-field';
 
 interface MaterialForm {
@@ -24,6 +26,7 @@ interface MaterialForm {
   description: string;
   trackingMode: TrackingMode;
   returnPolicy: ReturnPolicy;
+  status: Exclude<MaterialStatus, 'ARCHIVED'>;
   totalQuantity: string;
   unitLabel: string;
   serialNumbers: string[];
@@ -37,6 +40,7 @@ const initialForm: MaterialForm = {
   description: '',
   trackingMode: 'SERIALIZED',
   returnPolicy: 'REUSABLE',
+  status: 'ACTIVE',
   totalQuantity: '1',
   unitLabel: 'units',
   serialNumbers: [''],
@@ -127,6 +131,7 @@ export function CreateMaterialPage() {
       typeModelName: form.typeModelName,
       locationBlock: form.locationBlock,
       ...(form.description.trim() ? { description: form.description } : {}),
+      status: form.status,
       assignmentTypes:
         form.trackingMode === 'SERIALIZED' ? (['LONG_TERM'] as const) : (['SHORT_TERM'] as const),
     };
@@ -274,6 +279,21 @@ export function CreateMaterialPage() {
             >
               <option value="SERIALIZED">IT Assets</option>
               <option value="QUANTITY">IT Consumables</option>
+            </SelectField>
+            <SelectField
+              id="material-status"
+              label="Inventory status"
+              onChange={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  status: value as Exclude<MaterialStatus, 'ARCHIVED'>,
+                }))
+              }
+              value={form.status}
+            >
+              <option value="ACTIVE">{inventoryStatusLabel('ACTIVE')}</option>
+              <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
+              <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
             </SelectField>
             <SelectField
               disabled={form.trackingMode === 'SERIALIZED'}

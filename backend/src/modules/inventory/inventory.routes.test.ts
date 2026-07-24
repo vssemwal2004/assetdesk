@@ -2,7 +2,7 @@ import express, { type RequestHandler } from 'express';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { UserRole } from '@assetdesk/contracts';
+import type { UserRole, WorkerPermission } from '@assetdesk/contracts';
 
 const service = vi.hoisted(() => ({
   adjustQuantity: vi.fn(),
@@ -24,6 +24,7 @@ const importService = vi.hoisted(() => ({
 
 const authState = vi.hoisted(() => ({
   role: 'WORKER' as UserRole,
+  permissions: ['INVENTORY_VIEW'] as WorkerPermission[],
 }));
 
 vi.mock('./inventory.service.js', () => service);
@@ -35,6 +36,8 @@ vi.mock('../auth/auth.middleware.js', () => {
       userId: '507f1f77bcf86cd799439011',
       workerId: 'GEU-WRK-ABCD',
       role: authState.role,
+      permissions: authState.role === 'ADMIN' ? [] : authState.permissions,
+      dataAccess: { inventory: 'ALL', issues: 'ALL' },
       sid: 'a'.repeat(32),
       authVersion: 1,
       mustChangePassword: false,
@@ -44,12 +47,24 @@ vi.mock('../auth/auth.middleware.js', () => {
     next();
   };
   const pass: RequestHandler = (_request, _response, next) => next();
+  function hasServerPermission(
+    auth: NonNullable<Express.Request['auth']>,
+    permission: WorkerPermission,
+  ) {
+    return auth.role === 'ADMIN' || auth.permissions.includes(permission);
+  }
   return {
+    hasServerPermission,
     requireAuth,
     requireFullAccess: pass,
     requireTrustedOrigin: pass,
     requireCsrf: pass,
-    requirePermission: () => pass,
+    requirePermission:
+      (permission: WorkerPermission): RequestHandler =>
+      (request, response, next) => {
+        if (request.auth && hasServerPermission(request.auth, permission)) next();
+        else response.status(403).json({ code: 'PERMISSION_DENIED' });
+      },
     requireRole:
       (...roles: UserRole[]): RequestHandler =>
       (request, response, next) => {
@@ -72,8 +87,16 @@ describe('inventory route authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authState.role = 'WORKER';
+    authState.permissions = ['INVENTORY_VIEW'];
     service.listMaterials.mockResolvedValue({
       materials: [],
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 0,
+    });
+    service.listAssetUnits.mockResolvedValue({
+      units: [],
       page: 1,
       pageSize: 20,
       total: 0,
@@ -87,6 +110,30 @@ describe('inventory route authorization', () => {
     expect(response.headers['cache-control']).toBe('no-store');
     expect(service.listMaterials).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'WORKER', page: 1, pageSize: 20 }),
+    );
+  });
+
+  it('allows assignment creators to load only issueable inventory for the issue picker', async () => {
+    authState.permissions = ['ASSIGNMENTS_CREATE'];
+
+    await request(testApp()).get('/api/v1/inventory?issueable=true').expect(200);
+    await request(testApp()).get('/api/v1/inventory').expect(403);
+
+    expect(service.listMaterials).toHaveBeenCalledWith(
+      expect.objectContaining({ issueable: true, role: 'WORKER' }),
+    );
+  });
+
+  it('allows assignment creators to load available serial numbers for the issue picker', async () => {
+    authState.permissions = ['ASSIGNMENTS_CREATE'];
+
+    await request(testApp())
+      .get('/api/v1/inventory/GEU-MAT-000001/units?status=AVAILABLE')
+      .expect(200);
+    await request(testApp()).get('/api/v1/inventory/GEU-MAT-000001/units').expect(403);
+
+    expect(service.listAssetUnits).toHaveBeenCalledWith(
+      expect.objectContaining({ materialCode: 'GEU-MAT-000001', status: 'AVAILABLE' }),
     );
   });
 

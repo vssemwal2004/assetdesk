@@ -39,7 +39,10 @@ export interface MaterialListInput {
   page: number;
   pageSize: number;
   role: UserRole;
+  actorUserId?: string;
+  dataScope?: 'OWN' | 'ALL';
   search?: string;
+  issueable?: boolean;
   status?: MaterialStatus;
   trackingMode?: TrackingMode;
   returnPolicy?: ReturnPolicy;
@@ -66,6 +69,8 @@ export interface AssetUnitListInput {
   page: number;
   pageSize: number;
   role: UserRole;
+  actorUserId?: string;
+  dataScope?: 'OWN' | 'ALL';
   search?: string;
   status?: AssetUnitStatus;
 }
@@ -244,8 +249,14 @@ async function findActiveSerializedMaterial(materialCode: string): Promise<Mater
 
 export function buildMaterialListFilter(input: MaterialListInput): Record<string, unknown> {
   const filter: Record<string, unknown> = {};
-  if (input.role === 'WORKER') filter.status = 'ACTIVE';
-  else if (input.status) filter.status = input.status;
+  if (input.role === 'WORKER') {
+    filter.status = input.issueable ? { $in: ['ACTIVE', 'NOT_IN_USE'] } : 'ACTIVE';
+  } else if (input.issueable) {
+    filter.status = { $in: ['ACTIVE', 'NOT_IN_USE'] };
+  } else if (input.status) filter.status = input.status;
+  if (input.role === 'WORKER' && input.dataScope !== 'ALL' && input.actorUserId) {
+    filter.createdBy = objectId(input.actorUserId);
+  }
   if (input.trackingMode) filter.trackingMode = input.trackingMode;
   if (input.returnPolicy) filter.returnPolicy = input.returnPolicy;
   if (input.stockState === 'AVAILABLE') filter.availableQuantity = { $gt: 0 };
@@ -280,6 +291,24 @@ export function buildAssetUnitListFilter(input: {
   if (input.search) {
     const search = new RegExp(escapeSearchRegex(input.search), 'i');
     filter.$or = [{ assetTag: search }, { serialNumber: search }, { condition: search }];
+  }
+  return filter;
+}
+
+export function buildAssetUnitMaterialFilter(input: {
+  materialCode: string;
+  role: UserRole;
+  actorUserId?: string;
+  dataScope?: 'OWN' | 'ALL';
+  status?: AssetUnitStatus;
+}): Record<string, unknown> {
+  const filter: Record<string, unknown> = { materialCode: input.materialCode };
+  if (input.role === 'WORKER') {
+    filter.status =
+      input.status === 'AVAILABLE' ? { $in: ['ACTIVE', 'NOT_IN_USE'] } : 'ACTIVE';
+  }
+  if (input.role === 'WORKER' && input.dataScope !== 'ALL' && input.actorUserId) {
+    filter.createdBy = objectId(input.actorUserId);
   }
   return filter;
 }
@@ -366,7 +395,7 @@ export async function createMaterial(
         trackingMode: input.trackingMode,
         returnPolicy: input.returnPolicy,
         assignmentTypes: input.assignmentTypes,
-        status: 'ACTIVE',
+        status: input.status,
         totalQuantity: initialQuantity,
         availableQuantity: initialQuantity,
         issuedQuantity: 0,
@@ -483,9 +512,15 @@ export async function exportMaterialsCsv(input: MaterialExportInput): Promise<st
   return [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
 }
 
-export async function getMaterial(materialCode: string, role: UserRole): Promise<Material> {
+export async function getMaterial(
+  materialCode: string,
+  role: UserRole,
+  actorUserId?: string,
+  dataScope: 'OWN' | 'ALL' = 'OWN',
+): Promise<Material> {
   const filter: Record<string, unknown> = { materialCode };
   if (role === 'WORKER') filter.status = 'ACTIVE';
+  if (role === 'WORKER' && dataScope !== 'ALL' && actorUserId) filter.createdBy = objectId(actorUserId);
   const material = await MaterialModel.findOne(filter);
   if (!material) throw materialNotFound();
   return toMaterial(material);
@@ -570,7 +605,7 @@ export async function updateMaterialStatus(
       if (!material) throw materialNotFound();
       previousStatus = material.status;
 
-      if (status === 'ARCHIVED' && status !== material.status) {
+      if (status !== 'ACTIVE' && status !== material.status) {
         let hasIssuedUnit = false;
         if (material.trackingMode === 'SERIALIZED') {
           hasIssuedUnit = Boolean(
@@ -703,8 +738,7 @@ export async function adjustQuantity(
 }
 
 export async function listAssetUnits(input: AssetUnitListInput): Promise<AssetUnitListResult> {
-  const materialFilter: Record<string, unknown> = { materialCode: input.materialCode };
-  if (input.role === 'WORKER') materialFilter.status = 'ACTIVE';
+  const materialFilter = buildAssetUnitMaterialFilter(input);
   const material = await MaterialModel.findOne(materialFilter);
   if (!material) throw materialNotFound();
   if (material.trackingMode !== 'SERIALIZED') {

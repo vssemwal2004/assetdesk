@@ -107,6 +107,7 @@ export function createIssuesRouter(): Router {
           pageSize: input.pageSize,
           actorUserId: actor.userId,
           actorRole: actor.role,
+          issueDataScope: actor.dataAccess.issues,
           ...(input.search ? { search: input.search } : {}),
           ...(input.status ? { status: input.status } : {}),
           ...(input.period ? { period: input.period } : {}),
@@ -163,7 +164,11 @@ export function createIssuesRouter(): Router {
       try {
         const actor = authenticated(request);
         const input = ReturnSearchQuerySchema.parse(request.query);
-        const result = await searchReturnableIssues({ ...input, actorRole: actor.role });
+        const result = await searchReturnableIssues({
+          ...input,
+          actorRole: actor.role,
+          issueDataScope: actor.dataAccess.issues,
+        });
         response.json({ data: result.issues, meta: pageMeta(result) });
       } catch (error) {
         next(error);
@@ -229,7 +234,12 @@ export function createIssuesRouter(): Router {
     async (request, response, next) => {
       try {
         const actor = authenticated(request);
-        const result = await getIssueDetail(issueId(request), actor.userId, actor.role);
+        const result = await getIssueDetail(
+          issueId(request),
+          actor.userId,
+          actor.role,
+          actor.dataAccess.issues,
+        );
         response.json({ accessScope: result.accessScope, data: { issue: result.issue } });
       } catch (error) {
         next(error);

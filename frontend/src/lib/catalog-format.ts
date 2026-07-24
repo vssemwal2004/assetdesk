@@ -23,6 +23,11 @@ const labels: Record<string, string> = {
   CANCELLED: 'Cancelled',
   OVERDUE: 'Overdue',
   DUE_SOON: 'Due soon',
+  SCRAP: 'Faulty (scrap)',
+  NOT_IN_USE: 'Outdated (not in use)',
+  FAULTY: 'Faulty (scrap)',
+  OUTDATED: 'Outdated (not in use)',
+  WORKING: 'Active / in use',
 };
 
 export function humanizeCatalogValue(value: string): string {

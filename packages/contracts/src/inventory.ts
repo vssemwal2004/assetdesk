@@ -17,7 +17,7 @@ const UnitLabelSchema = z.string().trim().min(1).max(40);
 const ConditionSchema = z.string().trim().min(1).max(120);
 const SerialNumberSchema = z.string().trim().min(1).max(120);
 
-export const MaterialStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
+export const MaterialStatusSchema = z.enum(['ACTIVE', 'SCRAP', 'NOT_IN_USE', 'ARCHIVED']);
 export type MaterialStatus = z.infer<typeof MaterialStatusSchema>;
 
 const CreateMaterialBaseSchema = z.object({
@@ -26,6 +26,7 @@ const CreateMaterialBaseSchema = z.object({
   typeModelName: NameSchema,
   locationBlock: LocationBlockSchema,
   description: DescriptionSchema.optional(),
+  status: MaterialStatusSchema.exclude(['ARCHIVED']).default('ACTIVE'),
   assignmentTypes: z.array(AssignmentTypeSchema).min(1).max(2),
 });
 

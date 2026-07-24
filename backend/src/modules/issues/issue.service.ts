@@ -54,6 +54,7 @@ export interface IssueListInput {
   pageSize: number;
   actorUserId: string;
   actorRole: UserRole;
+  issueDataScope?: 'OWN' | 'ALL';
   search?: string;
   status?: IssueStatus;
   period?: IssuePeriod;
@@ -73,6 +74,7 @@ export interface ReturnSearchInput {
   pageSize: number;
   search: string;
   actorRole: UserRole;
+  issueDataScope?: 'OWN' | 'ALL';
 }
 
 export interface ReturnSearchResult {
@@ -154,7 +156,7 @@ async function createIssueLine(
 ): Promise<IssueLineRecord> {
   const materialQuery = MaterialModel.findOne({
     materialCode: input.materialCode,
-    status: 'ACTIVE',
+    status: { $in: ['ACTIVE', 'NOT_IN_USE'] },
   });
   const material = session ? await materialQuery.session(session) : await materialQuery;
   if (!material) throw inventoryUnavailable(input.materialCode);
@@ -177,7 +179,7 @@ async function createIssueLine(
     const updated = await MaterialModel.findOneAndUpdate(
       {
         _id: material._id,
-        status: 'ACTIVE',
+        status: { $in: ['ACTIVE', 'NOT_IN_USE'] },
         trackingMode: 'QUANTITY',
         returnPolicy: material.returnPolicy,
         availableQuantity: { $gte: quantity },
@@ -233,7 +235,7 @@ async function createIssueLine(
   const updatedMaterial = await MaterialModel.findOneAndUpdate(
     {
       _id: material._id,
-      status: 'ACTIVE',
+      status: { $in: ['ACTIVE', 'NOT_IN_USE'] },
       trackingMode: 'SERIALIZED',
       returnPolicy: 'REUSABLE',
       availableQuantity: { $gte: assetTags.length },
@@ -554,7 +556,7 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
   const filter: QueryFilter<unknown> = {};
   const accessClauses: QueryFilter<unknown>[] = [];
   const today = istDayRange(new Date());
-  if (input.actorRole === 'WORKER') {
+  if (input.actorRole === 'WORKER' && input.issueDataScope !== 'ALL') {
     const actorUserId = objectId(input.actorUserId);
     accessClauses.push({
       $or: [{ createdByUserId: actorUserId }, { 'returnEvents.performedBy.userId': actorUserId }],
@@ -614,7 +616,10 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
 export async function searchReturnableIssues(
   input: ReturnSearchInput,
 ): Promise<ReturnSearchResult> {
-  const filter = buildReturnSearchFilter(input.search, input.actorRole);
+  const filter = buildReturnSearchFilter(
+    input.search,
+    input.actorRole === 'WORKER' && input.issueDataScope === 'ALL' ? 'ADMIN' : input.actorRole,
+  );
   const skip = (input.page - 1) * input.pageSize;
   const [records, total] = await Promise.all([
     IssueModel.find(filter)
@@ -649,10 +654,13 @@ export async function getIssueDetail(
   issueId: string,
   actorUserId: string,
   actorRole: UserRole,
+  issueDataScope: 'OWN' | 'ALL' = 'OWN',
 ): Promise<IssueDetailResult> {
   const issue = await IssueModel.findOne({ issueId });
   if (!issue) throw issueNotFound();
-  if (actorRole === 'ADMIN') return { accessScope: 'FULL', issue: toIssue(issue) };
+  if (actorRole === 'ADMIN' || issueDataScope === 'ALL') {
+    return { accessScope: 'FULL', issue: toIssue(issue) };
+  }
 
   const actorId = objectId(actorUserId);
   const ownsActivity =

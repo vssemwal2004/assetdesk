@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Material } from '@assetdesk/contracts';
 
-import { firstStockIssue } from './create-issue-page';
+import { firstStockIssue, isIssueableInventoryMaterial } from './create-issue-page';
 
 const assetMaterial: Material = {
   id: 'material-id',
@@ -25,6 +25,21 @@ const assetMaterial: Material = {
 };
 
 describe('IT Asset issue selection', () => {
+  it('allows outdated materials but excludes scrap materials from issue selection', () => {
+    expect(
+      isIssueableInventoryMaterial({
+        ...assetMaterial,
+        status: 'NOT_IN_USE',
+      }),
+    ).toBe(true);
+    expect(
+      isIssueableInventoryMaterial({
+        ...assetMaterial,
+        status: 'SCRAP',
+      }),
+    ).toBe(false);
+  });
+
   it('requires exactly one selected serial number for each requested quantity', () => {
     const materials = new Map([[assetMaterial.materialCode, assetMaterial]]);
     const line = {

@@ -3,6 +3,7 @@ import { model, Schema, type HydratedDocument, type Types } from 'mongoose';
 import {
   WorkerIdSchema,
   type AccountStatus,
+  type WorkerDataAccess,
   type UserRole,
   type WorkerPermission,
 } from '@assetdesk/contracts';
@@ -19,6 +20,7 @@ export interface UserRecord {
   department?: string;
   role: UserRole;
   permissions: WorkerPermission[];
+  dataAccess: WorkerDataAccess;
   status: AccountStatus;
   invitationStatus: InvitationStatus;
   passwordHash: string;
@@ -85,6 +87,10 @@ const UserSchema = new Schema<UserRecord>(
         'REPORTS_VIEW',
       ],
       default: [],
+    },
+    dataAccess: {
+      inventory: { type: String, enum: ['OWN', 'ALL'], required: true, default: 'OWN' },
+      issues: { type: String, enum: ['OWN', 'ALL'], required: true, default: 'OWN' },
     },
     status: { type: String, enum: ['INVITED', 'ACTIVE', 'DISABLED'], required: true },
     invitationStatus: {

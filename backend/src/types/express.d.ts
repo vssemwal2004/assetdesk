@@ -1,4 +1,4 @@
-import type { UserRole, WorkerPermission } from '@assetdesk/contracts';
+import type { UserRole, WorkerDataAccess, WorkerPermission } from '@assetdesk/contracts';
 
 declare global {
   namespace Express {
@@ -9,6 +9,7 @@ declare global {
         workerId: string;
         role: UserRole;
         permissions: WorkerPermission[];
+        dataAccess: WorkerDataAccess;
         sid: string;
         authVersion: number;
         mustChangePassword: boolean;

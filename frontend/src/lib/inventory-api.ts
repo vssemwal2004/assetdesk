@@ -33,6 +33,7 @@ export interface InventoryFilters {
   pageSize?: number;
   search?: string;
   status?: MaterialStatus;
+  issueable?: boolean;
   trackingMode?: TrackingMode;
   returnPolicy?: ReturnPolicy;
   stockState?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
@@ -49,6 +50,7 @@ export async function getInventory(
   });
   if (filters.search) parameters.set('search', filters.search);
   if (filters.status) parameters.set('status', filters.status);
+  if (filters.issueable) parameters.set('issueable', 'true');
   if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
@@ -80,6 +82,7 @@ export async function downloadInventoryCsv(filters: Omit<InventoryFilters, 'page
   const parameters = new URLSearchParams({ page: '1' });
   if (filters.search) parameters.set('search', filters.search);
   if (filters.status) parameters.set('status', filters.status);
+  if (filters.issueable) parameters.set('issueable', 'true');
   if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
@@ -155,6 +158,7 @@ export interface InventoryImportPreview {
     locationBlock?: string;
     quantity?: number;
     unitLabel?: string;
+    status?: string;
     valid: boolean;
     errors: string[];
   }>;

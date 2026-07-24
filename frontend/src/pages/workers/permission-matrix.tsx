@@ -1,4 +1,9 @@
-import { DEFAULT_WORKER_PERMISSIONS, type WorkerPermission } from '@assetdesk/contracts';
+import {
+  DEFAULT_WORKER_PERMISSIONS,
+  type WorkerDataAccess,
+  type WorkerDataScope,
+  type WorkerPermission,
+} from '@assetdesk/contracts';
 
 import { Button, cn } from '../../components/ui';
 
@@ -246,5 +251,78 @@ export function PermissionMatrix({
         })}
       </div>
     </div>
+  );
+}
+
+export function DataAccessMatrix({
+  value,
+  onChange,
+  readonly = false,
+}: {
+  value: WorkerDataAccess;
+  onChange?: (value: WorkerDataAccess) => void;
+  readonly?: boolean;
+}) {
+  function setScope(area: keyof WorkerDataAccess, scope: WorkerDataScope) {
+    if (!onChange) return;
+    onChange({ ...value, [area]: scope });
+  }
+
+  return (
+    <section className="rounded-[10px] border border-[var(--color-border)] bg-white p-3">
+      <div>
+        <h3 className="text-sm font-extrabold text-[var(--color-primary-strong)]">
+          Data visibility
+        </h3>
+        <p className="mt-0.5 text-xs font-semibold text-[var(--color-text-muted)]">
+          Choose whether this worker sees only own records or whole platform records.
+        </p>
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        {[
+          ['inventory', 'Inventory data', 'Controls inventory list, details, units, and exports.'],
+          ['issues', 'Issue data', 'Controls issue list, details, slips, and return search.'],
+        ].map(([area, label, description]) => (
+          <div className="rounded-[8px] border border-[var(--color-border)] p-3" key={area}>
+            <p className="text-sm font-bold text-[var(--color-text-strong)]">{label}</p>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
+              {description}
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {[
+                ['OWN', 'Own data'],
+                ['ALL', 'Whole data'],
+              ].map(([scope, scopeLabel]) => {
+                const checked = value[area as keyof WorkerDataAccess] === scope;
+                return (
+                  <label
+                    className={cn(
+                      'rounded-[8px] border px-3 py-2 text-center text-xs font-extrabold',
+                      checked
+                        ? 'border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]'
+                        : 'border-[var(--color-border)] bg-white text-[var(--color-text-muted)]',
+                      readonly ? 'cursor-default' : 'cursor-pointer',
+                    )}
+                    key={scope}
+                  >
+                    <input
+                      checked={checked}
+                      className="sr-only"
+                      disabled={readonly}
+                      name={`data-${area}`}
+                      onChange={() =>
+                        setScope(area as keyof WorkerDataAccess, scope as WorkerDataScope)
+                      }
+                      type="radio"
+                    />
+                    {scopeLabel}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }

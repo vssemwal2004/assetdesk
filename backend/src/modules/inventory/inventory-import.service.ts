@@ -33,7 +33,8 @@ type Field =
   | 'serialNumber'
   | 'quantity'
   | 'unitLabel'
-  | 'returnPolicy';
+  | 'returnPolicy'
+  | 'status';
 
 const HEADER_ALIASES: Record<string, Field> = {
   name: 'name',
@@ -62,6 +63,9 @@ const HEADER_ALIASES: Record<string, Field> = {
   'unit label': 'unitLabel',
   'return policy': 'returnPolicy',
   returnpolicy: 'returnPolicy',
+  status: 'status',
+  'inventory status': 'status',
+  condition: 'status',
 };
 
 interface ImportRow {
@@ -199,12 +203,28 @@ function cleanReason(message: string): string {
   return trimmed || 'Check this row.';
 }
 
-function plainImportInput(input: InventoryImportInput): CreateMaterialRequest {
+export function importInputToCreateMaterialRequest(input: InventoryImportInput): CreateMaterialRequest {
   const source =
     input && typeof input === 'object' && 'toObject' in input
       ? (input as { toObject: () => unknown }).toObject()
       : input;
-  return CreateMaterialRequestSchema.parse(source);
+  const record = source as InventoryImportInput;
+  const common = {
+    name: record.name,
+    category: record.category,
+    typeModelName: record.typeModelName,
+    locationBlock: record.locationBlock,
+    ...(record.description ? { description: record.description } : {}),
+    assignmentTypes: record.assignmentTypes,
+    trackingMode: record.trackingMode,
+    returnPolicy: record.returnPolicy,
+    ...(record.status ? { status: record.status } : {}),
+  };
+  return CreateMaterialRequestSchema.parse(
+    record.trackingMode === 'SERIALIZED'
+      ? { ...common, serialNumbers: record.serialNumbers ?? [] }
+      : { ...common, totalQuantity: record.totalQuantity, unitLabel: record.unitLabel },
+  );
 }
 
 function identity(mode: TrackingMode, name: string, category: string): string {
@@ -225,6 +245,32 @@ function materialName(assetType: string, typeModelName: string): string {
   return model.toLocaleLowerCase('en-US').startsWith(category.toLocaleLowerCase('en-US'))
     ? model
     : `${category} ${model}`;
+}
+
+function materialStatus(value: string): 'ACTIVE' | 'SCRAP' | 'NOT_IN_USE' {
+  const normalized = value
+    .trim()
+    .replace(/[^A-Z0-9]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+  if (!normalized || normalized === 'ACTIVE' || normalized.includes('ACTIVE IN USE') || normalized === 'WORKING') {
+    return 'ACTIVE';
+  }
+  if (normalized.includes('SCRAP') || normalized.includes('FAULTY') || normalized.includes('SCRAPE')) {
+    return 'SCRAP';
+  }
+  if (
+    normalized.includes('NOT IN USE') ||
+    normalized.includes('NOT USED') ||
+    normalized.includes('UNUSED') ||
+    normalized.includes('IDLE') ||
+    normalized.includes('OBSOLETE') ||
+    normalized.includes('OUTDATED') ||
+    normalized.includes('OUT DATED')
+  ) {
+    return 'NOT_IN_USE';
+  }
+  throw new Error('Inventory status must be Active / in use, Faulty (scrap), or Outdated (not in use).');
 }
 
 export async function previewInventoryImport(
@@ -257,6 +303,7 @@ export async function previewInventoryImport(
         ...(row.values.serialNumber ? { serialNumber: row.values.serialNumber } : {}),
         ...(row.values.quantity ? { quantity: Number(row.values.quantity) } : {}),
         ...(row.values.unitLabel ? { unitLabel: row.values.unitLabel } : {}),
+        ...(row.values.status ? { status: row.values.status } : {}),
         valid: true,
         errors: [],
       },
@@ -312,6 +359,7 @@ export async function previewInventoryImport(
           typeModelName: itemName,
           locationBlock,
           ...(values.description ? { description: values.description } : {}),
+          status: materialStatus(values.status),
           trackingMode: 'SERIALIZED',
           returnPolicy: 'REUSABLE',
           assignmentTypes: ['LONG_TERM'],
@@ -324,6 +372,7 @@ export async function previewInventoryImport(
           typeModelName: itemName,
           locationBlock,
           ...(values.description ? { description: values.description } : {}),
+          status: materialStatus(values.status),
           trackingMode: 'QUANTITY',
           returnPolicy:
             values.returnPolicy.toUpperCase() === 'CONSUMABLE' ? 'CONSUMABLE' : 'REUSABLE',
@@ -436,7 +485,7 @@ export async function commitInventoryImport(
   for (const input of record.inputs) {
     let parsed: CreateMaterialRequest;
     try {
-      parsed = plainImportInput(input);
+      parsed = importInputToCreateMaterialRequest(input);
       const material = await createMaterial(parsed, createdByUserId);
       created.push({
         materialCode: material.materialCode,
@@ -448,7 +497,8 @@ export async function commitInventoryImport(
       const inputCategory = String(input.category ?? '').trim().toUpperCase();
       const matchingRows = record.rows.filter(
         (row) =>
-          row.name.trim().toUpperCase() === inputName &&
+          (row.name.trim().toUpperCase() === inputName ||
+            materialName(row.category, row.name).toUpperCase() === inputName) &&
           row.category.trim().toUpperCase() === inputCategory,
       );
       matchingRows.forEach((row) =>

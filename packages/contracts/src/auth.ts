@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { AccountStatusSchema, UserRoleSchema } from './domain.js';
 import { WorkerIdSchema } from './identifiers.js';
-import { WorkerPermissionSchema } from './workers.js';
+import { WorkerDataAccessSchema, WorkerPermissionSchema } from './workers.js';
 
 function containsControlCharacter(value: string): boolean {
   return Array.from(value).some((character) => {
@@ -52,6 +52,7 @@ export const AuthUserSchema = z.object({
   status: AccountStatusSchema,
   mustChangePassword: z.boolean(),
   permissions: z.array(WorkerPermissionSchema),
+  dataAccess: WorkerDataAccessSchema,
 });
 
 export const AuthResponseSchema = z.object({

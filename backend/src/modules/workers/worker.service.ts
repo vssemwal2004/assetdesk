@@ -115,6 +115,7 @@ export async function createWorker(
               ...(input.department ? { department: input.department } : {}),
               role: 'WORKER',
               permissions: input.permissions,
+              dataAccess: input.dataAccess,
               status: 'INVITED',
               invitationStatus: 'PENDING',
               passwordHash,
@@ -208,6 +209,7 @@ export async function updateWorker(workerId: string, input: UpdateWorkerRequest)
   if (Object.hasOwn(input, 'contact')) worker.set('contact', input.contact);
   if (Object.hasOwn(input, 'department')) worker.set('department', input.department);
   if (input.permissions !== undefined) worker.permissions = input.permissions;
+  if (input.dataAccess !== undefined) worker.dataAccess = input.dataAccess;
 
   try {
     await worker.save();

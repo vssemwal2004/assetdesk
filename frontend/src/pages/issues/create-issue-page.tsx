@@ -77,13 +77,13 @@ export function CreateIssuePage() {
   const [created, setCreated] = useState<Issue | null>(null);
 
   const inventoryQuery = useQuery({
-    queryKey: ['inventory', { materialSearch, materialType }],
+    queryKey: ['inventory', { materialSearch, materialType, issueable: true }],
     queryFn: ({ signal }) =>
       getInventory(
         {
           page: 1,
           pageSize: 100,
-          status: 'ACTIVE',
+          issueable: true,
           trackingMode: materialType,
           ...(materialSearch ? { search: materialSearch } : {}),
         },
@@ -91,7 +91,10 @@ export function CreateIssuePage() {
       ),
   });
 
-  const materials = useMemo(() => inventoryQuery.data?.data ?? [], [inventoryQuery.data?.data]);
+  const materials = useMemo(
+    () => (inventoryQuery.data?.data ?? []).filter(isIssueableInventoryMaterial),
+    [inventoryQuery.data?.data],
+  );
   const materialByCode = useMemo(
     () => new Map(materials.map((material) => [material.materialCode, material])),
     [materials],
@@ -333,6 +336,20 @@ export function CreateIssuePage() {
           <Field label="Search inventory" onChange={setMaterialSearch} value={materialSearch} />
         </div>
         {inventoryQuery.isPending ? <LoadingPanel label="Loading inventory" /> : null}
+        {inventoryQuery.isError ? (
+          <ErrorSummary
+            message={
+              isApiError(inventoryQuery.error)
+                ? inventoryQuery.error.message
+                : 'Issueable inventory could not be loaded.'
+            }
+          />
+        ) : null}
+        {!inventoryQuery.isPending && !inventoryQuery.isError && materials.length === 0 ? (
+          <p className="mt-4 rounded-[10px] bg-[var(--color-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-warning)]">
+            No issueable {materialType === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'} found.
+          </p>
+        ) : null}
         <div className="mt-4 space-y-3">
           {lines.map((line, index) => (
             <LineEditor
@@ -491,7 +508,9 @@ function LineEditor({
             }
             value={line.materialCode}
           >
-            <option value="">Choose inventory material</option>
+            <option value="">
+              {materials.length === 0 ? 'No issueable inventory found' : 'Choose inventory material'}
+            </option>
             {materials.map((item) => (
               <option
                 disabled={item.availableQuantity <= 0}
@@ -543,6 +562,7 @@ function LineEditor({
         <div className="mt-3 space-y-2">
           <div className="flex flex-wrap gap-2 text-xs">
             <CatalogBadge value={material.trackingMode} />
+            <CatalogBadge value={material.status} />
             <span className="rounded-full bg-[var(--color-surface-tint)] px-2.5 py-1 font-bold text-[var(--color-text-muted)]">
               {material.availableQuantity} of {material.totalQuantity} available
             </span>
@@ -663,6 +683,10 @@ export function firstStockIssue(
     }
   }
   return null;
+}
+
+export function isIssueableInventoryMaterial(material: Material): boolean {
+  return material.status === 'ACTIVE' || material.status === 'NOT_IN_USE';
 }
 
 function stockMessage(

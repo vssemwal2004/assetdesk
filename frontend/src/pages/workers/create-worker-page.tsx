@@ -6,6 +6,8 @@ import {
   CreateWorkerRequestSchema,
   DEFAULT_WORKER_PERMISSIONS,
   type CreateWorkerRequest,
+  type WorkerDataAccess,
+  type WorkerPermission,
 } from '@assetdesk/contracts';
 
 import {
@@ -18,14 +20,24 @@ import {
 } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
 import { createWorker, type WorkerCredentialResult } from '../../lib/workers-api';
-import { PermissionMatrix, permissionLabels } from './permission-matrix';
+import { DataAccessMatrix, PermissionMatrix, permissionLabels } from './permission-matrix';
 
-const emptyForm = {
+interface WorkerFormState {
+  name: string;
+  email: string;
+  contact: string;
+  department: string;
+  permissions: WorkerPermission[];
+  dataAccess: WorkerDataAccess;
+}
+
+const emptyForm: WorkerFormState = {
   name: '',
   email: '',
   contact: '',
   department: '',
   permissions: [...DEFAULT_WORKER_PERMISSIONS],
+  dataAccess: { inventory: 'OWN', issues: 'OWN' },
 };
 
 export function CreateWorkerPage() {
@@ -197,6 +209,8 @@ export function CreateWorkerPage() {
                 Contact: form.contact || 'Not provided',
                 Department: form.department || 'Not provided',
                 Access: `${form.permissions.length} permissions selected`,
+                Inventory: form.dataAccess.inventory === 'ALL' ? 'Whole data' : 'Own data',
+                Issues: form.dataAccess.issues === 'ALL' ? 'Whole data' : 'Own data',
               }).map(([label, value]) => (
                 <div className="grid gap-1 py-3 sm:grid-cols-[130px_1fr]" key={label}>
                   <dt className="text-sm font-bold text-[var(--color-text-muted)]">{label}</dt>
@@ -283,6 +297,12 @@ export function CreateWorkerPage() {
                 onChange={(permissions) => setForm((value) => ({ ...value, permissions }))}
                 selected={form.permissions}
               />
+              <div className="mt-3">
+                <DataAccessMatrix
+                  onChange={(dataAccess) => setForm((value) => ({ ...value, dataAccess }))}
+                  value={form.dataAccess}
+                />
+              </div>
               {errors.permissions ? (
                 <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">
                   {errors.permissions}

@@ -27,7 +27,7 @@ import {
 } from '../../components/ui';
 import { deleteWorker, getWorkers, updateWorker } from '../../lib/workers-api';
 import { isApiError } from '../../lib/api-client';
-import { PermissionMatrix, permissionLabels } from './permission-matrix';
+import { DataAccessMatrix, PermissionMatrix, permissionLabels } from './permission-matrix';
 
 function formatDate(value: string | null): string {
   if (!value) return 'Never';
@@ -518,9 +518,10 @@ function ManageAccessDialog({
   onSaved: () => Promise<void>;
 }) {
   const [selected, setSelected] = useState<WorkerPermission[]>(worker.permissions);
+  const [dataAccess, setDataAccess] = useState(worker.dataAccess);
   const [message, setMessage] = useState<string | null>(null);
   const mutation = useMutation({
-    mutationFn: () => updateWorker(worker.workerId, { permissions: selected }),
+    mutationFn: () => updateWorker(worker.workerId, { permissions: selected, dataAccess }),
     onSuccess: () => void onSaved(),
     onError: (error) =>
       setMessage(isApiError(error) ? error.message : 'Access could not be saved.'),
@@ -542,6 +543,9 @@ function ManageAccessDialog({
         ) : null}
         <div className="mt-5">
           <PermissionMatrix onChange={setSelected} selected={selected} />
+          <div className="mt-3">
+            <DataAccessMatrix onChange={setDataAccess} value={dataAccess} />
+          </div>
         </div>
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button disabled={mutation.isPending} onClick={onClose} variant="secondary">

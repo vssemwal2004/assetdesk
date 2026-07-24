@@ -53,7 +53,12 @@ const MaterialSchema = new Schema<MaterialRecord>(
       immutable: true,
     },
     returnPolicy: { type: String, enum: ['REUSABLE', 'CONSUMABLE'], required: true },
-    status: { type: String, enum: ['ACTIVE', 'ARCHIVED'], required: true, default: 'ACTIVE' },
+    status: {
+      type: String,
+      enum: ['ACTIVE', 'SCRAP', 'NOT_IN_USE', 'ARCHIVED'],
+      required: true,
+      default: 'ACTIVE',
+    },
     totalQuantity: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },
     availableQuantity: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },
     issuedQuantity: { type: Number, required: true, min: 0, validate: Number.isSafeInteger },

@@ -27,6 +27,12 @@ export const WorkerPermissionSchema = z.enum([
 export const WorkerPermissionsSchema = z.array(WorkerPermissionSchema).min(1);
 export const DEFAULT_WORKER_PERMISSIONS = WorkerPermissionSchema.options;
 
+export const WorkerDataScopeSchema = z.enum(['OWN', 'ALL']);
+export const WorkerDataAccessSchema = z.object({
+  inventory: WorkerDataScopeSchema.default('OWN'),
+  issues: WorkerDataScopeSchema.default('OWN'),
+});
+
 const OptionalTrimmedTextSchema = z
   .string()
   .trim()
@@ -40,6 +46,7 @@ export const CreateWorkerRequestSchema = z.object({
   contact: OptionalTrimmedTextSchema,
   department: OptionalTrimmedTextSchema,
   permissions: WorkerPermissionsSchema,
+  dataAccess: WorkerDataAccessSchema.default({ inventory: 'OWN', issues: 'OWN' }),
 });
 
 export const UpdateWorkerRequestSchema = CreateWorkerRequestSchema.partial().refine(
@@ -62,6 +69,7 @@ export const WorkerSchema = z.object({
   invitationStatus: z.enum(['PENDING', 'SENT', 'FAILED']),
   mustChangePassword: z.boolean(),
   permissions: z.array(WorkerPermissionSchema),
+  dataAccess: WorkerDataAccessSchema,
   temporaryPasswordExpiresAt: z.string().datetime({ offset: true }).nullable(),
   lastLoginAt: z.string().datetime({ offset: true }).nullable(),
   createdAt: z.string().datetime({ offset: true }),
@@ -143,6 +151,8 @@ export const WorkerImportCommitResponseSchema = z.object({
 export type CreateWorkerRequest = z.infer<typeof CreateWorkerRequestSchema>;
 export type UpdateWorkerRequest = z.infer<typeof UpdateWorkerRequestSchema>;
 export type WorkerPermission = z.infer<typeof WorkerPermissionSchema>;
+export type WorkerDataScope = z.infer<typeof WorkerDataScopeSchema>;
+export type WorkerDataAccess = z.infer<typeof WorkerDataAccessSchema>;
 export type Worker = z.infer<typeof WorkerSchema>;
 export type TemporaryCredential = z.infer<typeof TemporaryCredentialSchema>;
 export type CreateWorkerResponse = z.infer<typeof CreateWorkerResponseSchema>;

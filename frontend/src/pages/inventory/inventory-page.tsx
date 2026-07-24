@@ -21,9 +21,10 @@ import {
 import { deleteMaterial, downloadInventoryCsv, getInventory } from '../../lib/inventory-api';
 import { isApiError } from '../../lib/api-client';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
+import { inventoryStatusLabel, normalizeInventoryStatus } from '../../lib/inventory-status';
 
 function materialStatus(value: string): MaterialStatus | undefined {
-  return value === 'ACTIVE' || value === 'ARCHIVED' ? value : undefined;
+  return normalizeInventoryStatus(value);
 }
 
 function trackingMode(value: string): TrackingMode | undefined {
@@ -51,6 +52,20 @@ function quantityLabel(material: Material): string {
 
 function inactiveQuantity(material: Material): number {
   return Math.max(0, material.totalQuantity - material.availableQuantity - material.issuedQuantity);
+}
+
+function inventorySummary(materials: Material[]) {
+  return materials.reduce(
+    (summary, material) => {
+      summary.total += material.totalQuantity;
+      summary.available += material.availableQuantity;
+      summary.issued += material.issuedQuantity;
+      if (material.status === 'SCRAP') summary.scrap += material.totalQuantity;
+      if (material.status === 'NOT_IN_USE') summary.notInUse += material.totalQuantity;
+      return summary;
+    },
+    { total: 0, available: 0, issued: 0, scrap: 0, notInUse: 0 },
+  );
 }
 
 interface MaterialGroup {
@@ -84,7 +99,9 @@ function groupMaterials(materials: Material[]): MaterialGroup[] {
 }
 
 function materialStatsLabel(material: Material): string {
-  if (material.status === 'ARCHIVED') return 'Archived';
+  if (material.status === 'ARCHIVED') return inventoryStatusLabel(material.status);
+  if (material.status === 'SCRAP') return inventoryStatusLabel(material.status);
+  if (material.status === 'NOT_IN_USE') return inventoryStatusLabel(material.status);
   if (material.availableQuantity === 0) return 'Out of stock';
   if (material.issuedQuantity > 0 && material.issuedQuantity === material.totalQuantity) {
     return 'Fully issued';
@@ -144,6 +161,7 @@ export function InventoryPage() {
 
   const materials = query.data?.data ?? [];
   const materialGroups = groupMaterials(materials);
+  const summary = inventorySummary(materials);
   const filtered = Boolean(search || category || status || mode || policy || stock);
   const deleteMutation = useMutation({
     mutationFn: (material: Material) => deleteMaterial(material.materialCode),
@@ -259,7 +277,9 @@ export function InventoryPage() {
                   value={status ?? ''}
                 >
                   <option value="">Any status</option>
-                  <option value="ACTIVE">Active</option>
+                  <option value="ACTIVE">{inventoryStatusLabel('ACTIVE')}</option>
+                  <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
+                  <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
                   <option value="ARCHIVED">Archived</option>
                 </FilterSelect>
               </FilterField>
@@ -307,6 +327,20 @@ export function InventoryPage() {
         </div>
         {query.data ? <PageCount count={query.data.meta.total} noun="IT asset" /> : null}
       </section>
+
+      {query.data ? (
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <SummaryCard label="Listed quantity" value={summary.total} />
+          <SummaryCard label="Available" value={summary.available} />
+          <SummaryCard label="Issued" value={summary.issued} />
+          <SummaryCard label={inventoryStatusLabel('SCRAP')} tone="danger" value={summary.scrap} />
+          <SummaryCard
+            label={inventoryStatusLabel('NOT_IN_USE')}
+            tone="warning"
+            value={summary.notInUse}
+          />
+        </section>
+      ) : null}
 
       {query.isPending ? (
         <LoadingPanel label="Loading inventory" />
@@ -629,6 +663,28 @@ function StatsRow({ label, value, note }: { label: string; value: number; note: 
       <td className="px-3 py-3 font-extrabold text-[var(--color-primary-strong)]">{value}</td>
       <td className="px-3 py-3 text-[var(--color-text-muted)]">{note}</td>
     </tr>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  tone = 'primary',
+}: {
+  label: string;
+  value: number;
+  tone?: 'primary' | 'warning' | 'danger';
+}) {
+  const colors = {
+    primary: 'text-[var(--color-primary-strong)]',
+    warning: 'text-[var(--color-warning)]',
+    danger: 'text-[var(--color-danger)]',
+  };
+  return (
+    <div className="rounded-[12px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)]">
+      <p className={`text-xl font-extrabold ${colors[tone]}`}>{value}</p>
+      <p className="mt-1 text-xs font-bold text-[var(--color-text-muted)]">{label}</p>
+    </div>
   );
 }
 
