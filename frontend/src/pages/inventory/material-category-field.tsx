@@ -1,24 +1,7 @@
-import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { getAssetTypes } from '../../lib/inventory-api';
 
-const MATERIAL_CATEGORIES = [
-  'Stationery',
-  'Lab Equipment',
-  'IT Equipment',
-  'Electrical',
-  'Furniture',
-  'Tools',
-  'Cleaning Supplies',
-  'Safety Equipment',
-  'Sports Equipment',
-  'Uniforms',
-] as const;
-
-const CUSTOM_CATEGORY = '__CUSTOM__';
-
-function categorySelectValue(value: string): string {
-  if (!value) return '';
-  return MATERIAL_CATEGORIES.some((category) => category === value) ? value : CUSTOM_CATEGORY;
-}
+const DEFAULT_ASSET_TYPES = ['Computer', 'Printer', 'Network Device', 'Consumable'] as const;
 
 export function MaterialCategoryField({
   id,
@@ -29,16 +12,20 @@ export function MaterialCategoryField({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const [customOpen, setCustomOpen] = useState(() => categorySelectValue(value) === CUSTOM_CATEGORY);
-  const selectValue = customOpen ? CUSTOM_CATEGORY : categorySelectValue(value);
-  const custom = selectValue === CUSTOM_CATEGORY;
-  const customId = `${id}-custom`;
+  const query = useQuery({
+    queryKey: ['asset-types'],
+    queryFn: ({ signal }) => getAssetTypes(signal),
+  });
+  const assetTypes = [
+    ...new Set([...DEFAULT_ASSET_TYPES, ...(query.data?.map((assetType) => assetType.name) ?? [])]),
+  ];
+  const selectValue = value && assetTypes.includes(value) ? value : '';
   const hintId = `${id}-hint`;
 
   return (
     <div className="space-y-1.5">
       <label className="field-label" htmlFor={id}>
-        Material group
+        Asset type
       </label>
       <select
         aria-describedby={hintId}
@@ -46,39 +33,21 @@ export function MaterialCategoryField({
         id={id}
         onChange={(event) => {
           const next = event.target.value;
-          if (next === CUSTOM_CATEGORY) {
-            setCustomOpen(true);
-            onChange('');
-            return;
-          }
-          setCustomOpen(false);
           onChange(next);
         }}
         required
         value={selectValue}
       >
-        <option value="">Choose material group</option>
-        {MATERIAL_CATEGORIES.map((category) => (
+        <option value="">Choose asset type</option>
+        {assetTypes.map((category) => (
           <option key={category} value={category}>
             {category}
           </option>
         ))}
-        <option value={CUSTOM_CATEGORY}>Other / custom</option>
       </select>
       <p className="text-xs leading-5 text-[var(--color-text-muted)]" id={hintId}>
-        Use a fixed group to keep filters and reports clean.
+        Add new asset types from Inventory, Add asset type.
       </p>
-      {custom ? (
-        <input
-          className="field-input field-input-compact"
-          id={customId}
-          maxLength={120}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="Enter custom material group"
-          required
-          value={value}
-        />
-      ) : null}
     </div>
   );
 }

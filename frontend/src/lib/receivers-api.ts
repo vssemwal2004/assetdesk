@@ -76,3 +76,9 @@ export async function setReceiverStatus(
   );
   return ReceiverResponseSchema.parse(payload).data.receiver;
 }
+
+export async function deleteReceiver(receiverCode: string): Promise<void> {
+  await apiRequest<unknown>(`/api/v1/receivers/${encodeURIComponent(receiverCode)}`, {
+    method: 'DELETE',
+  });
+}

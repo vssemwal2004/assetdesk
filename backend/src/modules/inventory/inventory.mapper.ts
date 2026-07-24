@@ -9,6 +9,8 @@ export function toMaterial(material: MaterialDocument): Material {
     materialCode: material.materialCode,
     name: material.name,
     category: material.category,
+    typeModelName: material.typeModelName ?? null,
+    locationBlock: material.locationBlock ?? null,
     description: material.description ?? null,
     trackingMode: material.trackingMode,
     returnPolicy: material.returnPolicy,

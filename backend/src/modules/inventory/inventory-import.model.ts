@@ -6,6 +6,8 @@ export interface InventoryImportPreviewRow {
   rowNumber: number;
   name: string;
   category: string;
+  typeModelName?: string;
+  locationBlock?: string;
   serialNumber?: string;
   quantity?: number;
   unitLabel?: string;
@@ -16,6 +18,8 @@ export interface InventoryImportPreviewRow {
 export interface InventoryImportInput {
   name: string;
   category: string;
+  typeModelName?: string | undefined;
+  locationBlock?: string | undefined;
   description?: string | undefined;
   assignmentTypes: string[];
   trackingMode: TrackingMode;
@@ -44,6 +48,8 @@ const PreviewRowSchema = new Schema<InventoryImportPreviewRow>(
     rowNumber: { type: Number, required: true },
     name: { type: String, default: '' },
     category: { type: String, default: '' },
+    typeModelName: { type: String },
+    locationBlock: { type: String },
     serialNumber: { type: String },
     quantity: { type: Number },
     unitLabel: { type: String },
@@ -57,6 +63,8 @@ const ImportInputSchema = new Schema<InventoryImportInput>(
   {
     name: { type: String, required: true },
     category: { type: String, required: true },
+    typeModelName: { type: String },
+    locationBlock: { type: String },
     description: { type: String },
     assignmentTypes: { type: [String], required: true },
     trackingMode: { type: String, enum: ['SERIALIZED', 'QUANTITY'], required: true },

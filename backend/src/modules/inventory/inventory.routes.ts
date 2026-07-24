@@ -6,6 +6,7 @@ import {
   AdjustQuantityRequestSchema,
   AssetTagSchema,
   AssetUnitStatusSchema,
+  CreateAssetTypeRequestSchema,
   CreateAssetUnitRequestSchema,
   CreateMaterialRequestSchema,
   MaterialCodeSchema,
@@ -30,18 +31,27 @@ import {
 } from '../auth/auth.middleware.js';
 import {
   adjustQuantity,
+  createAssetType,
   createAssetUnit,
+  deleteAssetType,
   deleteAssetUnit,
   createMaterial,
   deleteMaterial,
+  exportMaterialsCsv,
   getMaterial,
+  listAssetTypes,
   listAssetUnits,
   listMaterials,
   updateAssetUnit,
   updateMaterial,
   updateMaterialStatus,
 } from './inventory.service.js';
-import { commitInventoryImport, previewInventoryImport } from './inventory-import.service.js';
+import {
+  commitInventoryImport,
+  getInventoryImportPreview,
+  previewInventoryImport,
+} from './inventory-import.service.js';
+import { commitAssetTypeImport, previewAssetTypeImport } from './asset-type-import.service.js';
 
 const inventoryUpload = multer({
   storage: multer.memoryStorage(),
@@ -181,9 +191,121 @@ export function createInventoryRouter(): Router {
     }
   });
 
+  router.get('/asset-types', requirePermission('INVENTORY_VIEW'), async (_request, response, next) => {
+    try {
+      const result = await listAssetTypes();
+      response.json({ data: result.assetTypes });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get('/export', requirePermission('INVENTORY_EXPORT'), async (request, response, next) => {
+    try {
+      const input = MaterialListQuerySchema.parse(request.query);
+      const csv = await exportMaterialsCsv({
+        role: authenticatedRole(request),
+        ...(input.search ? { search: input.search } : {}),
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.trackingMode ? { trackingMode: input.trackingMode } : {}),
+        ...(input.returnPolicy ? { returnPolicy: input.returnPolicy } : {}),
+        ...(input.stockState ? { stockState: input.stockState } : {}),
+        ...(input.category ? { category: input.category } : {}),
+      });
+      response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      response.setHeader('Content-Disposition', 'attachment; filename="assetdesk-inventory.csv"');
+      response.send(`\uFEFF${csv}`);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post(
+    '/asset-types',
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ASSET_TYPES_MANAGE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const input = CreateAssetTypeRequestSchema.parse(request.body);
+        const assetType = await createAssetType(input.name, authenticated(request).userId);
+        await audit(request, 'ASSET_TYPE_SAVED', 'ASSET_TYPE', assetType.id, { name: assetType.name });
+        response.status(201).json({ data: { assetType } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.delete(
+    '/asset-types/:assetTypeId',
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ASSET_TYPES_MANAGE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const assetTypeId = z.string().parse(request.params.assetTypeId);
+        const assetType = await deleteAssetType(assetTypeId);
+        await audit(request, 'ASSET_TYPE_DELETED', 'ASSET_TYPE', assetType.id, {
+          name: assetType.name,
+        });
+        response.status(204).send();
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    '/asset-types/imports/preview',
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ASSET_TYPES_MANAGE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    uploadInventoryFile,
+    async (request, response, next) => {
+      try {
+        if (!request.file)
+          throw new AppError(400, 'ASSET_TYPE_IMPORT_FILE_REQUIRED', 'Choose a CSV or XLSX file.');
+        const result = await previewAssetTypeImport(request.file, authenticated(request).userId);
+        await audit(request, 'ASSET_TYPE_IMPORT_PREVIEWED', 'ASSET_TYPE_IMPORT', result.importId, {
+          validRows: result.validRows,
+          invalidRows: result.invalidRows,
+        });
+        response.status(201).json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    '/asset-types/imports/:importId/commit',
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ASSET_TYPES_MANAGE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const importId = z.string().parse(request.params.importId);
+        const result = await commitAssetTypeImport(importId, authenticated(request).userId);
+        await audit(request, 'ASSET_TYPES_IMPORTED', 'ASSET_TYPE_IMPORT', importId, {
+          createdCount: result.created.length,
+          skippedCount: result.skipped.length,
+          failedCount: result.failed.length,
+        });
+        response.json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.post(
     '/',
-    requireRole('ADMIN'),
+    requireRole('ADMIN', 'WORKER'),
     requirePermission('INVENTORY_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
@@ -205,8 +327,8 @@ export function createInventoryRouter(): Router {
 
   router.post(
     '/imports/preview',
-    requireRole('ADMIN'),
-    requirePermission('INVENTORY_MANAGE'),
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('INVENTORY_IMPORT'),
     requireTrustedOrigin,
     requireCsrf,
     uploadInventoryFile,
@@ -232,10 +354,25 @@ export function createInventoryRouter(): Router {
     },
   );
 
+  router.get(
+    '/imports/:importId',
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('INVENTORY_IMPORT'),
+    async (request, response, next) => {
+      try {
+        const importId = z.string().parse(request.params.importId);
+        const result = await getInventoryImportPreview(importId, authenticated(request).userId);
+        response.json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.post(
     '/imports/:importId/commit',
-    requireRole('ADMIN'),
-    requirePermission('INVENTORY_MANAGE'),
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('INVENTORY_IMPORT'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -268,7 +405,7 @@ export function createInventoryRouter(): Router {
 
   router.patch(
     '/:materialCode',
-    requireRole('ADMIN'),
+    requireRole('ADMIN', 'WORKER'),
     requirePermission('INVENTORY_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
@@ -289,7 +426,7 @@ export function createInventoryRouter(): Router {
 
   router.patch(
     '/:materialCode/status',
-    requireRole('ADMIN'),
+    requireRole('ADMIN', 'WORKER'),
     requirePermission('INVENTORY_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
@@ -311,7 +448,7 @@ export function createInventoryRouter(): Router {
 
   router.delete(
     '/:materialCode',
-    requireRole('ADMIN'),
+    requireRole('ADMIN', 'WORKER'),
     requirePermission('INVENTORY_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
@@ -333,7 +470,7 @@ export function createInventoryRouter(): Router {
 
   router.post(
     '/:materialCode/adjust-quantity',
-    requireRole('ADMIN'),
+    requireRole('ADMIN', 'WORKER'),
     requirePermission('INVENTORY_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
@@ -380,8 +517,8 @@ export function createInventoryRouter(): Router {
 
   router.post(
     '/:materialCode/units',
-    requireRole('ADMIN'),
-    requirePermission('INVENTORY_MANAGE'),
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ASSET_UNITS_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -402,8 +539,8 @@ export function createInventoryRouter(): Router {
 
   router.patch(
     '/:materialCode/units/:assetTag',
-    requireRole('ADMIN'),
-    requirePermission('INVENTORY_MANAGE'),
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ASSET_UNITS_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -432,8 +569,8 @@ export function createInventoryRouter(): Router {
 
   router.delete(
     '/:materialCode/units/:assetTag',
-    requireRole('ADMIN'),
-    requirePermission('INVENTORY_MANAGE'),
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ASSET_UNITS_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {

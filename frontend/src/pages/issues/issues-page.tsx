@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import type {
+  AuthUser,
   IssuePeriod,
   IssueReturnState,
   IssueStatus,
@@ -21,6 +22,7 @@ import type {
 } from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
+import { hasPermission } from '../../auth/permissions';
 import { CatalogBadge, PageCount } from '../../components/catalog-ui';
 import {
   Button,
@@ -99,6 +101,7 @@ export function IssuesPage() {
   const issues = query.data?.data ?? [];
   const filtered = Boolean(search || status || period || returnState);
   const admin = user?.role === 'ADMIN';
+  const canCreateIssue = hasPermission(user, 'ASSIGNMENTS_CREATE');
   const deleteMutation = useMutation({
     mutationFn: (issue: IssueSummary) => deleteIssue(issue.issueId),
     onSuccess: async () => {
@@ -136,10 +139,10 @@ export function IssuesPage() {
     <div className="space-y-6">
       <PageHeader
         actions={
-          <Link className="button-primary" to="/issues/new">
+          canCreateIssue ? <Link className="button-primary" to="/issues/new">
             <PackagePlus aria-hidden="true" size={18} />
             Issue material
-          </Link>
+          </Link> : null
         }
         description={
           user?.role === 'ADMIN'
@@ -217,12 +220,12 @@ export function IssuesPage() {
               <Button onClick={() => setParameters({ page: '1' })} variant="secondary">
                 Clear filters
               </Button>
-            ) : (
+            ) : canCreateIssue ? (
               <Link className="button-primary" to="/issues/new">
                 <PackagePlus aria-hidden="true" size={18} />
                 Issue material
               </Link>
-            )
+            ) : undefined
           }
           message={
             filtered
@@ -237,6 +240,7 @@ export function IssuesPage() {
             {issues.map((issue) => (
               <IssueCard
                 admin={admin}
+                user={user}
                 issue={issue}
                 key={issue.issueId}
                 onDelete={setDeleteTarget}
@@ -246,6 +250,7 @@ export function IssuesPage() {
           </div>
           <IssueTable
             admin={admin}
+            user={user}
             issues={issues}
             onDelete={setDeleteTarget}
             onExtend={setExtendTarget}
@@ -280,6 +285,7 @@ export function IssuesPage() {
       {viewIssue ? (
         <IssueQuickViewDialog
           admin={admin}
+          user={user}
           issue={viewIssue}
           onClose={() => setViewIssue(null)}
           onDelete={setDeleteTarget}
@@ -361,11 +367,13 @@ function returnStateText(issue: IssueSummary): string {
 
 function IssueCard({
   admin,
+  user,
   issue,
   onDelete,
   onExtend,
 }: {
   admin: boolean;
+  user: AuthUser | null;
   issue: IssueSummary;
   onDelete: (issue: IssueSummary) => void;
   onExtend: (issue: IssueSummary) => void;
@@ -401,6 +409,7 @@ function IssueCard({
         </Link>
         <IssueActionsMenu
           admin={admin}
+          user={user}
           issue={issue}
           align="right"
           onDelete={onDelete}
@@ -413,17 +422,24 @@ function IssueCard({
 
 function IssueActionsMenu({
   admin,
+  user,
   issue,
   onDelete,
   onExtend,
   align = 'right',
 }: {
   admin: boolean;
+  user: AuthUser | null;
   issue: IssueSummary;
   onDelete: (issue: IssueSummary) => void;
   onExtend: (issue: IssueSummary) => void;
   align?: 'right' | 'left';
 }) {
+  const canEditIssue = hasPermission(user, 'ISSUES_EDIT');
+  const canOpenSlip = hasPermission(user, 'ISSUE_SLIPS_VIEW');
+  const canReturn = hasPermission(user, 'RETURNS_RECORD');
+  const canExtend = admin && hasPermission(user, 'RETURN_DATES_EXTEND');
+  const canDelete = hasPermission(user, 'ISSUES_DELETE');
   return (
     <details className="group relative inline-flex">
       <summary
@@ -444,21 +460,25 @@ function IssueActionsMenu({
           <Eye aria-hidden="true" size={16} />
           View details
         </Link>
-        <Link
-          className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
-          to={`/issues/${issue.issueId}?edit=1`}
-        >
-          <Pencil aria-hidden="true" size={16} />
-          Edit Issue
-        </Link>
-        <Link
-          className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
-          to={`/bills/${issue.issueId}`}
-        >
-          <Printer aria-hidden="true" size={16} />
-          Generate receipt
-        </Link>
-        {canRecordReturn(issue) ? (
+        {canEditIssue ? (
+          <Link
+            className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
+            to={`/issues/${issue.issueId}?edit=1`}
+          >
+            <Pencil aria-hidden="true" size={16} />
+            Edit Issue
+          </Link>
+        ) : null}
+        {canOpenSlip ? (
+          <Link
+            className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
+            to={`/bills/${issue.issueId}`}
+          >
+            <Printer aria-hidden="true" size={16} />
+            Generate receipt
+          </Link>
+        ) : null}
+        {canReturn && canRecordReturn(issue) ? (
           <Link
             className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
             to={`/issues/${issue.issueId}/return`}
@@ -467,7 +487,7 @@ function IssueActionsMenu({
             Record Return
           </Link>
         ) : null}
-        {admin && canExtendReturnDate(issue) ? (
+        {canExtend && canExtendReturnDate(issue) ? (
           <button
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
             onClick={() => onExtend(issue)}
@@ -477,7 +497,7 @@ function IssueActionsMenu({
             Extend return date
           </button>
         ) : null}
-        {admin ? (
+        {canDelete ? (
           <button
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-bold text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
             onClick={() => onDelete(issue)}
@@ -494,12 +514,14 @@ function IssueActionsMenu({
 
 function IssueTable({
   admin,
+  user,
   issues,
   onDelete,
   onExtend,
   onView,
 }: {
   admin: boolean;
+  user: AuthUser | null;
   issues: IssueSummary[];
   onDelete: (issue: IssueSummary) => void;
   onExtend: (issue: IssueSummary) => void;
@@ -563,6 +585,7 @@ function IssueTable({
                 <div onClick={(event) => event.stopPropagation()}>
                   <IssueActionsMenu
                     admin={admin}
+                    user={user}
                     issue={issue}
                     onDelete={onDelete}
                     onExtend={onExtend}
@@ -616,17 +639,24 @@ function DetailItem({ label, value }: { label: string; value: ReactNode }) {
 
 function IssueQuickViewDialog({
   admin,
+  user,
   issue,
   onClose,
   onDelete,
   onExtend,
 }: {
   admin: boolean;
+  user: AuthUser | null;
   issue: IssueSummary;
   onClose: () => void;
   onDelete: (issue: IssueSummary) => void;
   onExtend: (issue: IssueSummary) => void;
 }) {
+  const canEditIssue = hasPermission(user, 'ISSUES_EDIT');
+  const canOpenSlip = hasPermission(user, 'ISSUE_SLIPS_VIEW');
+  const canReturn = hasPermission(user, 'RETURNS_RECORD');
+  const canExtend = admin && hasPermission(user, 'RETURN_DATES_EXTEND');
+  const canDelete = hasPermission(user, 'ISSUES_DELETE');
   return (
     <Dialog label={`${issue.issueId} details`} onClose={onClose}>
       <div className="max-h-[86vh] overflow-y-auto p-5 sm:p-6">
@@ -667,13 +697,13 @@ function IssueQuickViewDialog({
           <Link className="button-secondary" to={`/issues/${issue.issueId}`}>
             Full record
           </Link>
-          <Link className="button-secondary" to={`/issues/${issue.issueId}?edit=1`}>
+          {canEditIssue ? <Link className="button-secondary" to={`/issues/${issue.issueId}?edit=1`}>
             Edit
-          </Link>
-          <Link className="button-secondary" to={`/bills/${issue.issueId}`}>
+          </Link> : null}
+          {canOpenSlip ? <Link className="button-secondary" to={`/bills/${issue.issueId}`}>
             Generate receipt
-          </Link>
-          {canRecordReturn(issue) ? (
+          </Link> : null}
+          {canReturn && canRecordReturn(issue) ? (
             <Link className="button-primary" to={`/issues/${issue.issueId}/return`}>
               Record Return
             </Link>
@@ -684,7 +714,7 @@ function IssueQuickViewDialog({
           )}
           {admin ? (
             <>
-              {canExtendReturnDate(issue) ? (
+              {canExtend && canExtendReturnDate(issue) ? (
                 <Button
                   onClick={() => {
                     onClose();
@@ -696,7 +726,7 @@ function IssueQuickViewDialog({
                   Extend date
                 </Button>
               ) : null}
-              <Button
+              {canDelete ? <Button
                 onClick={() => {
                   onClose();
                   onDelete(issue);
@@ -705,7 +735,7 @@ function IssueQuickViewDialog({
               >
                 <Trash2 aria-hidden="true" size={18} />
                 Delete
-              </Button>
+              </Button> : null}
             </>
           ) : null}
         </div>

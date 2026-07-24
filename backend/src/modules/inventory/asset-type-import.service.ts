@@ -1,0 +1,215 @@
+import { basename, extname } from 'node:path';
+
+import { parse as parseCsv } from 'csv-parse/sync';
+import { Types } from 'mongoose';
+import { readSheet, type SheetData } from 'read-excel-file/node';
+
+import type { AssetType } from '@assetdesk/contracts';
+
+import { AppError } from '../../middleware/error-handler.js';
+import { AssetTypeImportModel, type AssetTypeImportPreviewRow } from './asset-type-import.model.js';
+import { AssetTypeModel } from './asset-type.model.js';
+import { createAssetType } from './inventory.service.js';
+
+const MAX_ROWS = 1_000;
+const IMPORT_TTL_MS = 60 * 60 * 1_000;
+
+export interface AssetTypeImportResult {
+  created: AssetType[];
+  skipped: Array<{ name: string; reason: string }>;
+  failed: Array<{ rowNumber: number; name: string; reason: string }>;
+}
+
+export interface AssetTypeImportPreviewResult {
+  importId: string;
+  fileName: string;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  rows: AssetTypeImportPreviewRow[];
+  expiresAt: string;
+}
+
+function text(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return typeof value === 'object' ? '' : String(value).trim();
+}
+
+function normalizedHeader(value: unknown): string {
+  return text(value)
+    .replace(/^\uFEFF/, '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasValues(row: readonly unknown[]): boolean {
+  return row.some((cell) => text(cell).length > 0);
+}
+
+async function fileTable(file: Express.Multer.File): Promise<readonly (readonly unknown[])[]> {
+  const extension = extname(basename(file.originalname)).toLowerCase();
+  try {
+    if (extension === '.csv') {
+      return parseCsv(file.buffer.toString('utf8'), {
+        bom: true,
+        relax_column_count: true,
+        skip_empty_lines: false,
+        max_record_size: 16_384,
+      }) as unknown[][];
+    }
+    if (extension === '.xlsx') return (await readSheet(file.buffer)) as SheetData;
+  } catch {
+    throw new AppError(
+      400,
+      'ASSET_TYPE_IMPORT_FILE_INVALID',
+      'The file could not be read. Check its CSV or XLSX format.',
+    );
+  }
+  throw new AppError(415, 'ASSET_TYPE_IMPORT_TYPE_UNSUPPORTED', 'Upload a CSV or XLSX file.');
+}
+
+function parseAssetTypeRows(table: readonly (readonly unknown[])[]): Array<{ rowNumber: number; name: string }> {
+  const headerIndex = table.findIndex(hasValues);
+  if (headerIndex < 0) throw new AppError(400, 'ASSET_TYPE_IMPORT_EMPTY', 'The import file is empty.');
+  const headings = table[headerIndex] ?? [];
+  const nameIndex = headings.findIndex((heading) =>
+    ['asset type', 'assettype', 'name', 'type'].includes(normalizedHeader(heading)),
+  );
+  if (nameIndex < 0) {
+    throw new AppError(400, 'ASSET_TYPE_IMPORT_COLUMNS_MISSING', 'Add an Asset Type column.');
+  }
+  const rows = table
+    .slice(headerIndex + 1)
+    .map((row, index) => ({ rowNumber: headerIndex + index + 2, name: text(row[nameIndex]) }))
+    .filter((row) => row.name.length > 0);
+  if (!rows.length)
+    throw new AppError(400, 'ASSET_TYPE_IMPORT_NO_DATA', 'The import file contains no asset types.');
+  if (rows.length > MAX_ROWS)
+    throw new AppError(413, 'ASSET_TYPE_IMPORT_TOO_MANY_ROWS', `Upload no more than ${MAX_ROWS} rows.`);
+  return rows;
+}
+
+function normalizeName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
+}
+
+export async function previewAssetTypeImport(
+  file: Express.Multer.File,
+  createdByUserId: string,
+): Promise<AssetTypeImportPreviewResult> {
+  const rows = parseAssetTypeRows(await fileTable(file));
+  const seen = new Set<string>();
+  const publicRows: AssetTypeImportPreviewRow[] = [];
+  const inputs: string[] = [];
+
+  for (const row of rows) {
+    const normalized = normalizeName(row.name);
+    if (seen.has(normalized)) {
+      publicRows.push({
+        rowNumber: row.rowNumber,
+        name: row.name,
+        valid: false,
+        errors: ['Duplicate in this file.'],
+      });
+      continue;
+    }
+    seen.add(normalized);
+    try {
+      if (row.name.trim().length < 2 || row.name.trim().length > 120) {
+        throw new Error('Asset type must be 2 to 120 characters.');
+      }
+      const existing = await AssetTypeModel.exists({ normalizedName: normalized });
+      if (existing) {
+        publicRows.push({
+          rowNumber: row.rowNumber,
+          name: row.name,
+          valid: false,
+          errors: ['Already exists.'],
+        });
+        continue;
+      }
+      publicRows.push({ rowNumber: row.rowNumber, name: row.name, valid: true, errors: [] });
+      inputs.push(row.name);
+    } catch (error) {
+      publicRows.push({
+        rowNumber: row.rowNumber,
+        name: row.name,
+        valid: false,
+        errors: [error instanceof Error ? error.message : 'This asset type could not be saved.'],
+      });
+    }
+  }
+  const expiresAt = new Date(Date.now() + IMPORT_TTL_MS);
+  const record = await AssetTypeImportModel.create({
+    fileName: basename(file.originalname).slice(0, 255),
+    createdBy: new Types.ObjectId(createdByUserId),
+    rows: publicRows,
+    inputs,
+    status: 'PREVIEWED',
+    expiresAt,
+  });
+  const invalidRows = publicRows.filter((row) => !row.valid).length;
+  return {
+    importId: record._id.toString(),
+    fileName: record.fileName,
+    totalRows: publicRows.length,
+    validRows: publicRows.length - invalidRows,
+    invalidRows,
+    rows: publicRows,
+    expiresAt: expiresAt.toISOString(),
+  };
+}
+
+export async function commitAssetTypeImport(
+  rawImportId: string,
+  createdByUserId: string,
+): Promise<AssetTypeImportResult> {
+  if (!Types.ObjectId.isValid(rawImportId))
+    throw new AppError(404, 'ASSET_TYPE_IMPORT_NOT_FOUND', 'This asset type import was not found.');
+  const _id = new Types.ObjectId(rawImportId);
+  const createdBy = new Types.ObjectId(createdByUserId);
+  const now = new Date();
+  const record = await AssetTypeImportModel.findOneAndUpdate(
+    { _id, createdBy, status: 'PREVIEWED', expiresAt: { $gt: now } },
+    { $set: { status: 'PROCESSING', expiresAt: new Date(now.getTime() + IMPORT_TTL_MS) } },
+    { returnDocument: 'after' },
+  );
+  if (!record)
+    throw new AppError(
+      409,
+      'ASSET_TYPE_IMPORT_NOT_COMMITTABLE',
+      'This import was already submitted or has expired. Upload the file again.',
+    );
+  const created: AssetType[] = [];
+  const skipped: AssetTypeImportResult['skipped'] = record.rows
+    .filter((row) => !row.valid)
+    .map((row) => ({ name: row.name, reason: row.errors.join(' ') }));
+  const failed: AssetTypeImportResult['failed'] = [];
+
+  for (const name of record.inputs) {
+    try {
+      const normalized = normalizeName(name);
+      const existing = await AssetTypeModel.exists({ normalizedName: normalized });
+      if (existing) {
+        skipped.push({ name, reason: 'Already exists.' });
+        continue;
+      }
+      created.push(await createAssetType(name, createdByUserId));
+    } catch (error) {
+      const matchingRow = record.rows.find((row) => normalizeName(row.name) === normalizeName(name));
+      failed.push({
+        rowNumber: matchingRow?.rowNumber ?? 1,
+        name,
+        reason: error instanceof Error ? error.message : 'This asset type could not be saved.',
+      });
+    }
+  }
+  await AssetTypeImportModel.updateOne(
+    { _id },
+    { $set: { status: 'COMPLETED', completedAt: new Date() } },
+  );
+
+  return { created, skipped, failed };
+}

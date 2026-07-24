@@ -115,7 +115,7 @@ export function createIssueReturnsRouter(): Router {
 export function createReturnsRouter(): Router {
   const router = secureReturnRouter();
 
-  router.get('/', requirePermission('RETURNS_RECORD'), async (request, response, next) => {
+  router.get('/', requirePermission('RETURNS_VIEW'), async (request, response, next) => {
     try {
       const actor = authenticated(request);
       const query = ReturnEventListQuerySchema.parse(request.query);
@@ -141,7 +141,7 @@ export function createReturnsRouter(): Router {
     }
   });
 
-  router.get('/:returnEventId', requirePermission('RETURNS_RECORD'), async (request, response, next) => {
+  router.get('/:returnEventId', requirePermission('RETURNS_VIEW'), async (request, response, next) => {
     try {
       const actor = authenticated(request);
       const returnEventId = ReturnEventIdSchema.parse(request.params.returnEventId);

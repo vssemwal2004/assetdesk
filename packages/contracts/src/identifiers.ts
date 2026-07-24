@@ -4,7 +4,9 @@ export const WorkerIdSchema = z.string().regex(/^GEU-WRK-[A-HJ-NP-Z2-9]{4}$/, 'I
 
 export const IssueIdSchema = z.string().regex(/^GEU-ISS-\d{4}-\d{6}$/, 'Invalid Issue ID');
 
-export const MaterialCodeSchema = z.string().regex(/^GEU-MAT-\d{6}$/, 'Invalid material code');
+export const MaterialCodeSchema = z
+  .string()
+  .regex(/^GEU-(?:MAT-\d{6}|\d{4}-\d{6})$/, 'Invalid material code');
 
 export const AssetTagSchema = z.string().regex(/^GEU-AST-\d{6}$/, 'Invalid asset tag');
 

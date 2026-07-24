@@ -320,7 +320,7 @@ export function AppCard({ children, className }: { children: ReactNode; classNam
   return (
     <section
       className={cn(
-        'rounded-[14px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)] sm:p-5',
+        'rounded-[10px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)] sm:p-5',
         className,
       )}
     >

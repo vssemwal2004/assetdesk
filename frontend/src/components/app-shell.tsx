@@ -20,8 +20,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
+import type { WorkerPermission } from '@assetdesk/contracts';
 
 import { useAuth } from '../auth/auth-context';
+import { hasPermission } from '../auth/permissions';
 import { Brand, cn } from './ui';
 
 interface NavigationItem {
@@ -29,34 +31,48 @@ interface NavigationItem {
   to: string;
   icon: LucideIcon;
   adminOnly?: boolean;
+  permission?: WorkerPermission;
   end?: boolean;
   emphasized?: boolean;
+  ariaLabel?: string;
+}
+
+interface NavigationGroup {
+  label: string;
+  icon: LucideIcon;
+  items: NavigationItem[];
+  activePath: (pathname: string) => boolean;
 }
 
 const navigation: NavigationItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: Home, end: true },
-  { label: 'Return', to: '/returns', icon: RotateCcw },
-  { label: 'Receipts', to: '/bills', icon: ReceiptText },
-  { label: 'Inventory', to: '/inventory', icon: Boxes },
-  { label: 'Receivers', to: '/receivers', icon: ContactRound },
+  { label: 'Return', to: '/returns', icon: RotateCcw, permission: 'RETURNS_VIEW' },
+  { label: 'Issue/Return Slip', to: '/bills', icon: ReceiptText, permission: 'ISSUE_SLIPS_VIEW' },
+  { label: 'Receivers', to: '/receivers', icon: ContactRound, permission: 'RECEIVERS_VIEW' },
   { label: 'Workers', to: '/workers', icon: UsersRound, adminOnly: true },
   { label: 'Audit logs', to: '/audit', icon: FileClock, adminOnly: true },
   { label: 'Reports', to: '/reports', icon: FileBarChart, adminOnly: true },
   { label: 'Profile', to: '/profile', icon: UserRound },
 ];
 
+const inventoryNavigation: NavigationItem[] = [
+  { label: 'Inventory data', to: '/inventory', icon: Boxes, end: true, ariaLabel: 'Inventory', permission: 'INVENTORY_VIEW' },
+  { label: 'Add material', to: '/inventory/new', icon: PackagePlus, permission: 'INVENTORY_MANAGE' },
+  { label: 'Add asset type', to: '/inventory/asset-types', icon: Boxes, permission: 'ASSET_TYPES_MANAGE' },
+];
+
 const issueNavigation: NavigationItem[] = [
-  { label: 'Issue material', to: '/issues/new', icon: PackagePlus },
-  { label: 'Issues data', to: '/issues', icon: ListChecks, end: true },
+  { label: 'Issue material', to: '/issues/new', icon: PackagePlus, permission: 'ASSIGNMENTS_CREATE' },
+  { label: 'Issues data', to: '/issues', icon: ListChecks, end: true, permission: 'ISSUES_VIEW' },
   { label: 'Overdue assets', to: '/overdue', icon: FileClock, adminOnly: true },
 ];
 
 const mobileNavigation: NavigationItem[] = [
   { label: 'Home', to: '/dashboard', icon: Home, end: true },
-  { label: 'Issues', to: '/issues', icon: ClipboardList, end: true },
-  { label: 'Issue', to: '/issues/new', icon: PackagePlus, emphasized: true },
-  { label: 'Return', to: '/returns', icon: RotateCcw },
-  { label: 'Receipts', to: '/bills', icon: ReceiptText },
+  { label: 'Issues', to: '/issues', icon: ClipboardList, end: true, permission: 'ISSUES_VIEW' },
+  { label: 'Issue', to: '/issues/new', icon: PackagePlus, emphasized: true, permission: 'ASSIGNMENTS_CREATE' },
+  { label: 'Return', to: '/returns', icon: RotateCcw, permission: 'RETURNS_VIEW' },
+  { label: 'Slip', to: '/bills', icon: ReceiptText, permission: 'ISSUE_SLIPS_VIEW' },
   { label: 'Profile', to: '/profile', icon: UserRound },
 ];
 
@@ -72,12 +88,13 @@ function pageTitle(pathname: string): string {
   if (pathname.startsWith('/issues/')) return 'Issue details';
   if (pathname === '/issues') return 'Issues';
   if (pathname === '/returns') return 'Returns';
-  if (pathname.startsWith('/bills/')) return 'Receipt';
-  if (pathname === '/bills') return 'Receipts';
+  if (pathname.startsWith('/bills/')) return 'Issue/Return Slip';
+  if (pathname === '/bills') return 'Issue/Return Slip';
   if (pathname === '/audit') return 'Audit logs';
   if (pathname === '/reports') return 'Reports';
   if (pathname === '/inventory/new') return 'Add material';
   if (pathname === '/inventory/import') return 'Bulk inventory upload';
+  if (pathname === '/inventory/asset-types') return 'Add asset type';
   if (pathname.startsWith('/inventory/')) return 'Material details';
   if (pathname === '/inventory') return 'Inventory';
   if (pathname === '/receivers/new') return 'Add receiver';
@@ -93,6 +110,14 @@ function pageTitle(pathname: string): string {
   return 'Dashboard';
 }
 
+function canShowItem(
+  user: ReturnType<typeof useAuth>['user'],
+  item: NavigationItem,
+): boolean {
+  if (item.adminOnly && user?.role !== 'ADMIN') return false;
+  return !item.permission || hasPermission(user, item.permission);
+}
+
 function IssueNavigationGroup({
   compact = false,
   onClick,
@@ -102,7 +127,7 @@ function IssueNavigationGroup({
 }) {
   const auth = useAuth();
   const location = useLocation();
-  const children = issueNavigation.filter((item) => !item.adminOnly || auth.user?.role === 'ADMIN');
+  const children = issueNavigation.filter((item) => canShowItem(auth.user, item));
   const active = location.pathname.startsWith('/issues') || location.pathname === '/overdue';
 
   return (
@@ -143,6 +168,47 @@ function IssueNavigationGroup({
   );
 }
 
+function NavigationGroupMenu({
+  group,
+  compact = false,
+  onClick,
+}: {
+  group: NavigationGroup;
+  compact?: boolean;
+  onClick?: () => void;
+}) {
+  const auth = useAuth();
+  const location = useLocation();
+  const children = group.items.filter((item) => canShowItem(auth.user, item));
+  const active = group.activePath(location.pathname);
+  const Icon = group.icon;
+
+  return (
+    <details className="group" open={active}>
+      <summary
+        className={cn(
+          'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
+          compact ? 'px-2.5' : 'px-3',
+          active
+            ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]'
+            : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-tint)] hover:text-[var(--color-primary)]',
+        )}
+      >
+        <Icon aria-hidden="true" className="shrink-0" size={20} />
+        <span className={compact ? 'sidebar-label min-w-0 flex-1 truncate' : 'min-w-0 flex-1'}>
+          {group.label}
+        </span>
+        <ChevronDown aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-180" size={16} />
+      </summary>
+      <div className={cn('mt-1 space-y-1', compact ? 'pl-0' : 'pl-4')}>
+        {children.map((item) => (
+          <NavigationLink compact={compact} item={item} key={item.to} {...(onClick ? { onClick } : {})} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function NavigationLink({
   item,
   compact = false,
@@ -155,7 +221,7 @@ function NavigationLink({
   const Icon = item.icon;
   return (
     <NavLink
-      aria-label={compact ? item.label : undefined}
+      aria-label={compact ? (item.ariaLabel ?? item.label) : undefined}
       className={({ isActive }) =>
         cn(
           'sidebar-nav-link group flex min-h-11 items-center rounded-[10px] text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]',
@@ -280,8 +346,10 @@ export function AppShell() {
   const auth = useAuth();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const items = navigation.filter((item) => !item.adminOnly || auth.user?.role === 'ADMIN');
-  const mobileItems = auth.user?.role === 'ADMIN' ? adminMobileNavigation : mobileNavigation;
+  const items = navigation.filter((item) => canShowItem(auth.user, item));
+  const mobileItems = (auth.user?.role === 'ADMIN' ? adminMobileNavigation : mobileNavigation).filter((item) =>
+    canShowItem(auth.user, item),
+  );
 
   return (
     <div className="min-h-dvh bg-[var(--color-background)] text-[var(--color-text)]">
@@ -304,6 +372,15 @@ export function AppShell() {
             <NavigationLink compact item={item} key={item.to} />
           ))}
           <IssueNavigationGroup compact />
+          <NavigationGroupMenu
+            compact
+            group={{
+              label: 'Inventory',
+              icon: Boxes,
+              items: inventoryNavigation,
+              activePath: (pathname) => pathname.startsWith('/inventory'),
+            }}
+          />
           {items.slice(1).map((item) => (
             <NavigationLink compact item={item} key={item.to} />
           ))}
@@ -362,6 +439,15 @@ export function AppShell() {
                 <NavigationLink item={item} key={item.to} onClick={() => setDrawerOpen(false)} />
               ))}
               <IssueNavigationGroup onClick={() => setDrawerOpen(false)} />
+              <NavigationGroupMenu
+                group={{
+                  label: 'Inventory',
+                  icon: Boxes,
+                  items: inventoryNavigation,
+                  activePath: (pathname) => pathname.startsWith('/inventory'),
+                }}
+                onClick={() => setDrawerOpen(false)}
+              />
               {items.slice(1).map((item) => (
                 <NavigationLink item={item} key={item.to} onClick={() => setDrawerOpen(false)} />
               ))}
@@ -374,7 +460,7 @@ export function AppShell() {
         className="min-h-dvh px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-20 sm:px-6 min-[600px]:ml-[72px] min-[600px]:pb-8 lg:px-8"
         id="main-content"
       >
-        <div className="mx-auto max-w-[1360px]">
+        <div className="mx-auto max-w-[1680px]">
           <Outlet />
         </div>
       </main>

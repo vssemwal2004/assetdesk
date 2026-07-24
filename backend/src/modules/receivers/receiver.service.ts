@@ -9,6 +9,7 @@ import type {
 } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
+import { IssueModel } from '../issues/issue.model.js';
 import { allocateReceiverCode } from './receiver-code.js';
 import { toReceiver } from './receiver.mapper.js';
 import { ReceiverModel, type ReceiverRecord } from './receiver.model.js';
@@ -359,4 +360,21 @@ export async function updateReceiverStatus(
     await receiver.save();
   }
   return { receiver: toReceiver(receiver), previousStatus };
+}
+
+export async function deleteReceiver(receiverCode: string): Promise<Receiver> {
+  const receiver = await findReceiverRecord(receiverCode);
+  const hasIssueHistory = await IssueModel.exists({
+    'receiver.receiverCode': receiver.receiverCode,
+  });
+  if (hasIssueHistory) {
+    throw new AppError(
+      409,
+      'RECEIVER_HAS_ISSUE_HISTORY',
+      'This Receiver has Issue history. Mark it inactive instead of deleting it.',
+    );
+  }
+  const deleted = toReceiver(receiver);
+  await ReceiverModel.deleteOne({ _id: receiver._id });
+  return deleted;
 }

@@ -8,9 +8,10 @@ import {
   Pencil,
   Phone,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link, useLocation, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 
 import {
   UpdateReceiverRequestSchema,
@@ -32,7 +33,7 @@ import {
 } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
-import { getReceiver, setReceiverStatus, updateReceiver } from '../../lib/receivers-api';
+import { deleteReceiver, getReceiver, setReceiverStatus, updateReceiver } from '../../lib/receivers-api';
 
 const receiverTypes: ReceiverType[] = [
   'FACULTY',
@@ -45,10 +46,12 @@ const receiverTypes: ReceiverType[] = [
 export function ReceiverDetailPage() {
   const { receiverCode = '' } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [confirmStatus, setConfirmStatus] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const notice = (location.state as { notice?: string } | null)?.notice;
   const admin = user?.role === 'ADMIN';
@@ -78,6 +81,22 @@ export function ReceiverDetailPage() {
       setConfirmStatus(false);
       setActionError(
         isApiError(error) ? error.message : 'The Receiver status could not be changed.',
+      );
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (receiver: Receiver) => deleteReceiver(receiver.receiverCode),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['receivers'] });
+      navigate('/receivers', { replace: true });
+    },
+    onError: (error) => {
+      setConfirmDelete(false);
+      setActionError(
+        isApiError(error)
+          ? error.message
+          : 'This Receiver could not be deleted. Mark it inactive if it has history.',
       );
     },
   });
@@ -167,17 +186,30 @@ export function ReceiverDetailPage() {
                 : 'This Receiver is retained for records but hidden from active operational searches.'}
             </p>
             {admin ? (
-              <Button
-                className="mt-4 w-full"
-                onClick={() => {
-                  setActionError(null);
-                  setConfirmStatus(true);
-                }}
-                variant={receiver.status === 'ACTIVE' ? 'danger' : 'secondary'}
-              >
-                <ShieldCheck aria-hidden="true" size={18} />
-                {receiver.status === 'ACTIVE' ? 'Deactivate Receiver' : 'Reactivate Receiver'}
-              </Button>
+              <div className="mt-4 space-y-2">
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    setActionError(null);
+                    setConfirmStatus(true);
+                  }}
+                  variant={receiver.status === 'ACTIVE' ? 'danger' : 'secondary'}
+                >
+                  <ShieldCheck aria-hidden="true" size={18} />
+                  {receiver.status === 'ACTIVE' ? 'Deactivate Receiver' : 'Reactivate Receiver'}
+                </Button>
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    setActionError(null);
+                    setConfirmDelete(true);
+                  }}
+                  variant="danger"
+                >
+                  <Trash2 aria-hidden="true" size={18} />
+                  Delete Receiver
+                </Button>
+              </div>
             ) : (
               <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-xs font-semibold text-[var(--color-text-muted)]">
                 Receiver records are read-only for Worker accounts.
@@ -214,6 +246,14 @@ export function ReceiverDetailPage() {
           loading={statusMutation.isPending}
           onCancel={() => setConfirmStatus(false)}
           onConfirm={() => statusMutation.mutate(receiver)}
+        />
+      ) : null}
+      {confirmDelete ? (
+        <DeleteReceiverDialog
+          loading={deleteMutation.isPending}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => deleteMutation.mutate(receiver)}
+          receiver={receiver}
         />
       ) : null}
     </div>
@@ -365,6 +405,58 @@ function StatusDialog({
           </Button>
           <Button loading={loading} onClick={onConfirm} variant={active ? 'danger' : 'primary'}>
             {loading ? 'Working…' : active ? 'Deactivate' : 'Reactivate'}
+          </Button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
+function DeleteReceiverDialog({
+  receiver,
+  loading,
+  onConfirm,
+  onCancel,
+}: {
+  receiver: Receiver;
+  loading: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const reference = useRef<HTMLDialogElement>(null);
+  useEffect(() => reference.current?.showModal(), []);
+  return (
+    <dialog
+      aria-labelledby="receiver-delete-title"
+      className="w-[min(92vw,480px)] rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)]"
+      onCancel={onCancel}
+      onClose={onCancel}
+      ref={reference}
+    >
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-danger-soft)] text-[var(--color-danger)]">
+            <Trash2 aria-hidden="true" size={20} />
+          </span>
+          <div>
+            <h2
+              className="text-lg font-extrabold text-[var(--color-primary-strong)]"
+              id="receiver-delete-title"
+            >
+              Delete Receiver?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+              {receiver.fullName} will be permanently removed. Delete is allowed only when this
+              Receiver has no Issue history.
+            </p>
+          </div>
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button disabled={loading} onClick={onCancel} variant="secondary">
+            Cancel
+          </Button>
+          <Button loading={loading} onClick={onConfirm} variant="danger">
+            {loading ? 'Deleting...' : 'Delete Receiver'}
           </Button>
         </div>
       </div>

@@ -35,6 +35,7 @@ import {
   setWorkerStatus,
   updateWorker,
 } from '../../lib/workers-api';
+import { PermissionMatrix } from './permission-matrix';
 
 function formatDate(value: string | null): string {
   if (!value) return 'Never';
@@ -199,6 +200,14 @@ export function WorkerDetailPage() {
           <div className="mt-5 space-y-2">
             <Button
               className="w-full"
+              onClick={() => setEditingMode(true)}
+              variant="secondary"
+            >
+              <ShieldCheck aria-hidden="true" size={18} />
+              Manage platform access
+            </Button>
+            <Button
+              className="w-full"
               onClick={() => {
                 setActionError(null);
                 setConfirmAction('credential');
@@ -238,6 +247,20 @@ export function WorkerDetailPage() {
           ) : null}
         </AppCard>
       </div>
+
+      {!editing ? (
+        <AppCard>
+          <div className="mb-4">
+            <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+              Platform access
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
+              Active permissions granted by Admin.
+            </p>
+          </div>
+          <PermissionMatrix readonly selected={worker.permissions} />
+        </AppCard>
+      ) : null}
 
       {confirmAction === 'status' ? (
         <ConfirmDialog
@@ -318,6 +341,7 @@ function EditWorkerForm({
     email: worker.email,
     contact: worker.contact ?? '',
     department: worker.department ?? '',
+    permissions: worker.permissions,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
@@ -330,6 +354,7 @@ function EditWorkerForm({
       email: form.email.trim(),
       contact: form.contact.trim(),
       department: form.department.trim(),
+      permissions: form.permissions,
     };
     setSaving(true);
     setMessage(null);
@@ -378,6 +403,18 @@ function EditWorkerForm({
           value={form.department}
         />
       </div>
+      <section className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 sm:p-4">
+        <div className="mb-3">
+          <h3 className="font-extrabold text-[var(--color-primary-strong)]">Platform access</h3>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
+            Select exactly what this worker can view or manage.
+          </p>
+        </div>
+        <PermissionMatrix
+          onChange={(permissions) => setForm((value) => ({ ...value, permissions }))}
+          selected={form.permissions}
+        />
+      </section>
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button disabled={saving} onClick={onCancel} type="button" variant="secondary">
           Cancel

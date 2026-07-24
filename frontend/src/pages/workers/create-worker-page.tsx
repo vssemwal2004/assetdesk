@@ -18,6 +18,7 @@ import {
 } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
 import { createWorker, type WorkerCredentialResult } from '../../lib/workers-api';
+import { PermissionMatrix, permissionLabels } from './permission-matrix';
 
 const emptyForm = {
   name: '',
@@ -171,7 +172,7 @@ export function CreateWorkerPage() {
         title={review ? 'Review worker' : 'Add worker'}
       />
 
-      <AppCard className="max-w-2xl">
+      <AppCard className="max-w-6xl">
         <div className="mb-5 flex items-center gap-3">
           <span className="grid size-11 place-items-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
             <UserPlus aria-hidden="true" size={22} />
@@ -195,6 +196,7 @@ export function CreateWorkerPage() {
                 Email: form.email,
                 Contact: form.contact || 'Not provided',
                 Department: form.department || 'Not provided',
+                Access: `${form.permissions.length} permissions selected`,
               }).map(([label, value]) => (
                 <div className="grid gap-1 py-3 sm:grid-cols-[130px_1fr]" key={label}>
                   <dt className="text-sm font-bold text-[var(--color-text-muted)]">{label}</dt>
@@ -204,6 +206,19 @@ export function CreateWorkerPage() {
                 </div>
               ))}
             </dl>
+            <div className="mt-5">
+              <h3 className="field-label">Access permissions</h3>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {form.permissions.map((permission) => (
+                  <span
+                    className="rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-primary)]"
+                    key={permission}
+                  >
+                    {permissionLabels[permission]}
+                  </span>
+                ))}
+              </div>
+            </div>
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button disabled={submitting} onClick={() => setReview(false)} variant="secondary">
                 Edit details
@@ -255,6 +270,25 @@ export function CreateWorkerPage() {
                 value={form.department}
               />
             </div>
+            <section className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 sm:p-4">
+              <div className="mb-3">
+                <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+                  Platform access
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
+                  Admin controls exactly what this worker can view or manage.
+                </p>
+              </div>
+              <PermissionMatrix
+                onChange={(permissions) => setForm((value) => ({ ...value, permissions }))}
+                selected={form.permissions}
+              />
+              {errors.permissions ? (
+                <p className="mt-2 text-sm font-semibold text-[var(--color-danger)]">
+                  {errors.permissions}
+                </p>
+              ) : null}
+            </section>
             <div className="flex justify-end">
               <Button type="submit">Continue to review</Button>
             </div>

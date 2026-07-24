@@ -219,10 +219,12 @@ export function InventoryDetailPage() {
             />
           ) : (
             <dl className="mt-5 divide-y divide-[var(--color-border)]">
-              <DetailRow label="Material code" value={material.materialCode} />
-              <DetailRow label="Material group" value={material.category} />
+              <DetailRow label="Inventory code" value={material.materialCode} />
+              <DetailRow label="Asset type" value={material.category} />
+              <DetailRow label="Type/model name" value={material.typeModelName ?? material.name} />
+              <DetailRow label="Location / block" value={material.locationBlock ?? 'Not provided'} />
               <DetailRow
-                label="Material type"
+                label="Inventory type"
                 value={<CatalogBadge value={material.trackingMode} />}
               />
               <DetailRow
@@ -632,12 +634,15 @@ function editMaterialMessage(
   form: {
     name: string;
     category: string;
+    typeModelName: string;
+    locationBlock: string;
     unitLabel: string;
   },
   material: Material,
 ): string | null {
-  if (form.name.trim().length < 2) return 'Enter a material name with at least 2 characters.';
-  if (form.category.trim().length < 2) return 'Choose a material group, or enter a custom group.';
+  if (form.category.trim().length < 2) return 'Choose an asset type, or add a new asset type.';
+  if (form.typeModelName.trim().length < 2) return 'Enter a type/model name with at least 2 characters.';
+  if (form.locationBlock.trim().length < 1) return 'Enter the location or block.';
   if (material.trackingMode === 'QUANTITY' && form.unitLabel.trim().length < 1) {
     return 'Enter a unit label, for example units, boxes, meters, or pieces.';
   }
@@ -656,6 +661,8 @@ function EditMaterialForm({
   const [form, setForm] = useState({
     name: material.name,
     category: material.category,
+    typeModelName: material.typeModelName ?? material.name,
+    locationBlock: material.locationBlock ?? '',
     description: material.description ?? '',
     returnPolicy: material.returnPolicy,
     unitLabel: material.unitLabel ?? '',
@@ -675,8 +682,10 @@ function EditMaterialForm({
       return;
     }
     const result = UpdateMaterialRequestSchema.safeParse({
-      name: form.name,
+      name: form.typeModelName,
       category: form.category,
+      typeModelName: form.typeModelName,
+      locationBlock: form.locationBlock,
       description: form.description.trim() || null,
       returnPolicy: form.returnPolicy,
       ...(material.trackingMode === 'QUANTITY' ? { unitLabel: form.unitLabel } : {}),
@@ -692,14 +701,27 @@ function EditMaterialForm({
       {message ? <ErrorSummary message={message} /> : null}
       <div className="grid gap-5 sm:grid-cols-2">
         <TextField
-          label="Material name"
-          onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))}
-          value={form.name}
+          label="Type/model name"
+          onChange={(event) =>
+            setForm((value) => ({
+              ...value,
+              name: event.target.value,
+              typeModelName: event.target.value,
+            }))
+          }
+          value={form.typeModelName}
         />
         <MaterialCategoryField
           id="edit-material-category"
           onChange={(category) => setForm((value) => ({ ...value, category }))}
           value={form.category}
+        />
+        <TextField
+          label="Location / block"
+          onChange={(event) =>
+            setForm((value) => ({ ...value, locationBlock: event.target.value }))
+          }
+          value={form.locationBlock}
         />
       </div>
       <div className="space-y-1.5">

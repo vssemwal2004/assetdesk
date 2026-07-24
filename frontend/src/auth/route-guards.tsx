@@ -3,6 +3,8 @@ import { Navigate, Outlet, useLocation } from 'react-router';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 import { useAuth } from './auth-context';
+import { hasPermission } from './permissions';
+import type { WorkerPermission } from '@assetdesk/contracts';
 
 function SessionLoading() {
   return (
@@ -105,4 +107,9 @@ export function ProtectedRoute() {
 export function AdminRoute() {
   const auth = useAuth();
   return auth.user?.role === 'ADMIN' ? <Outlet /> : <Navigate to="/access-denied" replace />;
+}
+
+export function PermissionRoute({ permission }: { permission: WorkerPermission }) {
+  const auth = useAuth();
+  return hasPermission(auth.user, permission) ? <Outlet /> : <Navigate to="/access-denied" replace />;
 }

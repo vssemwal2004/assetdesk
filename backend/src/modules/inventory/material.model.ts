@@ -12,6 +12,8 @@ export interface MaterialRecord {
   materialCode: string;
   name: string;
   category: string;
+  typeModelName?: string;
+  locationBlock?: string;
   identityKey?: string;
   description?: string;
   trackingMode: TrackingMode;
@@ -36,10 +38,12 @@ const MaterialSchema = new Schema<MaterialRecord>(
       required: true,
       unique: true,
       immutable: true,
-      match: /^GEU-MAT-\d{6}$/,
+      match: /^GEU-(?:MAT-\d{6}|\d{4}-\d{6})$/,
     },
     name: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
     category: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
+    typeModelName: { type: String, trim: true, minlength: 2, maxlength: 120 },
+    locationBlock: { type: String, trim: true, minlength: 1, maxlength: 120 },
     identityKey: { type: String, maxlength: 300 },
     description: { type: String, trim: true, maxlength: 1_000 },
     trackingMode: {

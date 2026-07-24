@@ -11,6 +11,8 @@ const materialBase = {
   materialCode: 'GEU-MAT-000001',
   name: 'Core switch',
   category: 'Networking',
+  typeModelName: null,
+  locationBlock: null,
   description: null,
   returnPolicy: 'REUSABLE' as const,
   status: 'ACTIVE' as const,

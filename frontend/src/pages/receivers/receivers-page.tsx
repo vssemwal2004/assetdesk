@@ -1,15 +1,17 @@
-import { useQuery } from '@tanstack/react-query';
-import { ContactRound, Plus, Search } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ContactRound, Plus, Search, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import type { Receiver, ReceiverStatus, ReceiverType } from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
+import { hasPermission } from '../../auth/permissions';
 import { CatalogBadge, PageCount } from '../../components/catalog-ui';
-import { Button, EmptyState, ErrorState, LoadingPanel, PageHeader } from '../../components/ui';
-import { getReceivers } from '../../lib/receivers-api';
+import { Button, EmptyState, ErrorState, ErrorSummary, LoadingPanel, PageHeader } from '../../components/ui';
+import { deleteReceiver, getReceivers } from '../../lib/receivers-api';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
+import { isApiError } from '../../lib/api-client';
 
 const receiverTypes: ReceiverType[] = [
   'FACULTY',
@@ -29,13 +31,17 @@ function receiverType(value: string): ReceiverType | undefined {
 
 export function ReceiversPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [parameters, setParameters] = useSearchParams();
+  const [deleteTarget, setDeleteTarget] = useState<Receiver | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const page = Math.max(1, Number(parameters.get('page')) || 1);
   const search = parameters.get('search') ?? '';
   const status = receiverStatus(parameters.get('status') ?? '');
   const type = receiverType(parameters.get('type') ?? '');
   const department = parameters.get('department') ?? '';
   const admin = user?.role === 'ADMIN';
+  const canManageReceivers = hasPermission(user, 'RECEIVERS_MANAGE');
 
   const query = useQuery({
     queryKey: ['receivers', { page, search, status, type, department }],
@@ -65,12 +71,28 @@ export function ReceiversPage() {
 
   const receivers = query.data?.data ?? [];
   const filtered = Boolean(search || status || type || department);
+  const deleteMutation = useMutation({
+    mutationFn: (receiver: Receiver) => deleteReceiver(receiver.receiverCode),
+    onSuccess: async () => {
+      setDeleteTarget(null);
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ['receivers'] });
+    },
+    onError: (error) => {
+      setDeleteTarget(null);
+      setActionError(
+        isApiError(error)
+          ? error.message
+          : 'This Receiver could not be deleted. Mark it inactive if it has history.',
+      );
+    },
+  });
 
   return (
     <div className="space-y-6">
       <PageHeader
         actions={
-          admin ? (
+          canManageReceivers ? (
             <Link className="button-primary" to="/receivers/new">
               <Plus aria-hidden="true" size={18} />
               Add receiver
@@ -131,6 +153,8 @@ export function ReceiversPage() {
         {query.data ? <PageCount count={query.data.meta.total} noun="receiver" /> : null}
       </section>
 
+      {actionError ? <ErrorSummary message={actionError} title="Action failed" /> : null}
+
       {query.isPending ? (
         <LoadingPanel label="Loading Receivers" />
       ) : query.isError ? (
@@ -145,7 +169,7 @@ export function ReceiversPage() {
               <Button onClick={() => setParameters({ page: '1' })} variant="secondary">
                 Clear filters
               </Button>
-            ) : admin ? (
+            ) : canManageReceivers ? (
               <Link className="button-primary" to="/receivers/new">
                 <Plus aria-hidden="true" size={18} />
                 Add receiver
@@ -165,10 +189,19 @@ export function ReceiversPage() {
         <>
           <div className="space-y-3 min-[840px]:hidden">
             {receivers.map((receiver) => (
-              <ReceiverCard key={receiver.receiverCode} receiver={receiver} />
+              <ReceiverCard
+                admin={canManageReceivers}
+                key={receiver.receiverCode}
+                onDelete={setDeleteTarget}
+                receiver={receiver}
+              />
             ))}
           </div>
-          <ReceiverTable receivers={receivers} />
+          <ReceiverTable
+            admin={canManageReceivers}
+            onDelete={setDeleteTarget}
+            receivers={receivers}
+          />
           {query.data && query.data.meta.totalPages > 1 ? (
             <nav
               aria-label="Receiver list pages"
@@ -195,6 +228,14 @@ export function ReceiversPage() {
           ) : null}
         </>
       )}
+      {deleteTarget ? (
+        <DeleteReceiverDialog
+          loading={deleteMutation.isPending}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => deleteMutation.mutate(deleteTarget)}
+          receiver={deleteTarget}
+        />
+      ) : null}
     </div>
   );
 }
@@ -258,7 +299,15 @@ function ReceiverFilters({
   );
 }
 
-function ReceiverCard({ receiver }: { receiver: Receiver }) {
+function ReceiverCard({
+  admin,
+  receiver,
+  onDelete,
+}: {
+  admin: boolean;
+  receiver: Receiver;
+  onDelete: (receiver: Receiver) => void;
+}) {
   return (
     <article className="rounded-[14px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]">
       <div className="flex items-start gap-3">
@@ -279,14 +328,29 @@ function ReceiverCard({ receiver }: { receiver: Receiver }) {
           <p className="mt-1 break-all text-sm text-[var(--color-text-muted)]">{receiver.email}</p>
         </div>
       </div>
-      <Link className="button-secondary mt-4 w-full" to={`/receivers/${receiver.receiverCode}`}>
-        View Receiver details
-      </Link>
+      <div className="mt-4 flex gap-2">
+        <Link className="button-secondary flex-1" to={`/receivers/${receiver.receiverCode}`}>
+          View Receiver details
+        </Link>
+        {admin ? (
+          <Button onClick={() => onDelete(receiver)} type="button" variant="danger">
+            <Trash2 aria-hidden="true" size={17} />
+          </Button>
+        ) : null}
+      </div>
     </article>
   );
 }
 
-function ReceiverTable({ receivers }: { receivers: Receiver[] }) {
+function ReceiverTable({
+  admin,
+  receivers,
+  onDelete,
+}: {
+  admin: boolean;
+  receivers: Receiver[];
+  onDelete: (receiver: Receiver) => void;
+}) {
   return (
     <div className="hidden overflow-hidden rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
       <table className="w-full border-collapse text-left">
@@ -334,14 +398,66 @@ function ReceiverTable({ receivers }: { receivers: Receiver[] }) {
                 <CatalogBadge value={receiver.status} />
               </td>
               <td className="px-4 text-right">
-                <Link className="button-quiet" to={`/receivers/${receiver.receiverCode}`}>
-                  View details
-                </Link>
+                <div className="flex justify-end gap-2">
+                  <Link className="button-quiet" to={`/receivers/${receiver.receiverCode}`}>
+                    View details
+                  </Link>
+                  {admin ? (
+                    <Button onClick={() => onDelete(receiver)} type="button" variant="danger">
+                      <Trash2 aria-hidden="true" size={17} />
+                    </Button>
+                  ) : null}
+                </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function DeleteReceiverDialog({
+  receiver,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  receiver: Receiver;
+  loading: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/40 p-4"
+      role="dialog"
+    >
+      <div className="w-[min(92vw,460px)] rounded-[10px] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-overlay)]">
+        <div className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-danger-soft)] text-[var(--color-danger)]">
+            <Trash2 aria-hidden="true" size={20} />
+          </span>
+          <div>
+            <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+              Delete Receiver?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+              {receiver.fullName} will be removed from the Receiver directory. Receivers with Issue
+              history cannot be deleted; mark them inactive instead.
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button disabled={loading} onClick={onCancel} type="button" variant="secondary">
+            Cancel
+          </Button>
+          <Button loading={loading} onClick={onConfirm} type="button" variant="danger">
+            {loading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

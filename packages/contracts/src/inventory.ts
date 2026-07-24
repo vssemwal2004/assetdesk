@@ -11,6 +11,8 @@ import { AssetTagSchema, MaterialCodeSchema } from './identifiers.js';
 const NameSchema = z.string().trim().min(2).max(120);
 const CategorySchema = z.string().trim().min(2).max(120);
 const DescriptionSchema = z.string().trim().max(1_000);
+const AssetTypeNameSchema = z.string().trim().min(2).max(120);
+const LocationBlockSchema = z.string().trim().min(1).max(120);
 const UnitLabelSchema = z.string().trim().min(1).max(40);
 const ConditionSchema = z.string().trim().min(1).max(120);
 const SerialNumberSchema = z.string().trim().min(1).max(120);
@@ -21,6 +23,8 @@ export type MaterialStatus = z.infer<typeof MaterialStatusSchema>;
 const CreateMaterialBaseSchema = z.object({
   name: NameSchema,
   category: CategorySchema,
+  typeModelName: NameSchema,
+  locationBlock: LocationBlockSchema,
   description: DescriptionSchema.optional(),
   assignmentTypes: z.array(AssignmentTypeSchema).min(1).max(2),
 });
@@ -51,6 +55,8 @@ export const UpdateMaterialRequestSchema = z
   .object({
     name: NameSchema.optional(),
     category: CategorySchema.optional(),
+    typeModelName: NameSchema.optional(),
+    locationBlock: LocationBlockSchema.optional(),
     description: DescriptionSchema.nullable().optional(),
     returnPolicy: ReturnPolicySchema.optional(),
     unitLabel: UnitLabelSchema.optional(),
@@ -99,6 +105,8 @@ export const MaterialSchema = z
     materialCode: MaterialCodeSchema,
     name: z.string().min(1),
     category: z.string().min(1),
+    typeModelName: z.string().nullable().optional().default(null),
+    locationBlock: z.string().nullable().optional().default(null),
     description: z.string().nullable(),
     trackingMode: TrackingModeSchema,
     returnPolicy: ReturnPolicySchema,
@@ -205,6 +213,41 @@ export const AssetUnitsListResponseSchema = z.object({
   meta: PaginationMetaSchema,
 });
 
+export const AssetTypeSchema = z.object({
+  id: z.string().min(1),
+  name: AssetTypeNameSchema,
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+
+export const AssetTypesResponseSchema = z.object({ data: z.array(AssetTypeSchema) });
+export const CreateAssetTypeRequestSchema = z.object({ name: AssetTypeNameSchema }).strict();
+export const AssetTypeImportResponseSchema = z.object({
+  data: z.object({
+    created: z.array(AssetTypeSchema),
+    skipped: z.array(z.object({ name: z.string().min(1), reason: z.string().min(1) })),
+    failed: z.array(z.object({ rowNumber: z.number().int().positive(), name: z.string(), reason: z.string().min(1) })),
+  }),
+});
+export const AssetTypeImportPreviewResponseSchema = z.object({
+  data: z.object({
+    importId: z.string().min(1),
+    fileName: z.string().min(1),
+    totalRows: z.number().int().nonnegative(),
+    validRows: z.number().int().nonnegative(),
+    invalidRows: z.number().int().nonnegative(),
+    rows: z.array(
+      z.object({
+        rowNumber: z.number().int().positive(),
+        name: z.string(),
+        valid: z.boolean(),
+        errors: z.array(z.string()),
+      }),
+    ),
+    expiresAt: z.string().datetime({ offset: true }),
+  }),
+});
+
 export type CreateMaterialRequest = z.infer<typeof CreateMaterialRequestSchema>;
 export type UpdateMaterialRequest = z.infer<typeof UpdateMaterialRequestSchema>;
 export type AdjustQuantityRequest = z.infer<typeof AdjustQuantityRequestSchema>;
@@ -213,6 +256,10 @@ export type UpdateAssetUnitRequest = z.infer<typeof UpdateAssetUnitRequestSchema
 export type ManualAssetUnitStatus = z.infer<typeof ManualAssetUnitStatusSchema>;
 export type Material = z.infer<typeof MaterialSchema>;
 export type AssetUnit = z.infer<typeof AssetUnitSchema>;
+export type AssetType = z.infer<typeof AssetTypeSchema>;
+export type CreateAssetTypeRequest = z.infer<typeof CreateAssetTypeRequestSchema>;
+export type AssetTypeImportResponse = z.infer<typeof AssetTypeImportResponseSchema>;
+export type AssetTypeImportPreviewResponse = z.infer<typeof AssetTypeImportPreviewResponseSchema>;
 export type MaterialResponse = z.infer<typeof MaterialResponseSchema>;
 export type MaterialsListResponse = z.infer<typeof MaterialsListResponseSchema>;
 export type AdjustQuantityResponse = z.infer<typeof AdjustQuantityResponseSchema>;

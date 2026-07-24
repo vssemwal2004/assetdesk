@@ -176,7 +176,7 @@ export function createIssuesRouter(): Router {
     requireAuth,
     requireFullAccess,
     requireRole('ADMIN', 'WORKER'),
-    requirePermission('ASSIGNMENTS_CREATE'),
+    requirePermission('ISSUES_EDIT'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -200,8 +200,8 @@ export function createIssuesRouter(): Router {
     '/:issueId',
     requireAuth,
     requireFullAccess,
-    requireRole('ADMIN'),
-    requirePermission('ASSIGNMENTS_CREATE'),
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ISSUES_DELETE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {

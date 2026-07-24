@@ -9,6 +9,8 @@ const assetMaterial: Material = {
   materialCode: 'GEU-MAT-000001',
   name: 'Dell Latitude',
   category: 'Laptops',
+  typeModelName: null,
+  locationBlock: null,
   description: null,
   trackingMode: 'SERIALIZED',
   returnPolicy: 'REUSABLE',

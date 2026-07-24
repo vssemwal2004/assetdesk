@@ -19,6 +19,8 @@ import { MaterialCategoryField } from './material-category-field';
 interface MaterialForm {
   name: string;
   category: string;
+  typeModelName: string;
+  locationBlock: string;
   description: string;
   trackingMode: TrackingMode;
   returnPolicy: ReturnPolicy;
@@ -30,6 +32,8 @@ interface MaterialForm {
 const initialForm: MaterialForm = {
   name: '',
   category: '',
+  typeModelName: '',
+  locationBlock: '',
   description: '',
   trackingMode: 'SERIALIZED',
   returnPolicy: 'REUSABLE',
@@ -49,6 +53,14 @@ function normalizedSerialNumbers(values: string[]): string[] {
   return values.map((serialNumber) => serialNumber.trim());
 }
 
+function materialName(assetType: string, typeModelName: string): string {
+  const category = assetType.trim().replace(/\s+/g, ' ');
+  const model = typeModelName.trim().replace(/\s+/g, ' ');
+  return model.toLocaleLowerCase('en-US').startsWith(category.toLocaleLowerCase('en-US'))
+    ? model
+    : `${category} ${model}`;
+}
+
 export function serialFieldsForQuantity(current: string[], rawQuantity: string): string[] {
   const quantity = Number(rawQuantity);
   return Number.isInteger(quantity) && quantity > 0 && quantity <= 1000
@@ -57,8 +69,9 @@ export function serialFieldsForQuantity(current: string[], rawQuantity: string):
 }
 
 function materialFormMessage(form: MaterialForm): string | null {
-  if (form.name.trim().length < 2) return 'Enter a material name with at least 2 characters.';
-  if (form.category.trim().length < 2) return 'Choose a material group, or enter a custom group.';
+  if (form.category.trim().length < 2) return 'Choose an asset type, or add a new asset type.';
+  if (form.typeModelName.trim().length < 2) return 'Enter a type/model name with at least 2 characters.';
+  if (form.locationBlock.trim().length < 1) return 'Enter the location or block.';
   if (form.trackingMode === 'SERIALIZED') {
     const quantity = Number(form.totalQuantity);
     const serialNumbers = normalizedSerialNumbers(form.serialNumbers);
@@ -91,7 +104,7 @@ export function CreateMaterialPage() {
       await queryClient.invalidateQueries({ queryKey: ['inventory'] });
       navigate(`/inventory/${material.materialCode}`, {
         replace: true,
-        state: { notice: `${material.name} was added to Inventory.` },
+      state: { notice: `${material.name} was added to Inventory.` },
       });
     },
     onError: (error) => {
@@ -109,8 +122,10 @@ export function CreateMaterialPage() {
     }
 
     const base = {
-      name: form.name,
+      name: materialName(form.category, form.typeModelName),
       category: form.category,
+      typeModelName: form.typeModelName,
+      locationBlock: form.locationBlock,
       ...(form.description.trim() ? { description: form.description } : {}),
       assignmentTypes:
         form.trackingMode === 'SERIALIZED' ? (['LONG_TERM'] as const) : (['SHORT_TERM'] as const),
@@ -173,11 +188,11 @@ export function CreateMaterialPage() {
             Back to Inventory
           </Link>
         }
-        description="Create IT Assets with serial numbers or IT Consumables with quantity stock."
+        description="Create IT Assets or IT Consumables by asset type, model, and stock details."
         title="Add material"
       />
 
-      <AppCard className="max-w-3xl">
+      <AppCard className="max-w-7xl">
         <div className="mb-5 grid grid-cols-2 gap-2">
           <Button type="button">
             <PackagePlus aria-hidden="true" size={18} />
@@ -197,7 +212,7 @@ export function CreateMaterialPage() {
             <PackagePlus aria-hidden="true" size={22} />
           </span>
           <div>
-            <h2 className="font-extrabold text-[var(--color-primary-strong)]">Material setup</h2>
+            <h2 className="font-extrabold text-[var(--color-primary-strong)]">Inventory setup</h2>
             <p className="text-sm leading-6 text-[var(--color-text-muted)]">
               Choose IT Assets for serialized stock, or IT Consumables for quantity stock.
             </p>
@@ -206,17 +221,31 @@ export function CreateMaterialPage() {
         {message ? <ErrorSummary message={message} /> : null}
 
         <form className="mt-5 space-y-5" noValidate onSubmit={submit}>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <TextField
-              label="Material name"
-              onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))}
-              required
-              value={form.name}
-            />
+          <div className="grid gap-4 md:grid-cols-3">
             <MaterialCategoryField
               id="material-category"
               onChange={(category) => setForm((value) => ({ ...value, category }))}
               value={form.category}
+            />
+            <TextField
+              label="Type/model name"
+              onChange={(event) =>
+                setForm((value) => ({
+                  ...value,
+                  typeModelName: event.target.value,
+                  name: event.target.value,
+                }))
+              }
+              required
+              value={form.typeModelName}
+            />
+            <TextField
+              label="Location / block"
+              onChange={(event) =>
+                setForm((value) => ({ ...value, locationBlock: event.target.value }))
+              }
+              required
+              value={form.locationBlock}
             />
           </div>
 
@@ -236,7 +265,7 @@ export function CreateMaterialPage() {
             />
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className="grid gap-4 md:grid-cols-3">
             <SelectField
               id="material-tracking-mode"
               label="Type of material"
@@ -264,7 +293,7 @@ export function CreateMaterialPage() {
           </div>
 
           {form.trackingMode === 'QUANTITY' ? (
-            <div className="grid gap-5 sm:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <TextField
                 inputMode="numeric"
                 label="Initial quantity"
@@ -309,7 +338,7 @@ export function CreateMaterialPage() {
                     Enter the unique serial number printed on each individual IT Asset.
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {form.serialNumbers.map((serialNumber, index) => (
                     <TextField
                       key={index}

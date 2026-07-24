@@ -16,11 +16,13 @@ import {
   requireAuth,
   requireCsrf,
   requireFullAccess,
+  requirePermission,
   requireRole,
   requireTrustedOrigin,
 } from '../auth/auth.middleware.js';
 import {
   createReceiver,
+  deleteReceiver,
   getReceiver,
   listReceivers,
   updateReceiver,
@@ -116,7 +118,8 @@ export function createReceiversRouter(): Router {
 
   router.post(
     '/',
-    requireRole('ADMIN'),
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('RECEIVERS_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -143,7 +146,8 @@ export function createReceiversRouter(): Router {
 
   router.patch(
     '/:receiverCode',
-    requireRole('ADMIN'),
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('RECEIVERS_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -161,7 +165,8 @@ export function createReceiversRouter(): Router {
 
   router.patch(
     '/:receiverCode/status',
-    requireRole('ADMIN'),
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('RECEIVERS_MANAGE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {
@@ -178,6 +183,24 @@ export function createReceiversRouter(): Router {
           status: result.receiver.status,
         });
         response.json({ data: { receiver: result.receiver } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.delete(
+    '/:receiverCode',
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('RECEIVERS_MANAGE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const code = receiverCode(request);
+        const receiver = await deleteReceiver(code);
+        await audit(request, 'RECEIVER_DELETED', code, { fullName: receiver.fullName });
+        response.status(204).send();
       } catch (error) {
         next(error);
       }

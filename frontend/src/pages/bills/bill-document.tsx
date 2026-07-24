@@ -36,12 +36,12 @@ export function BillDocument({
   if (returnEvent) return <ReturnBillDocument issue={issue} returnEvent={returnEvent} />;
 
   return (
-    <article className="bill-sheet" aria-label={`Receipt for ${issue.issueId}`}>
+    <article className="bill-sheet" aria-label={`Issue/return slip for ${issue.issueId}`}>
       <ReceiptHeader
-        documentLabel="Material Issue Receipt"
-        documentNumberLabel="Receipt / Issue No."
+        documentLabel="IT Asset Issue Receipt"
+        documentNumberLabel="Slip / Issue No."
         documentNumber={issue.issueId}
-        note="Official issue record for university material handover."
+        note="GRAPHIC ERA DEEMED TO BE UNIVERSITY."
       />
 
       <section className="bill-grid bill-summary-grid">
@@ -186,7 +186,7 @@ export function BillDocument({
           <span>Receiver signature</span>
         </div>
         <div>
-          <span>Issuer / Store in-charge signature</span>
+          <span>I/C Computer Centre</span>
         </div>
       </section>
 
@@ -209,9 +209,9 @@ function ReturnBillDocument({
   returnEvent: ReturnEvent;
 }) {
   return (
-    <article className="bill-sheet" aria-label={`Return receipt for ${issue.issueId}`}>
+    <article className="bill-sheet" aria-label={`Return slip for ${issue.issueId}`}>
       <ReceiptHeader
-        documentLabel="Material Return Receipt"
+        documentLabel="IT Asset Return Receipt"
         documentNumberLabel="Return / Issue No."
         documentNumber={issue.issueId}
         note="Official return receipt for university material handover."
@@ -304,7 +304,7 @@ function ReturnBillDocument({
           <span>Receiver / Returner signature</span>
         </div>
         <div>
-          <span>Store in-charge signature</span>
+          <span>I/C Computer Centre</span>
         </div>
       </section>
 

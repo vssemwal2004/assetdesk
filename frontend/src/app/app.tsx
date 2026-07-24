@@ -6,6 +6,7 @@ import { AuthProvider } from '../auth/auth-context';
 import {
   AdminRoute,
   InitialPasswordRoute,
+  PermissionRoute,
   ProtectedRoute,
   PublicOnlyRoute,
 } from '../auth/route-guards';
@@ -54,6 +55,16 @@ const CreateMaterialPage = lazy(() =>
 const InventoryImportPage = lazy(() =>
   import('../pages/inventory/inventory-import-page').then((module) => ({
     default: module.InventoryImportPage,
+  })),
+);
+const InventoryImportReviewPage = lazy(() =>
+  import('../pages/inventory/inventory-import-review-page').then((module) => ({
+    default: module.InventoryImportReviewPage,
+  })),
+);
+const AssetTypePage = lazy(() =>
+  import('../pages/inventory/asset-type-page').then((module) => ({
+    default: module.AssetTypePage,
   })),
 );
 const ReceiversPage = lazy(() =>
@@ -226,14 +237,6 @@ export function App() {
                 <Route
                   element={
                     <Suspense fallback={<FeatureRouteFallback />}>
-                      <InventoryDetailPage />
-                    </Suspense>
-                  }
-                  path="/inventory/:materialCode"
-                />
-                <Route
-                  element={
-                    <Suspense fallback={<FeatureRouteFallback />}>
                       <ReceiversPage />
                     </Suspense>
                   }
@@ -264,6 +267,8 @@ export function App() {
                     }
                     path="/reports"
                   />
+                </Route>
+                <Route element={<PermissionRoute permission="RECEIVERS_MANAGE" />}>
                   <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>
@@ -272,6 +277,8 @@ export function App() {
                     }
                     path="/receivers/new"
                   />
+                </Route>
+                <Route element={<PermissionRoute permission="INVENTORY_MANAGE" />}>
                   <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>
@@ -280,6 +287,8 @@ export function App() {
                     }
                     path="/inventory/new"
                   />
+                </Route>
+                <Route element={<PermissionRoute permission="INVENTORY_IMPORT" />}>
                   <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>
@@ -288,6 +297,26 @@ export function App() {
                     }
                     path="/inventory/import"
                   />
+                  <Route
+                    element={
+                      <Suspense fallback={<FeatureRouteFallback />}>
+                        <InventoryImportReviewPage />
+                      </Suspense>
+                    }
+                    path="/inventory/import/:importId/review"
+                  />
+                </Route>
+                <Route element={<PermissionRoute permission="ASSET_TYPES_MANAGE" />}>
+                  <Route
+                    element={
+                      <Suspense fallback={<FeatureRouteFallback />}>
+                        <AssetTypePage />
+                      </Suspense>
+                    }
+                    path="/inventory/asset-types"
+                  />
+                </Route>
+                <Route element={<AdminRoute />}>
                   <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>
@@ -321,6 +350,14 @@ export function App() {
                     path="/workers/:workerId"
                   />
                 </Route>
+                <Route
+                  element={
+                    <Suspense fallback={<FeatureRouteFallback />}>
+                      <InventoryDetailPage />
+                    </Suspense>
+                  }
+                  path="/inventory/:materialCode"
+                />
               </Route>
             </Route>
 

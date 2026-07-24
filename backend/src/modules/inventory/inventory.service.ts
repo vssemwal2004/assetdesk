@@ -3,6 +3,7 @@ import mongoose, { Types } from 'mongoose';
 import type {
   AdjustQuantityRequest,
   AssetUnit,
+  AssetType,
   AssetUnitStatus,
   CreateAssetUnitRequest,
   CreateMaterialRequest,
@@ -19,6 +20,7 @@ import { MaterialCodeSchema } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
 import { IssueModel } from '../issues/issue.model.js';
+import { AssetTypeModel, type AssetTypeDocument } from './asset-type.model.js';
 import { AssetUnitModel } from './asset-unit.model.js';
 import { allocateAssetTag, allocateMaterialCode } from './inventory-id.js';
 import { toAssetUnit, toMaterial } from './inventory.mapper.js';
@@ -51,6 +53,12 @@ export interface MaterialListResult {
   pageSize: number;
   total: number;
   totalPages: number;
+}
+
+export type MaterialExportInput = Omit<MaterialListInput, 'page' | 'pageSize'>;
+
+export interface AssetTypeListResult {
+  assetTypes: AssetType[];
 }
 
 export interface AssetUnitListInput {
@@ -109,6 +117,59 @@ function escapeSearchRegex(value: string): string {
 
 function exactCaseInsensitive(value: string): RegExp {
   return new RegExp(`^${escapeSearchRegex(value)}$`, 'i');
+}
+
+function normalizeAssetType(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
+}
+
+function toAssetType(assetType: AssetTypeDocument): AssetType {
+  return {
+    id: assetType._id.toString(),
+    name: assetType.name,
+    createdAt: assetType.createdAt.toISOString(),
+    updatedAt: assetType.updatedAt.toISOString(),
+  };
+}
+
+export async function listAssetTypes(): Promise<AssetTypeListResult> {
+  const records = await AssetTypeModel.find().sort({ name: 1, _id: 1 });
+  return { assetTypes: records.map((record) => toAssetType(record)) };
+}
+
+export async function createAssetType(name: string, createdByUserId: string): Promise<AssetType> {
+  const normalizedName = normalizeAssetType(name);
+  const createdBy = objectId(createdByUserId);
+  const existing = await AssetTypeModel.findOne({ normalizedName });
+  if (existing) return toAssetType(existing);
+  try {
+    const assetType = await AssetTypeModel.create({ name: name.trim(), normalizedName, createdBy });
+    return toAssetType(assetType);
+  } catch (error) {
+    if (duplicateField(error) === 'normalizedName') {
+      const assetType = await AssetTypeModel.findOne({ normalizedName });
+      if (assetType) return toAssetType(assetType);
+    }
+    throw error;
+  }
+}
+
+export async function deleteAssetType(assetTypeId: string): Promise<AssetType> {
+  if (!Types.ObjectId.isValid(assetTypeId))
+    throw new AppError(404, 'ASSET_TYPE_NOT_FOUND', 'This asset type was not found.');
+  const assetType = await AssetTypeModel.findById(assetTypeId);
+  if (!assetType) throw new AppError(404, 'ASSET_TYPE_NOT_FOUND', 'This asset type was not found.');
+  const inUse = await MaterialModel.exists({ category: exactCaseInsensitive(assetType.name) });
+  if (inUse) {
+    throw new AppError(
+      409,
+      'ASSET_TYPE_IN_USE',
+      'This asset type is used by inventory data. Change or archive those materials before deleting it.',
+    );
+  }
+  const deleted = toAssetType(assetType);
+  await AssetTypeModel.deleteOne({ _id: assetType._id });
+  return deleted;
 }
 
 function materialNotFound(): AppError {
@@ -298,6 +359,8 @@ export async function createMaterial(
         materialCode,
         name: input.name,
         category: input.category,
+        typeModelName: input.typeModelName,
+        locationBlock: input.locationBlock,
         identityKey: materialIdentity(input.trackingMode, input.name, input.category),
         ...(input.description ? { description: input.description } : {}),
         trackingMode: input.trackingMode,
@@ -310,6 +373,7 @@ export async function createMaterial(
         ...(input.trackingMode === 'QUANTITY' ? { unitLabel: input.unitLabel } : {}),
         createdBy,
       });
+      await createAssetType(input.category, createdByUserId);
 
       if (input.trackingMode === 'SERIALIZED') {
         const material = createdMaterial;
@@ -374,6 +438,51 @@ export async function listMaterials(input: MaterialListInput): Promise<MaterialL
   };
 }
 
+function csvCell(value: string | number | null | undefined): string {
+  const text = value === null || value === undefined ? '' : String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+export async function exportMaterialsCsv(input: MaterialExportInput): Promise<string> {
+  const filter = buildMaterialListFilter({ ...input, page: 1, pageSize: 1 });
+  const records = await MaterialModel.find(filter).sort({ createdAt: -1, _id: -1 }).limit(10_000);
+  const headers = [
+    'Inventory Code',
+    'IT Asset',
+    'Asset Type',
+    'Type/Model Name',
+    'Location / Block',
+    'Inventory Type',
+    'Return Policy',
+    'Status',
+    'Total Quantity',
+    'Available Quantity',
+    'Issued Quantity',
+    'Unit Label',
+    'Description',
+    'Created At',
+    'Updated At',
+  ];
+  const rows = records.map((material) => [
+    material.materialCode,
+    material.name,
+    material.category,
+    material.typeModelName ?? material.name,
+    material.locationBlock ?? '',
+    material.trackingMode,
+    material.returnPolicy,
+    material.status,
+    material.totalQuantity,
+    material.availableQuantity,
+    material.issuedQuantity,
+    material.unitLabel ?? '',
+    material.description ?? '',
+    material.createdAt.toISOString(),
+    material.updatedAt.toISOString(),
+  ]);
+  return [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
+}
+
 export async function getMaterial(materialCode: string, role: UserRole): Promise<Material> {
   const filter: Record<string, unknown> = { materialCode };
   if (role === 'WORKER') filter.status = 'ACTIVE';
@@ -420,6 +529,8 @@ export async function updateMaterial(
     }
     if (input.name !== undefined) material.name = input.name;
     if (input.category !== undefined) material.category = input.category;
+    if (input.typeModelName !== undefined) material.typeModelName = input.typeModelName;
+    if (input.locationBlock !== undefined) material.locationBlock = input.locationBlock;
     if (input.name !== undefined || input.category !== undefined) {
       const duplicate = await MaterialModel.exists({
         _id: { $ne: material._id },
@@ -429,6 +540,7 @@ export async function updateMaterial(
       });
       if (duplicate) throw materialConflict();
       material.identityKey = materialIdentity(material.trackingMode, material.name, material.category);
+      if (input.category !== undefined) await createAssetType(material.category, material.createdBy.toString());
     }
     if (input.assignmentTypes !== undefined) material.assignmentTypes = input.assignmentTypes;
     if (Object.hasOwn(input, 'description')) {

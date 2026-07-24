@@ -13,11 +13,7 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
-import {
-  DEFAULT_WORKER_PERMISSIONS,
-  type Worker,
-  type WorkerPermission,
-} from '@assetdesk/contracts';
+import type { Worker, WorkerPermission } from '@assetdesk/contracts';
 
 import {
   Button,
@@ -31,18 +27,7 @@ import {
 } from '../../components/ui';
 import { deleteWorker, getWorkers, updateWorker } from '../../lib/workers-api';
 import { isApiError } from '../../lib/api-client';
-
-const permissionLabels: Record<WorkerPermission, string> = {
-  DASHBOARD: 'Dashboard',
-  ISSUES_VIEW: 'View issues',
-  ASSIGNMENTS_CREATE: 'Create issues',
-  RETURNS_RECORD: 'Record returns',
-  INVENTORY_VIEW: 'View inventory',
-  INVENTORY_MANAGE: 'Manage inventory',
-  RECEIVERS_VIEW: 'View receivers',
-  RECEIVERS_MANAGE: 'Manage receivers',
-  REPORTS_VIEW: 'View reports',
-};
+import { PermissionMatrix, permissionLabels } from './permission-matrix';
 
 function formatDate(value: string | null): string {
   if (!value) return 'Never';
@@ -430,7 +415,7 @@ function Dialog({
   return (
     <dialog
       aria-label={label}
-      className="w-[min(92vw,560px)] rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
+      className="w-[min(94vw,980px)] rounded-[12px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
       onCancel={onClose}
       onClose={onClose}
       ref={reference}
@@ -541,17 +526,9 @@ function ManageAccessDialog({
       setMessage(isApiError(error) ? error.message : 'Access could not be saved.'),
   });
 
-  function toggle(permission: WorkerPermission) {
-    setSelected((current) =>
-      current.includes(permission)
-        ? current.filter((item) => item !== permission)
-        : [...current, permission],
-    );
-  }
-
   return (
     <Dialog label={`Manage access for ${worker.name}`} onClose={onClose}>
-      <div className="p-5 sm:p-6">
+      <div className="max-h-[86vh] overflow-y-auto p-5 sm:p-6">
         <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
           Manage access
         </h2>
@@ -563,21 +540,8 @@ function ManageAccessDialog({
             <ErrorSummary message={message} />
           </div>
         ) : null}
-        <div className="mt-5 grid gap-2 sm:grid-cols-2">
-          {DEFAULT_WORKER_PERMISSIONS.map((permission) => (
-            <label
-              className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-[10px] border border-[var(--color-border)] px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
-              key={permission}
-            >
-              <span>{permissionLabels[permission]}</span>
-              <input
-                checked={selected.includes(permission)}
-                className="size-5 accent-[var(--color-primary)]"
-                onChange={() => toggle(permission)}
-                type="checkbox"
-              />
-            </label>
-          ))}
+        <div className="mt-5">
+          <PermissionMatrix onChange={setSelected} selected={selected} />
         </div>
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button disabled={mutation.isPending} onClick={onClose} variant="secondary">

@@ -2,11 +2,17 @@ import {
   AdjustQuantityResponseSchema,
   AssetUnitMutationResponseSchema,
   AssetUnitsListResponseSchema,
+  AssetTypeImportPreviewResponseSchema,
+  AssetTypeImportResponseSchema,
+  AssetTypesResponseSchema,
   MaterialResponseSchema,
   MaterialsListResponseSchema,
   type AdjustQuantityRequest,
   type AssetUnitMutationResponse,
   type AssetUnitsListResponse,
+  type AssetType,
+  type AssetTypeImportPreviewResponse,
+  type AssetTypeImportResponse,
   type CreateAssetUnitRequest,
   type CreateMaterialRequest,
   type Material,
@@ -19,6 +25,8 @@ import {
 } from '@assetdesk/contracts';
 
 import { apiRequest } from './api-client';
+
+export type { AssetTypeImportPreviewResponse, AssetTypeImportResponse };
 
 export interface InventoryFilters {
   page: number;
@@ -68,6 +76,64 @@ export async function createMaterial(input: CreateMaterialRequest): Promise<Mate
   return MaterialResponseSchema.parse(payload).data.material;
 }
 
+export async function downloadInventoryCsv(filters: Omit<InventoryFilters, 'page' | 'pageSize'>): Promise<Blob> {
+  const parameters = new URLSearchParams({ page: '1' });
+  if (filters.search) parameters.set('search', filters.search);
+  if (filters.status) parameters.set('status', filters.status);
+  if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
+  if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
+  if (filters.stockState) parameters.set('stockState', filters.stockState);
+  if (filters.category) parameters.set('category', filters.category);
+  const response = await fetch(`/api/v1/inventory/export?${parameters.toString()}`, {
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error('Inventory data could not be downloaded.');
+  return response.blob();
+}
+
+export async function getAssetTypes(signal?: AbortSignal): Promise<AssetType[]> {
+  const payload = await apiRequest<unknown>('/api/v1/inventory/asset-types', {
+    ...(signal ? { signal } : {}),
+  });
+  return AssetTypesResponseSchema.parse(payload).data;
+}
+
+export async function createAssetType(name: string): Promise<AssetType> {
+  const payload = await apiRequest<{ data: { assetType: AssetType } }>(
+    '/api/v1/inventory/asset-types',
+    { method: 'POST', json: { name } },
+  );
+  return payload.data.assetType;
+}
+
+export async function deleteAssetType(assetTypeId: string): Promise<void> {
+  await apiRequest<unknown>(`/api/v1/inventory/asset-types/${encodeURIComponent(assetTypeId)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function previewAssetTypeImport(
+  file: File,
+): Promise<AssetTypeImportPreviewResponse['data']> {
+  const form = new FormData();
+  form.set('file', file);
+  const payload = await apiRequest<unknown>('/api/v1/inventory/asset-types/imports/preview', {
+    method: 'POST',
+    body: form,
+  });
+  return AssetTypeImportPreviewResponseSchema.parse(payload).data;
+}
+
+export async function commitAssetTypeImport(
+  importId: string,
+): Promise<AssetTypeImportResponse['data']> {
+  const payload = await apiRequest<unknown>(
+    `/api/v1/inventory/asset-types/imports/${encodeURIComponent(importId)}/commit`,
+    { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() }, json: {} },
+  );
+  return AssetTypeImportResponseSchema.parse(payload).data;
+}
+
 export interface InventoryImportResult {
   created: Array<{ materialCode: string; name: string; quantity: number }>;
   failed: Array<{ rowNumber: number; name: string; reason: string }>;
@@ -85,6 +151,8 @@ export interface InventoryImportPreview {
     name: string;
     category: string;
     serialNumber?: string;
+    typeModelName?: string;
+    locationBlock?: string;
     quantity?: number;
     unitLabel?: string;
     valid: boolean;
@@ -103,6 +171,13 @@ export async function previewInventoryImport(
   const payload = await apiRequest<{ data: InventoryImportPreview }>(
     '/api/v1/inventory/imports/preview',
     { method: 'POST', body: form },
+  );
+  return payload.data;
+}
+
+export async function getInventoryImportPreview(importId: string): Promise<InventoryImportPreview> {
+  const payload = await apiRequest<{ data: InventoryImportPreview }>(
+    `/api/v1/inventory/imports/${encodeURIComponent(importId)}`,
   );
   return payload.data;
 }

@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, MoreVertical, PackagePlus, PackageSearch, Pencil, Trash2 } from 'lucide-react';
+import { Download, Eye, MoreVertical, PackagePlus, PackageSearch, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import type { Material, MaterialStatus, ReturnPolicy, TrackingMode } from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
+import { hasPermission } from '../../auth/permissions';
 import { CatalogBadge, PageCount } from '../../components/catalog-ui';
 import {
   Button,
@@ -17,7 +18,7 @@ import {
   PageHeader,
   SearchForm,
 } from '../../components/ui';
-import { deleteMaterial, getInventory } from '../../lib/inventory-api';
+import { deleteMaterial, downloadInventoryCsv, getInventory } from '../../lib/inventory-api';
 import { isApiError } from '../../lib/api-client';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
 
@@ -52,6 +53,36 @@ function inactiveQuantity(material: Material): number {
   return Math.max(0, material.totalQuantity - material.availableQuantity - material.issuedQuantity);
 }
 
+interface MaterialGroup {
+  category: string;
+  materials: Material[];
+  totalQuantity: number;
+  availableQuantity: number;
+  issuedQuantity: number;
+}
+
+function groupMaterials(materials: Material[]): MaterialGroup[] {
+  const groups = new Map<string, MaterialGroup>();
+  for (const material of materials) {
+    const category = material.category || 'Unassigned asset type';
+    const group =
+      groups.get(category) ??
+      {
+        category,
+        materials: [],
+        totalQuantity: 0,
+        availableQuantity: 0,
+        issuedQuantity: 0,
+      };
+    group.materials.push(material);
+    group.totalQuantity += material.totalQuantity;
+    group.availableQuantity += material.availableQuantity;
+    group.issuedQuantity += material.issuedQuantity;
+    groups.set(category, group);
+  }
+  return [...groups.values()].sort((left, right) => left.category.localeCompare(right.category));
+}
+
 function materialStatsLabel(material: Material): string {
   if (material.status === 'ARCHIVED') return 'Archived';
   if (material.availableQuantity === 0) return 'Out of stock';
@@ -72,6 +103,7 @@ export function InventoryPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
   const [viewMaterial, setViewMaterial] = useState<Material | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const page = Math.max(1, Number(parameters.get('page')) || 1);
   const search = parameters.get('search') ?? '';
   const category = parameters.get('category') ?? '';
@@ -79,7 +111,8 @@ export function InventoryPage() {
   const mode = trackingMode(parameters.get('trackingMode') ?? '');
   const policy = returnPolicy(parameters.get('returnPolicy') ?? '');
   const stock = stockState(parameters.get('stockState') ?? '');
-  const admin = user?.role === 'ADMIN';
+  const admin = hasPermission(user, 'INVENTORY_MANAGE');
+  const canExportInventory = hasPermission(user, 'INVENTORY_EXPORT');
 
   const query = useQuery({
     queryKey: ['inventory', { page, search, category, status, mode, policy, stock }],
@@ -110,6 +143,7 @@ export function InventoryPage() {
   }
 
   const materials = query.data?.data ?? [];
+  const materialGroups = groupMaterials(materials);
   const filtered = Boolean(search || category || status || mode || policy || stock);
   const deleteMutation = useMutation({
     mutationFn: (material: Material) => deleteMaterial(material.materialCode),
@@ -131,16 +165,47 @@ export function InventoryPage() {
     setDeleteTarget(material);
   }
 
+  async function downloadData() {
+    setActionError(null);
+    setDownloading(true);
+    try {
+      const blob = await downloadInventoryCsv({
+        ...(search ? { search } : {}),
+        ...(category ? { category } : {}),
+        ...(status ? { status } : {}),
+        ...(mode ? { trackingMode: mode } : {}),
+        ...(policy ? { returnPolicy: policy } : {}),
+        ...(stock ? { stockState: stock } : {}),
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'assetdesk-inventory.csv';
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setActionError('Inventory data could not be downloaded.');
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
         actions={
-          admin ? (
-            <Link className="button-primary" to="/inventory/new">
-              <PackagePlus aria-hidden="true" size={18} />
-              Add material
-            </Link>
-          ) : undefined
+          <div className="flex flex-wrap gap-2">
+            {canExportInventory ? <Button loading={downloading} onClick={() => void downloadData()} type="button" variant="secondary">
+              <Download aria-hidden="true" size={18} />
+              {downloading ? 'Downloading...' : 'Download data'}
+            </Button> : null}
+            {admin ? (
+              <Link aria-label="Add material to inventory" className="button-primary" to="/inventory/new">
+                <PackagePlus aria-hidden="true" size={18} />
+                Add material
+              </Link>
+            ) : null}
+          </div>
         }
         description={
           admin
@@ -159,7 +224,7 @@ export function InventoryPage() {
             key={search}
             label="Search Inventory"
             onSearch={(value) => updateParameters({ search: value })}
-            placeholder="Material name, code, group or description"
+            placeholder="IT asset, code, asset type, location or description"
             value={search}
           />
           <FilterPopover
@@ -174,14 +239,14 @@ export function InventoryPage() {
               })
             }
           >
-            <FilterField label="Material group">
+            <FilterField label="Asset type">
               <SearchForm
                 debounceMs={300}
                 id="inventory-category-filter"
                 key={category}
-                label="Filter by material group"
+                label="Filter by asset type"
                 onSearch={(value) => updateParameters({ category: value })}
-                placeholder="Any material group"
+                placeholder="Any asset type"
                 value={category}
               />
             </FilterField>
@@ -240,7 +305,7 @@ export function InventoryPage() {
             </FilterField>
           </FilterPopover>
         </div>
-        {query.data ? <PageCount count={query.data.meta.total} noun="material" /> : null}
+        {query.data ? <PageCount count={query.data.meta.total} noun="IT asset" /> : null}
       </section>
 
       {query.isPending ? (
@@ -263,21 +328,40 @@ export function InventoryPage() {
           }
           message={
             filtered
-              ? 'Try a different material, category or filter.'
+              ? 'Try a different IT asset, asset type or filter.'
               : 'No catalog material is available. New Issues can be entered directly.'
           }
-          title={filtered ? 'No material matches these filters' : 'No material added'}
+          title={filtered ? 'No IT asset matches these filters' : 'No material added'}
         />
       ) : (
         <>
           <div className="space-y-3 min-[840px]:hidden">
-            {materials.map((material) => (
-              <MaterialCard
-                admin={admin}
-                key={material.materialCode}
-                material={material}
-                onDelete={confirmDelete}
-              />
+            {materialGroups.map((group) => (
+              <section className="space-y-2" key={group.category}>
+                <div className="rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+                        {group.category}
+                      </h2>
+                      <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                        {group.materials.length} model{group.materials.length === 1 ? '' : 's'}
+                      </p>
+                    </div>
+                    <p className="text-right text-xs font-bold text-[var(--color-text-muted)]">
+                      {group.availableQuantity} / {group.totalQuantity} available
+                    </p>
+                  </div>
+                </div>
+                {group.materials.map((material) => (
+                  <MaterialCard
+                    admin={admin}
+                    key={material.materialCode}
+                    material={material}
+                    onDelete={confirmDelete}
+                  />
+                ))}
+              </section>
             ))}
           </div>
           <MaterialTable
@@ -388,7 +472,7 @@ function DeleteMaterialDialog({
         </div>
         <dl className="mt-5 grid gap-2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 text-sm">
           <div className="flex justify-between gap-3">
-            <dt className="font-bold text-[var(--color-text-muted)]">Material code</dt>
+            <dt className="font-bold text-[var(--color-text-muted)]">Inventory code</dt>
             <dd className="font-extrabold text-[var(--color-text-strong)]">
               {material.materialCode}
             </dd>
@@ -461,6 +545,9 @@ function MaterialQuickViewDialog({
         </div>
         <DetailGrid>
           <DetailItem label="Tracking" value={humanizeCatalogValue(material.trackingMode)} />
+          <DetailItem label="Asset type" value={material.category} />
+          <DetailItem label="Type/model name" value={material.typeModelName ?? material.name} />
+          <DetailItem label="Location / block" value={material.locationBlock ?? 'Not provided'} />
           <DetailItem label="Return policy" value={humanizeCatalogValue(material.returnPolicy)} />
           <DetailItem label="Stats" value={materialStatsLabel(material)} />
           <DetailItem label="Availability" value={quantityLabel(material)} />
@@ -662,7 +749,7 @@ function MaterialCard({
         </div>
       </div>
       <Link className="button-secondary mt-4 w-full" to={`/inventory/${material.materialCode}`}>
-        View material details
+        View inventory details
       </Link>
     </article>
   );
@@ -679,6 +766,7 @@ function MaterialTable({
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
 }) {
+  const groups = groupMaterials(materials);
   return (
     <div className="hidden overflow-visible rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
       <table className="w-full border-collapse text-left">
@@ -686,7 +774,7 @@ function MaterialTable({
         <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
           <tr>
             <th className="h-11 px-4 font-bold" scope="col">
-              Material
+              IT asset
             </th>
             <th className="h-11 px-4 font-bold" scope="col">
               Tracking
@@ -702,38 +790,83 @@ function MaterialTable({
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[var(--color-border)]">
-          {materials.map((material) => (
-            <tr
-              className="h-[64px] cursor-pointer hover:bg-[var(--color-surface-tint)]"
-              key={material.materialCode}
-              onClick={() => onView(material)}
-              tabIndex={0}
-            >
-              <td className="px-4">
-                <p className="text-sm font-bold text-[var(--color-text-strong)]">{material.name}</p>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  {material.materialCode} · {material.category}
-                </p>
-              </td>
-              <td className="px-4">
-                <CatalogBadge value={material.trackingMode} />
-              </td>
-              <td className="px-4 text-sm text-[var(--color-text-muted)]">
-                {quantityLabel(material)}
-              </td>
-              <td className="px-4">
-                <CatalogBadge value={material.status} />
-              </td>
-              <td className="px-4 text-right">
-                <div onClick={(event) => event.stopPropagation()}>
-                  <MaterialActions admin={admin} material={material} onDelete={onDelete} />
-                </div>
-              </td>
-            </tr>
+        <tbody>
+          {groups.map((group) => (
+            <GroupedMaterialRows
+              admin={admin}
+              group={group}
+              key={group.category}
+              onDelete={onDelete}
+              onView={onView}
+            />
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function GroupedMaterialRows({
+  group,
+  admin,
+  onDelete,
+  onView,
+}: {
+  group: MaterialGroup;
+  admin: boolean;
+  onDelete: (material: Material) => void;
+  onView: (material: Material) => void;
+}) {
+  return (
+    <>
+      <tr className="border-t border-[var(--color-border)] bg-[var(--color-primary-soft)]">
+        <td className="px-4 py-3" colSpan={5}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
+                {group.category}
+              </p>
+              <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                {group.materials.length} model{group.materials.length === 1 ? '' : 's'} registered
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-bold text-[var(--color-text-muted)]">
+              <span>Total: {group.totalQuantity}</span>
+              <span>Available: {group.availableQuantity}</span>
+              <span>Issued: {group.issuedQuantity}</span>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {group.materials.map((material) => (
+        <tr
+          className="h-[64px] cursor-pointer border-t border-[var(--color-border)] hover:bg-[var(--color-surface-tint)]"
+          key={material.materialCode}
+          onClick={() => onView(material)}
+          tabIndex={0}
+        >
+          <td className="px-4">
+            <p className="text-sm font-bold text-[var(--color-text-strong)]">{material.name}</p>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              {material.materialCode} · {material.typeModelName ?? material.name}
+            </p>
+          </td>
+          <td className="px-4">
+            <CatalogBadge value={material.trackingMode} />
+          </td>
+          <td className="px-4 text-sm text-[var(--color-text-muted)]">
+            {quantityLabel(material)}
+          </td>
+          <td className="px-4">
+            <CatalogBadge value={material.status} />
+          </td>
+          <td className="px-4 text-right">
+            <div onClick={(event) => event.stopPropagation()}>
+              <MaterialActions admin={admin} material={material} onDelete={onDelete} />
+            </div>
+          </td>
+        </tr>
+      ))}
+    </>
   );
 }

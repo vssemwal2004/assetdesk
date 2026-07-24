@@ -96,6 +96,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  useEffect(() => {
+    async function refreshVisibleSession() {
+      if (document.visibilityState !== 'visible' || status !== 'authenticated') return;
+      try {
+        const nextUser = await getCurrentUser();
+        setUser(nextUser);
+      } catch {
+        setUser(null);
+        setStatus('unauthenticated');
+      }
+    }
+    window.addEventListener('focus', refreshVisibleSession);
+    document.addEventListener('visibilitychange', refreshVisibleSession);
+    return () => {
+      window.removeEventListener('focus', refreshVisibleSession);
+      document.removeEventListener('visibilitychange', refreshVisibleSession);
+    };
+  }, [status]);
+
   const login = useCallback(async (input: LoginRequest) => {
     const nextUser = await loginRequest(input);
     setUser(nextUser);

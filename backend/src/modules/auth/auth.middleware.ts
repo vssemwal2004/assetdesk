@@ -11,6 +11,18 @@ import { AUTH_COOKIE, CSRF_COOKIE } from './cookies.js';
 import { getActiveSession, validateCsrfToken } from './session.service.js';
 import { verifyAccessToken } from './tokens.js';
 
+const permissionFallbacks: Partial<Record<WorkerPermission, WorkerPermission[]>> = {
+  ISSUES_EDIT: ['ASSIGNMENTS_CREATE'],
+  ISSUES_DELETE: ['ASSIGNMENTS_CREATE'],
+  ISSUE_SLIPS_VIEW: ['ISSUES_VIEW'],
+  RETURN_DATES_EXTEND: ['ASSIGNMENTS_CREATE'],
+  RETURNS_VIEW: ['RETURNS_RECORD'],
+  ASSET_TYPES_MANAGE: ['INVENTORY_MANAGE'],
+  INVENTORY_IMPORT: ['INVENTORY_MANAGE'],
+  INVENTORY_EXPORT: ['INVENTORY_VIEW'],
+  ASSET_UNITS_MANAGE: ['INVENTORY_MANAGE'],
+};
+
 function cookieValue(request: Request, name: string): string | undefined {
   const cookies = request.cookies as Record<string, unknown> | undefined;
   const value = cookies?.[name];
@@ -74,7 +86,12 @@ export function requirePermission(permission: WorkerPermission): RequestHandler 
       next(new AppError(401, 'AUTH_REQUIRED', 'Sign in to continue.'));
       return;
     }
-    if (request.auth.role === 'ADMIN' || request.auth.permissions.includes(permission)) {
+    const auth = request.auth;
+    const accepted = [permission, ...(permissionFallbacks[permission] ?? [])];
+    if (
+      auth.role === 'ADMIN' ||
+      accepted.some((allowed) => auth.permissions.includes(allowed))
+    ) {
       next();
       return;
     }
