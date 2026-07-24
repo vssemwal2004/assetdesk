@@ -37,34 +37,44 @@ async function bootstrapAdmin(): Promise<void> {
 
   await connectDatabase();
   try {
-    const existingAdmin = await UserModel.findOne({ role: 'ADMIN' });
+    const existingAdmin = await UserModel.findOne({
+      workerId,
+      emailNormalized: input.email,
+      role: 'ADMIN',
+    }).select('+passwordHash');
     if (existingAdmin) {
-      if (existingAdmin.emailNormalized === input.email && existingAdmin.workerId === workerId) {
-        existingAdmin.passwordHash = await hashPassword(password);
-        existingAdmin.mustChangePassword = false;
-        existingAdmin.status = 'ACTIVE';
-        existingAdmin.failedLoginCount = 0;
-        existingAdmin.set('lockedUntil', undefined);
-        existingAdmin.authVersion += 1;
-        existingAdmin.passwordChangedAt = new Date();
-        await existingAdmin.save();
-        logger.info(
-          { workerId: existingAdmin.workerId, email: existingAdmin.email },
-          'Bootstrap Admin password synced from environment',
-        );
-        return;
-      }
+      existingAdmin.name = input.name;
+      existingAdmin.email = input.email;
+      existingAdmin.emailNormalized = input.email;
+      if (input.contact) existingAdmin.contact = input.contact;
+      if (input.department) existingAdmin.department = input.department;
+      existingAdmin.passwordHash = await hashPassword(password);
+      existingAdmin.mustChangePassword = false;
+      existingAdmin.status = 'ACTIVE';
+      existingAdmin.failedLoginCount = 0;
+      existingAdmin.set('lockedUntil', undefined);
+      existingAdmin.authVersion += 1;
+      existingAdmin.passwordChangedAt = new Date();
+      await existingAdmin.save();
+      logger.info(
+        { workerId: existingAdmin.workerId, email: existingAdmin.email },
+        'Bootstrap Admin password synced from environment',
+      );
+      return;
+    }
+
+    const emailOwner = await UserModel.findOne({ emailNormalized: input.email });
+    if (emailOwner) {
       throw new Error(
-        'An Admin already exists with different bootstrap credentials. Use that account or an approved Admin-management flow.',
+        `The bootstrap email already belongs to ${emailOwner.role} ${emailOwner.workerId}.`,
       );
     }
 
-    if (await UserModel.exists({ emailNormalized: input.email })) {
-      throw new Error('The bootstrap email already belongs to another user.');
-    }
-
-    if (await UserModel.exists({ workerId })) {
-      throw new Error('The configured bootstrap Admin ID already belongs to another user.');
+    const workerIdOwner = await UserModel.findOne({ workerId });
+    if (workerIdOwner) {
+      throw new Error(
+        `The configured bootstrap Admin ID already belongs to ${workerIdOwner.role} ${workerIdOwner.email}.`,
+      );
     }
 
     const admin = await UserModel.create({
