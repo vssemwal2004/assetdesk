@@ -51,6 +51,8 @@ export function InventoryImportReviewPage() {
         row.typeModelName,
         row.location,
         row.block,
+        row.department,
+        row.vendorName,
         row.locationBlock,
         row.serialNumber,
         row.quantity,
@@ -229,6 +231,8 @@ function ReviewTable({
             <th className="w-36 p-3 font-bold">Inventory status</th>
             <th className="w-36 p-3 font-bold">Location</th>
             <th className="w-36 p-3 font-bold">Block</th>
+            <th className="w-40 p-3 font-bold">Department</th>
+            <th className="w-40 p-3 font-bold">Vendor</th>
             <th className="w-44 p-3 font-bold">{mode === 'SERIALIZED' ? 'Serial number' : 'Quantity'}</th>
             <th className="p-3 font-bold">Reason</th>
           </tr>
@@ -254,6 +258,8 @@ function ReviewTable({
               <td className="break-words p-3">{inventoryStatusLabel(row.status ?? 'ACTIVE')}</td>
               <td className="break-words p-3">{row.location || 'Missing'}</td>
               <td className="break-words p-3">{row.block || 'Missing'}</td>
+              <td className="break-words p-3">{row.department || 'Missing'}</td>
+              <td className="break-words p-3">{row.vendorName || 'Not provided'}</td>
               <td className="break-words p-3">
                 {mode === 'SERIALIZED'
                   ? row.serialNumber || 'Missing'

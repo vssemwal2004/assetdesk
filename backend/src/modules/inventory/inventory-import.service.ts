@@ -31,6 +31,8 @@ type Field =
   | 'typeModelName'
   | 'location'
   | 'block'
+  | 'department'
+  | 'vendorName'
   | 'locationBlock'
   | 'description'
   | 'serialNumber'
@@ -56,6 +58,10 @@ const HEADER_ALIASES: Record<string, Field> = {
   'location / block': 'locationBlock',
   location: 'location',
   block: 'block',
+  department: 'department',
+  dept: 'department',
+  vendor: 'vendorName',
+  'vendor name': 'vendorName',
   description: 'description',
   serial: 'serialNumber',
   'serial number': 'serialNumber',
@@ -134,8 +140,8 @@ export function parseInventoryImportTable(
   });
   const required: Field[] =
     mode === 'SERIALIZED'
-      ? ['category', 'location', 'block', 'serialNumber']
-      : ['category', 'location', 'block', 'quantity', 'unitLabel'];
+      ? ['category', 'location', 'block', 'department', 'serialNumber']
+      : ['category', 'location', 'block', 'department', 'quantity', 'unitLabel'];
   const missing = required.filter((field) => !columns.has(field));
   if (missing.length)
     throw new AppError(
@@ -218,6 +224,8 @@ export function importInputToCreateMaterialRequest(input: InventoryImportInput):
     typeModelName: record.typeModelName,
     location: record.location,
     block: record.block,
+    department: record.department,
+    ...(record.vendorName ? { vendorName: record.vendorName } : {}),
     ...(record.locationBlock ? { locationBlock: record.locationBlock } : {}),
     ...(record.description ? { description: record.description } : {}),
     assignmentTypes: record.assignmentTypes,
@@ -248,7 +256,10 @@ function normalizedLookup(value: string): string {
   return value.trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
 }
 
-async function savedLookup(kind: 'ASSET_TYPE' | 'LOCATION' | 'BLOCK', value: string): Promise<string | null> {
+async function savedLookup(
+  kind: 'ASSET_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
+  value: string,
+): Promise<string | null> {
   const detail = await AssetDetailModel.findOne({ kind, normalizedName: normalizedLookup(value) });
   if (detail) return detail.name;
   if (kind === 'ASSET_TYPE') {
@@ -320,6 +331,8 @@ export async function previewInventoryImport(
         ...(row.values.typeModelName ? { typeModelName: row.values.typeModelName } : {}),
         ...(row.values.location ? { location: row.values.location } : {}),
         ...(row.values.block ? { block: row.values.block } : {}),
+        ...(row.values.department ? { department: row.values.department } : {}),
+        ...(row.values.vendorName ? { vendorName: row.values.vendorName } : {}),
         ...(row.values.locationBlock ? { locationBlock: row.values.locationBlock } : {}),
         ...(row.values.serialNumber ? { serialNumber: row.values.serialNumber } : {}),
         ...(row.values.quantity ? { quantity: Number(row.values.quantity) } : {}),
@@ -345,10 +358,12 @@ export async function previewInventoryImport(
       const category = await savedLookup('ASSET_TYPE', values.category);
       const location = await savedLookup('LOCATION', values.location);
       const block = await savedLookup('BLOCK', values.block);
+      const department = await savedLookup('DEPARTMENT', values.department);
       if (!category)
         throw new Error('Asset type does not match the saved asset type dropdown.');
       if (!location) throw new Error('Location does not match the saved location dropdown.');
       if (!block) throw new Error('Block does not match the saved block dropdown.');
+      if (!department) throw new Error('Department does not match the saved department dropdown.');
       const locationBlock = `${location} / ${block}`;
       const materialIdentity = identity(mode, displayName, category);
       if (fileIdentities.has(materialIdentity))
@@ -381,7 +396,9 @@ export async function previewInventoryImport(
           typeModelName: itemName,
           location,
           block,
+          department,
           locationBlock,
+          ...(values.vendorName ? { vendorName: values.vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
           status: materialStatus(values.status),
           trackingMode: 'SERIALIZED',
@@ -396,7 +413,9 @@ export async function previewInventoryImport(
           typeModelName: itemName,
           location,
           block,
+          department,
           locationBlock,
+          ...(values.vendorName ? { vendorName: values.vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
           status: materialStatus(values.status),
           trackingMode: 'QUANTITY',

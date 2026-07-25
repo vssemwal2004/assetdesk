@@ -232,6 +232,8 @@ export function InventoryDetailPage() {
               <DetailRow label="Asset type" value={material.category} />
               <DetailRow label="Type/model name" value={material.typeModelName ?? material.name} />
               <DetailRow label="Location / block" value={material.locationBlock ?? 'Not provided'} />
+              <DetailRow label="Department" value={material.department ?? 'Not provided'} />
+              <DetailRow label="Vendor name" value={material.vendorName ?? 'Not provided'} />
               <DetailRow
                 label="Inventory type"
                 value={<CatalogBadge value={material.trackingMode} />}
@@ -649,6 +651,7 @@ function editMaterialMessage(
     typeModelName: string;
     location: string;
     block: string;
+    department: string;
     unitLabel: string;
   },
   material: Material,
@@ -657,6 +660,7 @@ function editMaterialMessage(
   if (form.typeModelName.trim().length < 2) return 'Enter a type/model name with at least 2 characters.';
   if (form.location.trim().length < 1) return 'Choose a location from Add asset details.';
   if (form.block.trim().length < 1) return 'Choose a block from Add asset details.';
+  if (form.department.trim().length < 1) return 'Choose a department from Add asset details.';
   if (material.trackingMode === 'QUANTITY' && form.unitLabel.trim().length < 1) {
     return 'Enter a unit label, for example units, boxes, meters, or pieces.';
   }
@@ -678,6 +682,8 @@ function EditMaterialForm({
     typeModelName: material.typeModelName ?? material.name,
     location: material.location ?? '',
     block: material.block ?? '',
+    department: material.department ?? '',
+    vendorName: material.vendorName ?? '',
     description: material.description ?? '',
     returnPolicy: material.returnPolicy,
     unitLabel: material.unitLabel ?? '',
@@ -689,6 +695,7 @@ function EditMaterialForm({
   });
   const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
   const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
+  const departments = detailsQuery.data?.filter((detail) => detail.kind === 'DEPARTMENT') ?? [];
   const mutation = useMutation({
     mutationFn: (input: UpdateMaterialRequest) => updateMaterial(material.materialCode, input),
     onSuccess: onSaved,
@@ -708,6 +715,8 @@ function EditMaterialForm({
       typeModelName: form.typeModelName,
       location: form.location,
       block: form.block,
+      department: form.department,
+      vendorName: form.vendorName.trim() || null,
       description: form.description.trim() || null,
       returnPolicy: form.returnPolicy,
       ...(material.trackingMode === 'QUANTITY' ? { unitLabel: form.unitLabel } : {}),
@@ -764,6 +773,25 @@ function EditMaterialForm({
             </option>
           ))}
         </SelectField>
+        <SelectField
+          id="edit-material-department"
+          label="Department"
+          onChange={(department) => setForm((value) => ({ ...value, department }))}
+          value={form.department}
+        >
+          <option value="">Choose department</option>
+          {departments.map((department) => (
+            <option key={department.id} value={department.name}>
+              {department.name}
+            </option>
+          ))}
+        </SelectField>
+        <TextField
+          label="Vendor name (optional)"
+          maxLength={120}
+          onChange={(event) => setForm((value) => ({ ...value, vendorName: event.target.value }))}
+          value={form.vendorName}
+        />
       </div>
       <div className="space-y-1.5">
         <label className="field-label" htmlFor="edit-material-description">

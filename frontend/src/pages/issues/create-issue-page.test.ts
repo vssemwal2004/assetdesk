@@ -12,6 +12,8 @@ const assetMaterial: Material = {
   typeModelName: null,
   location: null,
   block: null,
+  department: null,
+  vendorName: null,
   locationBlock: null,
   description: null,
   trackingMode: 'SERIALIZED',

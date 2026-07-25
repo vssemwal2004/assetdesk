@@ -86,11 +86,14 @@ function parseAssetTypeRows(
   const blockIndex = headings.findIndex((heading) =>
     ['block', 'blocks'].includes(normalizedHeader(heading)),
   );
-  if (assetTypeIndex < 0 && locationIndex < 0 && blockIndex < 0) {
+  const departmentIndex = headings.findIndex((heading) =>
+    ['department', 'departments', 'dept'].includes(normalizedHeader(heading)),
+  );
+  if (assetTypeIndex < 0 && locationIndex < 0 && blockIndex < 0 && departmentIndex < 0) {
     throw new AppError(
       400,
       'ASSET_TYPE_IMPORT_COLUMNS_MISSING',
-      'Add at least one column: IT Asset, Location, or Block.',
+      'Add at least one column: IT Asset, Location, Block, or Department.',
     );
   }
   const rows = table.slice(headerIndex + 1).flatMap((row, index) => {
@@ -99,6 +102,7 @@ function parseAssetTypeRows(
     if (assetTypeIndex >= 0) entries.push({ rowNumber, kind: 'ASSET_TYPE', name: text(row[assetTypeIndex]) });
     if (locationIndex >= 0) entries.push({ rowNumber, kind: 'LOCATION', name: text(row[locationIndex]) });
     if (blockIndex >= 0) entries.push({ rowNumber, kind: 'BLOCK', name: text(row[blockIndex]) });
+    if (departmentIndex >= 0) entries.push({ rowNumber, kind: 'DEPARTMENT', name: text(row[departmentIndex]) });
     return entries.filter((entry) => entry.name.length > 0);
   });
   if (!rows.length)

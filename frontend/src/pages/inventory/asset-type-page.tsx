@@ -23,16 +23,17 @@ import { isApiError } from '../../lib/api-client';
 type Mode = 'individual' | 'bulk';
 
 const ASSET_TYPE_TEMPLATE =
-  'IT Asset,Location,Block\r\nComputer,Computer Centre,A Block\r\nPrinter,Store Room,B Block\r\nUPS,Electrical Room,C Block\r\n';
+  'IT Asset,Location,Block,Department\r\nComputer,Computer Centre,A Block,Computer Centre\r\nPrinter,Store Room,B Block,IT Department\r\nUPS,Electrical Room,C Block,Electrical Department\r\n';
 
 const detailLabels: Record<AssetDetailKind, string> = {
   ASSET_TYPE: 'IT Asset',
   LOCATION: 'Location',
   BLOCK: 'Block',
+  DEPARTMENT: 'Department',
 };
 
 function detailLabel(value: string | undefined): string {
-  return value === 'LOCATION' || value === 'BLOCK' || value === 'ASSET_TYPE'
+  return value === 'LOCATION' || value === 'BLOCK' || value === 'ASSET_TYPE' || value === 'DEPARTMENT'
     ? detailLabels[value]
     : 'IT Asset';
 }
@@ -175,7 +176,7 @@ export function AssetTypePage() {
             Back to Inventory
           </Link>
         }
-        description="Save allowed IT Asset, Location, and Block dropdown values for inventory."
+        description="Save allowed IT Asset, Location, Block, and Department dropdown values for inventory."
         title="Add asset details"
       />
 
@@ -226,13 +227,14 @@ export function AssetTypePage() {
                   <option value="ASSET_TYPE">IT Asset</option>
                   <option value="LOCATION">Location</option>
                   <option value="BLOCK">Block</option>
+                  <option value="DEPARTMENT">Department</option>
                 </select>
               </label>
               <TextField
                 label="Name"
                 maxLength={120}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Computer, Computer Centre, A Block"
+                placeholder="Computer, Computer Centre, A Block, IT Department"
                 required
                 value={name}
               />
@@ -248,7 +250,7 @@ export function AssetTypePage() {
                 <div className="rounded-[8px] border border-[var(--color-border)] p-5">
                   <p className="font-bold text-[var(--color-text-strong)]">Upload asset detail list</p>
                   <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                    CSV and XLSX, maximum 5 MB and 1,000 rows. Columns: IT Asset, Location, Block.
+                    CSV and XLSX, maximum 5 MB and 1,000 rows. Columns: IT Asset, Location, Block, Department.
                   </p>
                   <input
                     accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

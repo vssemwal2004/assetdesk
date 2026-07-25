@@ -12,6 +12,8 @@ export function toMaterial(material: MaterialDocument): Material {
     typeModelName: material.typeModelName ?? null,
     location: material.location ?? null,
     block: material.block ?? null,
+    department: material.department ?? null,
+    vendorName: material.vendorName ?? null,
     locationBlock:
       material.locationBlock ?? ([material.location, material.block].filter(Boolean).join(' / ') || null),
     description: material.description ?? null,

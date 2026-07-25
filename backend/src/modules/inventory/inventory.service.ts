@@ -216,7 +216,11 @@ export async function deleteAssetDetail(assetDetailId: string): Promise<AssetDet
     detail.kind === 'ASSET_TYPE'
       ? await MaterialModel.exists({ category: exactCaseInsensitive(detail.name) })
       : await MaterialModel.exists({
-          [detail.kind === 'LOCATION' ? 'location' : 'block']: exactCaseInsensitive(detail.name),
+          [detail.kind === 'LOCATION'
+            ? 'location'
+            : detail.kind === 'BLOCK'
+              ? 'block'
+              : 'department']: exactCaseInsensitive(detail.name),
         });
   if (inUse) {
     throw new AppError(
@@ -467,6 +471,7 @@ export async function createMaterial(
   const category = await requireSavedDetail('ASSET_TYPE', input.category);
   const location = await requireSavedDetail('LOCATION', input.location);
   const block = await requireSavedDetail('BLOCK', input.block);
+  const department = await requireSavedDetail('DEPARTMENT', input.department);
   const locationBlock = `${location} / ${block}`;
   const existing = await MaterialModel.exists({
     trackingMode: input.trackingMode,
@@ -492,6 +497,8 @@ export async function createMaterial(
         typeModelName: input.typeModelName,
         location,
         block,
+        department,
+        ...(input.vendorName ? { vendorName: input.vendorName } : {}),
         locationBlock,
         identityKey: materialIdentity(input.trackingMode, input.name, category),
         ...(input.description ? { description: input.description } : {}),
@@ -584,6 +591,8 @@ export async function exportMaterialsCsv(input: MaterialExportInput): Promise<st
     'Asset Type',
     'Type/Model Name',
     'Location / Block',
+    'Department',
+    'Vendor Name',
     'Inventory Type',
     'Return Policy',
     'Status',
@@ -601,6 +610,8 @@ export async function exportMaterialsCsv(input: MaterialExportInput): Promise<st
     material.category,
     material.typeModelName ?? material.name,
     material.locationBlock ?? '',
+    material.department ?? '',
+    material.vendorName ?? '',
     material.trackingMode,
     material.returnPolicy,
     material.status,
@@ -670,6 +681,10 @@ export async function updateMaterial(
     if (input.typeModelName !== undefined) material.typeModelName = input.typeModelName;
     if (input.location !== undefined) material.location = await requireSavedDetail('LOCATION', input.location);
     if (input.block !== undefined) material.block = await requireSavedDetail('BLOCK', input.block);
+    if (input.department !== undefined) material.department = await requireSavedDetail('DEPARTMENT', input.department);
+    if (Object.hasOwn(input, 'vendorName')) {
+      material.set('vendorName', input.vendorName || undefined);
+    }
     if (input.locationBlock !== undefined && input.location === undefined && input.block === undefined) {
       material.locationBlock = input.locationBlock;
     }

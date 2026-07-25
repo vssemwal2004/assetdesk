@@ -10,9 +10,9 @@ describe('inventory import parsing', () => {
   it('accepts case-insensitive asset headers and preserves one serial per row', () => {
     const rows = parseInventoryImportTable(
       [
-        ['MATERIAL_NAME', 'material-group', 'SERIAL NUMBER', 'Location', 'Block'],
-        ['Dell Latitude', 'Laptops', 'dl-001', 'Computer Centre', 'A Block'],
-        ['Dell Latitude', 'Laptops', 'DL-002', 'Computer Centre', 'A Block'],
+        ['MATERIAL_NAME', 'material-group', 'SERIAL NUMBER', 'Location', 'Block', 'Department'],
+        ['Dell Latitude', 'Laptops', 'dl-001', 'Computer Centre', 'A Block', 'IT'],
+        ['Dell Latitude', 'Laptops', 'DL-002', 'Computer Centre', 'A Block', 'IT'],
       ],
       'SERIALIZED',
     );
@@ -26,6 +26,7 @@ describe('inventory import parsing', () => {
         serialNumber: 'dl-001',
         location: 'Computer Centre',
         block: 'A Block',
+        department: 'IT',
       },
     });
   });
@@ -33,8 +34,8 @@ describe('inventory import parsing', () => {
   it('accepts the IT Consumable template columns', () => {
     const rows = parseInventoryImportTable(
       [
-        ['Material Name', 'Group', 'QTY', 'Unit', 'Location', 'Block'],
-        ['USB-C Cable', 'Cables', 50, 'pieces', 'Store Room', 'B Block'],
+        ['Material Name', 'Group', 'QTY', 'Unit', 'Location', 'Block', 'Department'],
+        ['USB-C Cable', 'Cables', 50, 'pieces', 'Store Room', 'B Block', 'IT'],
       ],
       'QUANTITY',
     );
@@ -46,6 +47,7 @@ describe('inventory import parsing', () => {
       unitLabel: 'pieces',
       location: 'Store Room',
       block: 'B Block',
+      department: 'IT',
     });
   });
 
@@ -68,6 +70,7 @@ describe('inventory import parsing', () => {
       typeModelName: 'USB-C Cable',
       location: 'Store Room',
       block: 'B Block',
+      department: 'IT',
       locationBlock: 'Store Room / B Block',
       assignmentTypes: ['SHORT_TERM'],
       trackingMode: 'QUANTITY',
@@ -83,6 +86,7 @@ describe('inventory import parsing', () => {
       trackingMode: 'QUANTITY',
       location: 'Store Room',
       block: 'B Block',
+      department: 'IT',
       totalQuantity: 50,
       unitLabel: 'pieces',
     });

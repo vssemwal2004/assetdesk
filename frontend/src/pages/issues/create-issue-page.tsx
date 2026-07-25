@@ -28,7 +28,7 @@ import { StickyWorkflowActions } from '../../components/workflow-ui';
 import { isApiError } from '../../lib/api-client';
 import { calculatePresetReturnInIst, formatIstDateTime } from '../../lib/date-time';
 import { createPendingSubmission } from '../../lib/idempotent-submission';
-import { getAvailableAssetUnits, getInventory } from '../../lib/inventory-api';
+import { getAssetDetails, getAvailableAssetUnits, getInventory } from '../../lib/inventory-api';
 import { createIssue } from '../../lib/issues-api';
 
 type DuePreset = NonNullable<CreateIssueRequest['due']>['preset'];
@@ -92,6 +92,11 @@ export function CreateIssuePage() {
         signal,
       ),
   });
+  const departmentQuery = useQuery({
+    queryKey: ['asset-details', 'DEPARTMENT'],
+    queryFn: ({ signal }) => getAssetDetails('DEPARTMENT', signal),
+  });
+  const departments = departmentQuery.data ?? [];
 
   const materials = useMemo(
     () => (inventoryQuery.data?.data ?? []).filter(isIssueableInventoryMaterial),
@@ -300,11 +305,23 @@ export function CreateIssuePage() {
             onChange={(value) => setIssuedTo((current) => ({ ...current, universityId: value }))}
             value={issuedTo.universityId}
           />
-          <Field
-            label="Department"
-            onChange={(value) => setIssuedTo((current) => ({ ...current, department: value }))}
-            value={issuedTo.department}
-          />
+          <label className="space-y-1.5">
+            <span className="field-label">Department</span>
+            <select
+              className="field-input field-input-compact"
+              onChange={(event) =>
+                setIssuedTo((current) => ({ ...current, department: event.target.value }))
+              }
+              value={issuedTo.department}
+            >
+              <option value="">Choose department</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.name}>
+                  {department.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <Field
             label="Contact"
             onChange={(value) => setIssuedTo((current) => ({ ...current, contact: value }))}

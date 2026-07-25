@@ -15,6 +15,8 @@ export interface MaterialRecord {
   typeModelName?: string;
   location?: string;
   block?: string;
+  department?: string;
+  vendorName?: string;
   locationBlock?: string;
   identityKey?: string;
   description?: string;
@@ -47,6 +49,8 @@ const MaterialSchema = new Schema<MaterialRecord>(
     typeModelName: { type: String, trim: true, minlength: 2, maxlength: 120 },
     location: { type: String, trim: true, minlength: 1, maxlength: 120 },
     block: { type: String, trim: true, minlength: 1, maxlength: 120 },
+    department: { type: String, trim: true, minlength: 1, maxlength: 120 },
+    vendorName: { type: String, trim: true, maxlength: 120 },
     locationBlock: { type: String, trim: true, minlength: 1, maxlength: 120 },
     identityKey: { type: String, maxlength: 300 },
     description: { type: String, trim: true, maxlength: 1_000 },

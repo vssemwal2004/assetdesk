@@ -15,6 +15,8 @@ const AssetTypeNameSchema = z.string().trim().min(2).max(120);
 const LocationBlockSchema = z.string().trim().min(1).max(120);
 const LocationSchema = z.string().trim().min(1).max(120);
 const BlockSchema = z.string().trim().min(1).max(120);
+const DepartmentSchema = z.string().trim().min(1).max(120);
+const VendorNameSchema = z.string().trim().max(120);
 const UnitLabelSchema = z.string().trim().min(1).max(40);
 const ConditionSchema = z.string().trim().min(1).max(120);
 const SerialNumberSchema = z.string().trim().min(1).max(120);
@@ -28,6 +30,8 @@ const CreateMaterialBaseSchema = z.object({
   typeModelName: NameSchema,
   location: LocationSchema,
   block: BlockSchema,
+  department: DepartmentSchema,
+  vendorName: VendorNameSchema.optional(),
   locationBlock: LocationBlockSchema.optional(),
   description: DescriptionSchema.optional(),
   status: MaterialStatusSchema.exclude(['ARCHIVED']).default('ACTIVE'),
@@ -63,6 +67,8 @@ export const UpdateMaterialRequestSchema = z
     typeModelName: NameSchema.optional(),
     location: LocationSchema.optional(),
     block: BlockSchema.optional(),
+    department: DepartmentSchema.optional(),
+    vendorName: VendorNameSchema.nullable().optional(),
     locationBlock: LocationBlockSchema.optional(),
     description: DescriptionSchema.nullable().optional(),
     returnPolicy: ReturnPolicySchema.optional(),
@@ -115,6 +121,8 @@ export const MaterialSchema = z
     typeModelName: z.string().nullable().optional().default(null),
     location: z.string().nullable().optional().default(null),
     block: z.string().nullable().optional().default(null),
+    department: z.string().nullable().optional().default(null),
+    vendorName: z.string().nullable().optional().default(null),
     locationBlock: z.string().nullable().optional().default(null),
     description: z.string().nullable(),
     trackingMode: TrackingModeSchema,
@@ -231,7 +239,7 @@ export const AssetTypeSchema = z.object({
 
 export const AssetTypesResponseSchema = z.object({ data: z.array(AssetTypeSchema) });
 export const CreateAssetTypeRequestSchema = z.object({ name: AssetTypeNameSchema }).strict();
-export const AssetDetailKindSchema = z.enum(['ASSET_TYPE', 'LOCATION', 'BLOCK']);
+export const AssetDetailKindSchema = z.enum(['ASSET_TYPE', 'LOCATION', 'BLOCK', 'DEPARTMENT']);
 export const AssetDetailSchema = z.object({
   id: z.string().min(1),
   kind: AssetDetailKindSchema,

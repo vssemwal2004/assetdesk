@@ -190,6 +190,8 @@ export interface InventoryImportPreview {
     typeModelName?: string;
     location?: string;
     block?: string;
+    department?: string;
+    vendorName?: string;
     locationBlock?: string;
     quantity?: number;
     unitLabel?: string;
