@@ -10,9 +10,9 @@ describe('inventory import parsing', () => {
   it('accepts case-insensitive asset headers and preserves one serial per row', () => {
     const rows = parseInventoryImportTable(
       [
-        ['MATERIAL_NAME', 'material-group', 'SERIAL NUMBER'],
-        ['Dell Latitude', 'Laptops', 'dl-001'],
-        ['Dell Latitude', 'Laptops', 'DL-002'],
+        ['MATERIAL_NAME', 'material-group', 'SERIAL NUMBER', 'Location', 'Block'],
+        ['Dell Latitude', 'Laptops', 'dl-001', 'Computer Centre', 'A Block'],
+        ['Dell Latitude', 'Laptops', 'DL-002', 'Computer Centre', 'A Block'],
       ],
       'SERIALIZED',
     );
@@ -20,15 +20,21 @@ describe('inventory import parsing', () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       rowNumber: 2,
-      values: { name: 'Dell Latitude', category: 'Laptops', serialNumber: 'dl-001' },
+      values: {
+        name: 'Dell Latitude',
+        category: 'Laptops',
+        serialNumber: 'dl-001',
+        location: 'Computer Centre',
+        block: 'A Block',
+      },
     });
   });
 
   it('accepts the IT Consumable template columns', () => {
     const rows = parseInventoryImportTable(
       [
-        ['Material Name', 'Group', 'QTY', 'Unit'],
-        ['USB-C Cable', 'Cables', 50, 'pieces'],
+        ['Material Name', 'Group', 'QTY', 'Unit', 'Location', 'Block'],
+        ['USB-C Cable', 'Cables', 50, 'pieces', 'Store Room', 'B Block'],
       ],
       'QUANTITY',
     );
@@ -38,6 +44,8 @@ describe('inventory import parsing', () => {
       category: 'Cables',
       quantity: '50',
       unitLabel: 'pieces',
+      location: 'Store Room',
+      block: 'B Block',
     });
   });
 
@@ -58,7 +66,9 @@ describe('inventory import parsing', () => {
       name: 'Consumable USB-C Cable',
       category: 'Consumable',
       typeModelName: 'USB-C Cable',
-      locationBlock: 'Store',
+      location: 'Store Room',
+      block: 'B Block',
+      locationBlock: 'Store Room / B Block',
       assignmentTypes: ['SHORT_TERM'],
       trackingMode: 'QUANTITY',
       returnPolicy: 'CONSUMABLE',
@@ -71,6 +81,8 @@ describe('inventory import parsing', () => {
     expect(input).toMatchObject({
       name: 'Consumable USB-C Cable',
       trackingMode: 'QUANTITY',
+      location: 'Store Room',
+      block: 'B Block',
       totalQuantity: 50,
       unitLabel: 'pieces',
     });

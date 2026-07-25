@@ -9,6 +9,7 @@ const service = vi.hoisted(() => ({
   createAssetUnit: vi.fn(),
   deleteAssetUnit: vi.fn(),
   createMaterial: vi.fn(),
+  listAssetDetails: vi.fn(),
   deleteMaterial: vi.fn(),
   getMaterial: vi.fn(),
   listAssetUnits: vi.fn(),
@@ -102,6 +103,9 @@ describe('inventory route authorization', () => {
       total: 0,
       totalPages: 0,
     });
+    service.listAssetDetails.mockResolvedValue({
+      assetDetails: [],
+    });
   });
 
   it('allows Worker reads and passes the role into the availability filter', async () => {
@@ -135,6 +139,12 @@ describe('inventory route authorization', () => {
     expect(service.listAssetUnits).toHaveBeenCalledWith(
       expect.objectContaining({ materialCode: 'GEU-MAT-000001', status: 'AVAILABLE' }),
     );
+  });
+
+  it('loads asset details without requiring a kind query', async () => {
+    await request(testApp()).get('/api/v1/inventory/asset-details').expect(200);
+
+    expect(service.listAssetDetails).toHaveBeenCalledWith(undefined);
   });
 
   it('blocks Worker mutations before the inventory service is called', async () => {

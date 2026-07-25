@@ -19,6 +19,7 @@ vi.mock('../auth/auth.middleware.js', () => {
       userId: '507f1f77bcf86cd799439011',
       workerId: 'GEU-WRK-ABCD',
       role: 'WORKER',
+      dataAccess: { inventory: 'ALL', issues: 'ALL' },
       sid: 'a'.repeat(32),
       authVersion: 1,
       mustChangePassword: false,
@@ -80,6 +81,7 @@ describe('Issue routes', () => {
       pageSize: 20,
       actorUserId: '507f1f77bcf86cd799439011',
       actorRole: 'WORKER',
+      issueDataScope: 'ALL',
     });
     expect(response.body.meta).toEqual({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
   });
@@ -128,6 +130,7 @@ describe('Issue routes', () => {
       pageSize: 20,
       search: 'GEU-ISS-2026-000001',
       actorRole: 'WORKER',
+      issueDataScope: 'ALL',
     });
     expect(service.getIssueDetail).not.toHaveBeenCalled();
   });

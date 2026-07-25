@@ -11,6 +11,7 @@ const user = {
   department: 'IT Services',
   role: 'ADMIN',
   permissions: [],
+  dataAccess: { inventory: 'ALL', issues: 'ALL' },
   status: 'ACTIVE',
   mustChangePassword: false,
 } as const;

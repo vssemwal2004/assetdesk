@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "npm run build --workspace @assetdesk/contracts",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",

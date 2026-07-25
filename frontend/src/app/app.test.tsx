@@ -14,6 +14,7 @@ const admin = {
   role: 'ADMIN',
   status: 'ACTIVE',
   mustChangePassword: false,
+  dataAccess: { inventory: 'ALL', issues: 'ALL' },
   permissions: [
     'DASHBOARD',
     'ISSUES_VIEW',
@@ -37,6 +38,7 @@ const worker = {
   role: 'WORKER',
   status: 'INVITED',
   mustChangePassword: true,
+  dataAccess: { inventory: 'OWN', issues: 'OWN' },
   permissions: ['DASHBOARD', 'ISSUES_VIEW', 'RETURNS_RECORD', 'INVENTORY_VIEW', 'RECEIVERS_VIEW'],
 } as const;
 
@@ -206,6 +208,7 @@ describe('AssetDesk application routes', () => {
                 department: 'Server Operations',
                 status: 'ACTIVE',
                 permissions: worker.permissions,
+                dataAccess: worker.dataAccess,
                 invitationStatus: 'SENT',
                 mustChangePassword: false,
                 temporaryPasswordExpiresAt: null,
