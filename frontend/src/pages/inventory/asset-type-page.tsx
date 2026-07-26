@@ -22,18 +22,39 @@ import { isApiError } from '../../lib/api-client';
 
 type Mode = 'individual' | 'bulk';
 
-const ASSET_TYPE_TEMPLATE =
-  'IT Asset,Location,Block,Department\r\nComputer,Computer Centre,A Block,Computer Centre\r\nPrinter,Store Room,B Block,IT Department\r\nUPS,Electrical Room,C Block,Electrical Department\r\n';
-
 const detailLabels: Record<AssetDetailKind, string> = {
   ASSET_TYPE: 'IT Asset',
   LOCATION: 'Location',
   BLOCK: 'Block',
   DEPARTMENT: 'Department',
+  VENDOR: 'Vendor',
+};
+
+const detailTemplates: Record<AssetDetailKind, { fileName: string; csv: string }> = {
+  ASSET_TYPE: {
+    fileName: 'assetdesk-it-asset-types-template.csv',
+    csv: 'IT Asset\r\nComputer\r\nPrinter\r\nUPS\r\n',
+  },
+  LOCATION: {
+    fileName: 'assetdesk-locations-template.csv',
+    csv: 'Location\r\nComputer Centre\r\nStore Room\r\nElectrical Room\r\n',
+  },
+  BLOCK: {
+    fileName: 'assetdesk-blocks-template.csv',
+    csv: 'Block\r\nA Block\r\nB Block\r\nC Block\r\n',
+  },
+  DEPARTMENT: {
+    fileName: 'assetdesk-departments-template.csv',
+    csv: 'Department\r\nComputer Centre\r\nIT Department\r\nElectrical Department\r\n',
+  },
+  VENDOR: {
+    fileName: 'assetdesk-vendors-template.csv',
+    csv: 'Vendor\r\nDell\r\nHP\r\nLocal Vendor\r\n',
+  },
 };
 
 function detailLabel(value: string | undefined): string {
-  return value === 'LOCATION' || value === 'BLOCK' || value === 'ASSET_TYPE' || value === 'DEPARTMENT'
+  return value === 'LOCATION' || value === 'BLOCK' || value === 'ASSET_TYPE' || value === 'DEPARTMENT' || value === 'VENDOR'
     ? detailLabels[value]
     : 'IT Asset';
 }
@@ -44,6 +65,7 @@ export function AssetTypePage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<Mode>('individual');
   const [kind, setKind] = useState<AssetDetailKind>('ASSET_TYPE');
+  const [bulkKind, setBulkKind] = useState<AssetDetailKind>('ASSET_TYPE');
   const [name, setName] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -54,7 +76,7 @@ export function AssetTypePage() {
   const canDeleteAssetTypes = hasPermission(user, 'ASSET_TYPES_DELETE');
 
   const query = useQuery({
-    queryKey: ['asset-types'],
+    queryKey: ['asset-details'],
     queryFn: ({ signal }) => getAssetDetails(undefined, signal),
   });
 
@@ -75,7 +97,8 @@ export function AssetTypePage() {
   });
 
   const previewMutation = useMutation({
-    mutationFn: (upload: File) => previewAssetTypeImport(upload),
+    mutationFn: ({ upload, detailKind }: { upload: File; detailKind: AssetDetailKind }) =>
+      previewAssetTypeImport(upload, detailKind),
     onSuccess: (importPreview) => {
       setPreview(importPreview);
     },
@@ -148,7 +171,7 @@ export function AssetTypePage() {
       setMessage('Choose a CSV or XLSX file first.');
       return fileInput.current?.focus();
     }
-    previewMutation.mutate(file);
+    previewMutation.mutate({ upload: file, detailKind: bulkKind });
   }
 
   function commitBulk() {
@@ -157,12 +180,13 @@ export function AssetTypePage() {
   }
 
   function downloadTemplate() {
+    const template = detailTemplates[bulkKind];
     const url = URL.createObjectURL(
-      new Blob(['\uFEFF', ASSET_TYPE_TEMPLATE], { type: 'text/csv;charset=utf-8' }),
+      new Blob(['\uFEFF', template.csv], { type: 'text/csv;charset=utf-8' }),
     );
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'assetdesk-asset-details-template.csv';
+    anchor.download = template.fileName;
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -176,7 +200,7 @@ export function AssetTypePage() {
             Back to Inventory
           </Link>
         }
-        description="Save allowed IT Asset, Location, Block, and Department dropdown values for inventory."
+        description="Save allowed IT Asset, Location, Block, Department, and Vendor dropdown values for inventory."
         title="Add asset details"
       />
 
@@ -228,13 +252,14 @@ export function AssetTypePage() {
                   <option value="LOCATION">Location</option>
                   <option value="BLOCK">Block</option>
                   <option value="DEPARTMENT">Department</option>
+                  <option value="VENDOR">Vendor</option>
                 </select>
               </label>
               <TextField
                 label="Name"
                 maxLength={120}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Computer, Computer Centre, A Block, IT Department"
+                placeholder="Computer, Computer Centre, A Block, IT Department, Dell"
                 required
                 value={name}
               />
@@ -246,11 +271,34 @@ export function AssetTypePage() {
             </form>
           ) : (
             <form className="mt-5 space-y-5" onSubmit={submitBulk}>
+              <label className="block max-w-xl space-y-1.5">
+                <span className="field-label">Bulk upload type</span>
+                <select
+                  className="field-input"
+                  onChange={(event) => {
+                    setBulkKind(event.target.value as AssetDetailKind);
+                    setFile(null);
+                    setPreview(null);
+                    setResult(null);
+                    setMessage(null);
+                    if (fileInput.current) fileInput.current.value = '';
+                  }}
+                  value={bulkKind}
+                >
+                  <option value="ASSET_TYPE">IT Asset</option>
+                  <option value="LOCATION">Location</option>
+                  <option value="BLOCK">Block</option>
+                  <option value="DEPARTMENT">Department</option>
+                  <option value="VENDOR">Vendor</option>
+                </select>
+              </label>
               <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="rounded-[8px] border border-[var(--color-border)] p-5">
-                  <p className="font-bold text-[var(--color-text-strong)]">Upload asset detail list</p>
+                  <p className="font-bold text-[var(--color-text-strong)]">
+                    Upload {detailLabels[bulkKind]} list
+                  </p>
                   <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                    CSV and XLSX, maximum 5 MB and 1,000 rows. Columns: IT Asset, Location, Block, Department.
+                    CSV and XLSX, maximum 5 MB and 1,000 rows. Required column: {detailLabels[bulkKind]}.
                   </p>
                   <input
                     accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

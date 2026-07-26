@@ -239,7 +239,7 @@ export const AssetTypeSchema = z.object({
 
 export const AssetTypesResponseSchema = z.object({ data: z.array(AssetTypeSchema) });
 export const CreateAssetTypeRequestSchema = z.object({ name: AssetTypeNameSchema }).strict();
-export const AssetDetailKindSchema = z.enum(['ASSET_TYPE', 'LOCATION', 'BLOCK', 'DEPARTMENT']);
+export const AssetDetailKindSchema = z.enum(['ASSET_TYPE', 'LOCATION', 'BLOCK', 'DEPARTMENT', 'VENDOR']);
 export const AssetDetailSchema = z.object({
   id: z.string().min(1),
   kind: AssetDetailKindSchema,

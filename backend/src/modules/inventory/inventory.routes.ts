@@ -18,7 +18,6 @@ import {
   UpdateAssetUnitRequestSchema,
   UpdateMaterialRequestSchema,
   UpdateMaterialStatusRequestSchema,
-  type UserRole,
 } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
@@ -81,6 +80,11 @@ const OptionalQueryTextSchema = z.preprocess(
   z.string().trim().min(1).max(120).optional(),
 );
 
+const OptionalDateSchema = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.coerce.date().optional(),
+);
+
 const MaterialListQuerySchema = z
   .object({
     page: z.coerce.number().int().positive().default(1),
@@ -113,8 +117,20 @@ const MaterialListQuerySchema = z
         .optional(),
     ),
     category: OptionalQueryTextSchema,
+    location: OptionalQueryTextSchema,
+    block: OptionalQueryTextSchema,
+    department: OptionalQueryTextSchema,
+    vendorName: OptionalQueryTextSchema,
+    createdFrom: OptionalDateSchema,
+    createdTo: OptionalDateSchema,
   })
   .strict();
+
+function endOfDay(date: Date): Date {
+  const next = new Date(date);
+  next.setHours(23, 59, 59, 999);
+  return next;
+}
 
 const AssetUnitListQuerySchema = z
   .object({
@@ -222,6 +238,12 @@ export function createInventoryRouter(): Router {
         ...(input.returnPolicy ? { returnPolicy: input.returnPolicy } : {}),
         ...(input.stockState ? { stockState: input.stockState } : {}),
         ...(input.category ? { category: input.category } : {}),
+        ...(input.location ? { location: input.location } : {}),
+        ...(input.block ? { block: input.block } : {}),
+        ...(input.department ? { department: input.department } : {}),
+        ...(input.vendorName ? { vendorName: input.vendorName } : {}),
+        ...(input.createdFrom ? { createdFrom: input.createdFrom } : {}),
+        ...(input.createdTo ? { createdTo: endOfDay(input.createdTo) } : {}),
       });
       response.json({ data: result.materials, meta: pageMeta(result) });
     } catch (error) {
@@ -265,6 +287,12 @@ export function createInventoryRouter(): Router {
         ...(input.returnPolicy ? { returnPolicy: input.returnPolicy } : {}),
         ...(input.stockState ? { stockState: input.stockState } : {}),
         ...(input.category ? { category: input.category } : {}),
+        ...(input.location ? { location: input.location } : {}),
+        ...(input.block ? { block: input.block } : {}),
+        ...(input.department ? { department: input.department } : {}),
+        ...(input.vendorName ? { vendorName: input.vendorName } : {}),
+        ...(input.createdFrom ? { createdFrom: input.createdFrom } : {}),
+        ...(input.createdTo ? { createdTo: endOfDay(input.createdTo) } : {}),
       });
       response.setHeader('Content-Type', 'text/csv; charset=utf-8');
       response.setHeader('Content-Disposition', 'attachment; filename="assetdesk-inventory.csv"');
@@ -368,7 +396,10 @@ export function createInventoryRouter(): Router {
       try {
         if (!request.file)
           throw new AppError(400, 'ASSET_TYPE_IMPORT_FILE_REQUIRED', 'Choose a CSV or XLSX file.');
-        const result = await previewAssetTypeImport(request.file, authenticated(request).userId);
+        const kind = request.body.kind
+          ? AssetDetailKindSchema.parse(request.body.kind)
+          : undefined;
+        const result = await previewAssetTypeImport(request.file, authenticated(request).userId, kind);
         await audit(request, 'ASSET_TYPE_IMPORT_PREVIEWED', 'ASSET_TYPE_IMPORT', result.importId, {
           validRows: result.validRows,
           invalidRows: result.invalidRows,

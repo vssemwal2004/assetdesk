@@ -285,10 +285,12 @@ export function FilterPopover({
   activeCount,
   children,
   onClear,
+  panelClassName,
 }: {
   activeCount: number;
   children: ReactNode;
   onClear: () => void;
+  panelClassName?: string;
 }) {
   return (
     <details className="relative">
@@ -301,7 +303,12 @@ export function FilterPopover({
           </span>
         ) : null}
       </summary>
-      <div className="absolute right-0 z-30 mt-2 w-[min(88vw,360px)] rounded-[8px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-overlay)]">
+      <div
+        className={cn(
+          'absolute right-0 z-30 mt-2 w-[min(88vw,360px)] rounded-[8px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-overlay)]',
+          panelClassName,
+        )}
+      >
         <div className="flex items-center justify-between">
           <h2 className="font-extrabold text-[var(--color-primary-strong)]">Filters</h2>
           {activeCount > 0 ? (

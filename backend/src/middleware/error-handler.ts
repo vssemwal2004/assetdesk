@@ -43,7 +43,7 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, request, respo
       : 'The server could not complete the request.';
 
   if (status >= 500) {
-    logger.error({ error, requestId: request.requestId }, 'Unhandled request error');
+    logger.error({ err: error, requestId: request.requestId }, 'Unhandled request error');
   }
 
   response

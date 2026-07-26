@@ -382,7 +382,10 @@ describe('AssetDesk application routes', () => {
 
   it('opens an Issue Record detail page from reports without a blank screen', async () => {
     window.history.replaceState({}, '', '/issues/GEU-ISS-2026-000004');
-    const { materialNames: _materialNames, ...issueBase } = issueSummary;
+    const issueBase = {
+      ...issueSummary,
+      materialNames: undefined,
+    };
     const fetchMock = vi.fn((input: string | URL | Request) => {
       const path = String(input);
       if (path.includes('/api/v1/auth/me')) return Promise.resolve(json({ data: { user: admin } }));

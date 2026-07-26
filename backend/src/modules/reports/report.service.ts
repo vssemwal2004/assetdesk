@@ -50,6 +50,8 @@ function reportFilter(filters: IssueReportFilters, now = new Date()): QueryFilte
 }
 
 function toRow(issue: IssueDocument): IssueReportRow {
+  const lines = issue.lines ?? [];
+  const returnEvents = issue.returnEvents ?? [];
   return {
     issueId: issue.issueId,
     status: issue.status,
@@ -60,23 +62,23 @@ function toRow(issue: IssueDocument): IssueReportRow {
     department: issue.receiver.department ?? null,
     issuedByWorkerId: issue.issuedBy.workerId,
     issuedByName: issue.issuedBy.name,
-    materials: issue.lines.map(
+    materials: lines.map(
       (line) =>
         `${line.material.name} — issued ${line.issuedQuantity}, outstanding ${line.outstandingQuantity}`,
     ),
     materialTypes: [
       ...new Set(
-        issue.lines.map((line) =>
+        lines.map((line) =>
           line.material.trackingMode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable',
         ),
       ),
     ],
-    serialNumbers: issue.lines.flatMap((line) =>
-      line.assets.flatMap((asset) => (asset.serialNumber ? [asset.serialNumber] : [])),
+    serialNumbers: lines.flatMap((line) =>
+      (line.assets ?? []).flatMap((asset) => (asset.serialNumber ? [asset.serialNumber] : [])),
     ),
     totalIssuedQuantity: issue.totalIssuedQuantity,
     totalOutstandingQuantity: issue.totalOutstandingQuantity,
-    returnEventCount: issue.returnEvents.length,
+    returnEventCount: returnEvents.length,
   };
 }
 

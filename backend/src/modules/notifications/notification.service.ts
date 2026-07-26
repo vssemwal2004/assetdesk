@@ -36,9 +36,10 @@ function normalizeEmail(value: string): string {
 }
 
 function materialIssueLines(issue: IssueDocument): string[] {
-  return issue.lines.map((line) => {
-    const units = line.assets.length
-      ? line.assets
+  return (issue.lines ?? []).map((line) => {
+    const assets = line.assets ?? [];
+    const units = assets.length
+      ? assets
           .map(
             (asset) =>
               `Serial ${asset.serialNumber ?? 'not recorded'} (Asset tag ${asset.assetTag})`,
@@ -51,7 +52,7 @@ function materialIssueLines(issue: IssueDocument): string[] {
 }
 
 function returnLines(event: ReturnEventRecord): string[] {
-  return event.items.map((item) =>
+  return (event.items ?? []).map((item) =>
     item.trackingMode === 'QUANTITY'
       ? `IT Consumable: ${item.materialName} (${item.materialCode}) — ${item.quantity} returned — ${item.disposition}; ${item.condition}`
       : `IT Asset: ${item.materialName} (${item.materialCode}) — Serial ${item.serialNumber ?? 'not recorded'} (Asset tag ${item.assetTag}) — ${item.disposition}; ${item.condition}`,
@@ -59,11 +60,11 @@ function returnLines(event: ReturnEventRecord): string[] {
 }
 
 function outstandingLines(issue: IssueDocument): string[] {
-  return issue.lines
+  return (issue.lines ?? [])
     .filter((line) => line.outstandingQuantity > 0)
     .map((line) => {
       if (line.material.trackingMode === 'SERIALIZED') {
-        const assets = line.assets
+        const assets = (line.assets ?? [])
           .filter((asset) => asset.outstanding)
           .map(
             (asset) =>

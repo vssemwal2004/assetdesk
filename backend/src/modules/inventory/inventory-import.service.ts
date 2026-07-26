@@ -24,7 +24,6 @@ import { MaterialModel } from './material.model.js';
 
 const MAX_ROWS = 1_000;
 const IMPORT_TTL_MS = 60 * 60 * 1_000;
-const DEFAULT_ASSET_TYPES = ['COMPUTER', 'PRINTER', 'NETWORK DEVICE', 'CONSUMABLE'];
 type Field =
   | 'name'
   | 'category'
@@ -257,7 +256,7 @@ function normalizedLookup(value: string): string {
 }
 
 async function savedLookup(
-  kind: 'ASSET_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
+  kind: 'ASSET_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT' | 'VENDOR',
   value: string,
 ): Promise<string | null> {
   const detail = await AssetDetailModel.findOne({ kind, normalizedName: normalizedLookup(value) });
@@ -267,6 +266,23 @@ async function savedLookup(
     return assetType?.name ?? null;
   }
   return null;
+}
+
+function detailKindLabel(kind: 'ASSET_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT' | 'VENDOR'): string {
+  if (kind === 'ASSET_TYPE') return 'IT asset type';
+  if (kind === 'LOCATION') return 'Location';
+  if (kind === 'BLOCK') return 'Block';
+  if (kind === 'VENDOR') return 'Vendor';
+  return 'Department';
+}
+
+function missingDropdownValue(
+  kind: 'ASSET_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT' | 'VENDOR',
+  value: string,
+): Error {
+  return new Error(
+    `${detailKindLabel(kind)} "${value}" is not saved in Add asset details. Check spelling or add it first.`,
+  );
 }
 
 function materialName(assetType: string, typeModelName: string): string {
@@ -359,11 +375,12 @@ export async function previewInventoryImport(
       const location = await savedLookup('LOCATION', values.location);
       const block = await savedLookup('BLOCK', values.block);
       const department = await savedLookup('DEPARTMENT', values.department);
-      if (!category)
-        throw new Error('Asset type does not match the saved asset type dropdown.');
-      if (!location) throw new Error('Location does not match the saved location dropdown.');
-      if (!block) throw new Error('Block does not match the saved block dropdown.');
-      if (!department) throw new Error('Department does not match the saved department dropdown.');
+      const vendorName = values.vendorName ? await savedLookup('VENDOR', values.vendorName) : null;
+      if (!category) throw missingDropdownValue('ASSET_TYPE', values.category);
+      if (!location) throw missingDropdownValue('LOCATION', values.location);
+      if (!block) throw missingDropdownValue('BLOCK', values.block);
+      if (!department) throw missingDropdownValue('DEPARTMENT', values.department);
+      if (values.vendorName && !vendorName) throw missingDropdownValue('VENDOR', values.vendorName);
       const locationBlock = `${location} / ${block}`;
       const materialIdentity = identity(mode, displayName, category);
       if (fileIdentities.has(materialIdentity))
@@ -398,7 +415,7 @@ export async function previewInventoryImport(
           block,
           department,
           locationBlock,
-          ...(values.vendorName ? { vendorName: values.vendorName } : {}),
+          ...(vendorName ? { vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
           status: materialStatus(values.status),
           trackingMode: 'SERIALIZED',
@@ -415,7 +432,7 @@ export async function previewInventoryImport(
           block,
           department,
           locationBlock,
-          ...(values.vendorName ? { vendorName: values.vendorName } : {}),
+          ...(vendorName ? { vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
           status: materialStatus(values.status),
           trackingMode: 'QUANTITY',

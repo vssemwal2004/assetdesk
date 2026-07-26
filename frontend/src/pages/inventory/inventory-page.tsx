@@ -3,7 +3,7 @@ import { Download, Eye, MoreVertical, PackagePlus, PackageSearch, Pencil, Trash2
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
-import type { Material, MaterialStatus, ReturnPolicy, TrackingMode } from '@assetdesk/contracts';
+import type { AssetDetail, AssetDetailKind, Material, MaterialStatus, ReturnPolicy, TrackingMode } from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
 import { hasPermission } from '../../auth/permissions';
@@ -18,7 +18,7 @@ import {
   PageHeader,
   SearchForm,
 } from '../../components/ui';
-import { deleteMaterial, downloadInventoryCsv, getInventory } from '../../lib/inventory-api';
+import { deleteMaterial, downloadInventoryCsv, getAssetDetails, getInventory } from '../../lib/inventory-api';
 import { isApiError } from '../../lib/api-client';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
 import { inventoryStatusLabel, normalizeInventoryStatus } from '../../lib/inventory-status';
@@ -113,6 +113,21 @@ function materialStatsLabel(material: Material): string {
   return 'Available';
 }
 
+function assetDetailOptions(
+  details: AssetDetail[],
+  kind: AssetDetailKind,
+  selectedValue: string,
+): string[] {
+  const values = details
+    .filter((detail) => detail.kind === kind)
+    .map((detail) => detail.name)
+    .sort((left, right) => left.localeCompare(right));
+  if (selectedValue && !values.some((value) => value.toLocaleLowerCase() === selectedValue.toLocaleLowerCase())) {
+    return [selectedValue, ...values];
+  }
+  return values;
+}
+
 export function InventoryPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -124,6 +139,12 @@ export function InventoryPage() {
   const page = Math.max(1, Number(parameters.get('page')) || 1);
   const search = parameters.get('search') ?? '';
   const category = parameters.get('category') ?? '';
+  const location = parameters.get('location') ?? '';
+  const block = parameters.get('block') ?? '';
+  const department = parameters.get('department') ?? '';
+  const vendorName = parameters.get('vendorName') ?? '';
+  const createdFrom = parameters.get('createdFrom') ?? '';
+  const createdTo = parameters.get('createdTo') ?? '';
   const status = materialStatus(parameters.get('status') ?? '');
   const mode = trackingMode(parameters.get('trackingMode') ?? '');
   const policy = returnPolicy(parameters.get('returnPolicy') ?? '');
@@ -134,14 +155,28 @@ export function InventoryPage() {
   const canManageInventory = canEditInventory || canDeleteInventory;
   const canExportInventory = hasPermission(user, 'INVENTORY_EXPORT');
 
+  const detailQuery = useQuery({
+    queryKey: ['asset-details'],
+    queryFn: ({ signal }) => getAssetDetails(undefined, signal),
+  });
+
   const query = useQuery({
-    queryKey: ['inventory', { page, search, category, status, mode, policy, stock }],
+    queryKey: [
+      'inventory',
+      { page, search, category, location, block, department, vendorName, createdFrom, createdTo, status, mode, policy, stock },
+    ],
     queryFn: ({ signal }) =>
       getInventory(
         {
           page,
           ...(search ? { search } : {}),
           ...(category ? { category } : {}),
+          ...(location ? { location } : {}),
+          ...(block ? { block } : {}),
+          ...(department ? { department } : {}),
+          ...(vendorName ? { vendorName } : {}),
+          ...(createdFrom ? { createdFrom } : {}),
+          ...(createdTo ? { createdTo } : {}),
           ...(status ? { status } : {}),
           ...(mode ? { trackingMode: mode } : {}),
           ...(policy ? { returnPolicy: policy } : {}),
@@ -163,9 +198,28 @@ export function InventoryPage() {
   }
 
   const materials = query.data?.data ?? [];
+  const assetDetails = detailQuery.data ?? [];
+  const categoryOptions = assetDetailOptions(assetDetails, 'ASSET_TYPE', category);
+  const locationOptions = assetDetailOptions(assetDetails, 'LOCATION', location);
+  const blockOptions = assetDetailOptions(assetDetails, 'BLOCK', block);
+  const departmentOptions = assetDetailOptions(assetDetails, 'DEPARTMENT', department);
+  const vendorOptions = assetDetailOptions(assetDetails, 'VENDOR', vendorName);
   const materialGroups = groupMaterials(materials);
   const summary = inventorySummary(materials);
-  const filtered = Boolean(search || category || status || mode || policy || stock);
+  const filtered = Boolean(
+    search ||
+      category ||
+      location ||
+      block ||
+      department ||
+      vendorName ||
+      createdFrom ||
+      createdTo ||
+      status ||
+      mode ||
+      policy ||
+      stock,
+  );
   const deleteMutation = useMutation({
     mutationFn: (material: Material) => deleteMaterial(material.materialCode),
     onSuccess: async () => {
@@ -193,6 +247,12 @@ export function InventoryPage() {
       const blob = await downloadInventoryCsv({
         ...(search ? { search } : {}),
         ...(category ? { category } : {}),
+        ...(location ? { location } : {}),
+        ...(block ? { block } : {}),
+        ...(department ? { department } : {}),
+        ...(vendorName ? { vendorName } : {}),
+        ...(createdFrom ? { createdFrom } : {}),
+        ...(createdTo ? { createdTo } : {}),
         ...(status ? { status } : {}),
         ...(mode ? { trackingMode: mode } : {}),
         ...(policy ? { returnPolicy: policy } : {}),
@@ -249,83 +309,190 @@ export function InventoryPage() {
             value={search}
           />
           <FilterPopover
-            activeCount={[category, status, mode, policy, stock].filter(Boolean).length}
+            activeCount={[
+              category,
+              location,
+              block,
+              department,
+              vendorName,
+              createdFrom,
+              createdTo,
+              status,
+              mode,
+              policy,
+              stock,
+            ].filter(Boolean).length}
             onClear={() =>
               updateParameters({
                 category: '',
+                location: '',
+                block: '',
+                department: '',
+                vendorName: '',
+                createdFrom: '',
+                createdTo: '',
                 status: '',
                 trackingMode: '',
                 returnPolicy: '',
                 stockState: '',
               })
             }
+            panelClassName="w-[min(94vw,720px)] p-5"
           >
-            <FilterField label="Asset type">
-              <SearchForm
-                debounceMs={300}
-                id="inventory-category-filter"
-                key={category}
-                label="Filter by asset type"
-                onSearch={(value) => updateParameters({ category: value })}
-                placeholder="Any asset type"
-                value={category}
-              />
-            </FilterField>
-            {canAddInventory ? (
-              <FilterField label="Status">
+            <div className="rounded-[8px] bg-[var(--color-surface-tint)] p-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <FilterField label="Asset type">
+                  <FilterSelect
+                    id="inventory-category-filter"
+                    label="Filter by asset type"
+                    onChange={(value) => updateParameters({ category: value })}
+                    value={category}
+                  >
+                    <option value="">Any asset type</option>
+                    {categoryOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </FilterField>
+                <FilterField label="Location">
+                  <FilterSelect
+                    id="inventory-location-filter"
+                    label="Filter by location"
+                    onChange={(value) => updateParameters({ location: value })}
+                    value={location}
+                  >
+                    <option value="">Any location</option>
+                    {locationOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </FilterField>
+                <FilterField label="Block">
+                  <FilterSelect
+                    id="inventory-block-filter"
+                    label="Filter by block"
+                    onChange={(value) => updateParameters({ block: value })}
+                    value={block}
+                  >
+                    <option value="">Any block</option>
+                    {blockOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </FilterField>
+                <FilterField label="Department">
+                  <FilterSelect
+                    id="inventory-department-filter"
+                    label="Filter by department"
+                    onChange={(value) => updateParameters({ department: value })}
+                    value={department}
+                  >
+                    <option value="">Any department</option>
+                    {departmentOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </FilterField>
+                <FilterField label="Vendor">
+                  <FilterSelect
+                    id="inventory-vendor-filter"
+                    label="Filter by vendor"
+                    onChange={(value) => updateParameters({ vendorName: value })}
+                    value={vendorName}
+                  >
+                    <option value="">Any vendor</option>
+                    {vendorOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </FilterSelect>
+                </FilterField>
+                <FilterField label="Added date">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <input
+                      aria-label="Created from date"
+                      className="field-input"
+                      onChange={(event) => updateParameters({ createdFrom: event.target.value })}
+                      type="date"
+                      value={createdFrom}
+                    />
+                    <input
+                      aria-label="Created to date"
+                      className="field-input"
+                      onChange={(event) => updateParameters({ createdTo: event.target.value })}
+                      type="date"
+                      value={createdTo}
+                    />
+                  </div>
+                </FilterField>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {canAddInventory ? (
+                <FilterField label="Status">
+                  <FilterSelect
+                    id="inventory-status-filter"
+                    label="Filter by status"
+                    onChange={(value) => updateParameters({ status: value })}
+                    value={status ?? ''}
+                  >
+                    <option value="">Any status</option>
+                    <option value="ACTIVE">{inventoryStatusLabel('ACTIVE')}</option>
+                    <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
+                    <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
+                    <option value="ARCHIVED">Archived</option>
+                  </FilterSelect>
+                </FilterField>
+              ) : null}
+              <FilterField label="Stats">
                 <FilterSelect
-                  id="inventory-status-filter"
-                  label="Filter by status"
-                  onChange={(value) => updateParameters({ status: value })}
-                  value={status ?? ''}
+                  id="inventory-stock-filter"
+                  label="Filter by stats"
+                  onChange={(value) => updateParameters({ stockState: value })}
+                  value={stock ?? ''}
                 >
-                  <option value="">Any status</option>
-                  <option value="ACTIVE">{inventoryStatusLabel('ACTIVE')}</option>
-                  <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
-                  <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
-                  <option value="ARCHIVED">Archived</option>
+                  <option value="">Any stats</option>
+                  <option value="AVAILABLE">Available stock</option>
+                  <option value="LOW_STOCK">Low stock</option>
+                  <option value="OUT_OF_STOCK">Out of stock</option>
+                  <option value="ISSUED">Issued stock</option>
+                  <option value="FULLY_ISSUED">Fully issued</option>
                 </FilterSelect>
               </FilterField>
-            ) : null}
-            <FilterField label="Stats">
-              <FilterSelect
-                id="inventory-stock-filter"
-                label="Filter by stats"
-                onChange={(value) => updateParameters({ stockState: value })}
-                value={stock ?? ''}
-              >
-                <option value="">Any stats</option>
-                <option value="AVAILABLE">Available stock</option>
-                <option value="LOW_STOCK">Low stock</option>
-                <option value="OUT_OF_STOCK">Out of stock</option>
-                <option value="ISSUED">Issued stock</option>
-                <option value="FULLY_ISSUED">Fully issued</option>
-              </FilterSelect>
-            </FilterField>
-            <FilterField label="Material type">
-              <FilterSelect
-                id="inventory-mode-filter"
-                label="Filter by material type"
-                onChange={(value) => updateParameters({ trackingMode: value })}
-                value={mode ?? ''}
-              >
-                <option value="">Any material type</option>
-                <option value="SERIALIZED">IT Assets</option>
-                <option value="QUANTITY">IT Consumables</option>
-              </FilterSelect>
-            </FilterField>
-            <FilterField label="Return policy">
-              <FilterSelect
-                id="inventory-policy-filter"
-                label="Filter by return policy"
-                onChange={(value) => updateParameters({ returnPolicy: value })}
-                value={policy ?? ''}
-              >
-                <option value="">Any return policy</option>
-                <option value="REUSABLE">Reusable</option>
-                <option value="CONSUMABLE">Consumable</option>
-              </FilterSelect>
-            </FilterField>
+              <FilterField label="Material type">
+                <FilterSelect
+                  id="inventory-mode-filter"
+                  label="Filter by material type"
+                  onChange={(value) => updateParameters({ trackingMode: value })}
+                  value={mode ?? ''}
+                >
+                  <option value="">Any material type</option>
+                  <option value="SERIALIZED">IT Assets</option>
+                  <option value="QUANTITY">IT Consumables</option>
+                </FilterSelect>
+              </FilterField>
+              <FilterField label="Return policy">
+                <FilterSelect
+                  id="inventory-policy-filter"
+                  label="Filter by return policy"
+                  onChange={(value) => updateParameters({ returnPolicy: value })}
+                  value={policy ?? ''}
+                >
+                  <option value="">Any return policy</option>
+                  <option value="REUSABLE">Reusable</option>
+                  <option value="CONSUMABLE">Consumable</option>
+                </FilterSelect>
+              </FilterField>
+            </div>
           </FilterPopover>
         </div>
         {query.data ? <PageCount count={query.data.meta.total} noun="IT asset" /> : null}

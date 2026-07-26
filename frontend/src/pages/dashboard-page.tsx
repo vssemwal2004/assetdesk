@@ -32,6 +32,7 @@ import {
 } from '../components/ui';
 import { formatIstDateTime } from '../lib/date-time';
 import { getAdminDashboard } from '../lib/dashboard-api';
+import { isApiError } from '../lib/api-client';
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -81,7 +82,11 @@ function AdminDashboard({ adminName }: { adminName: string }) {
         <LoadingPanel label="Loading Admin dashboard" />
       ) : query.isError ? (
         <ErrorState
-          message="Dashboard counts could not be loaded."
+          message={
+            isApiError(query.error)
+              ? query.error.message
+              : 'Dashboard counts could not be loaded.'
+          }
           onRetry={() => void query.refetch()}
         />
       ) : (

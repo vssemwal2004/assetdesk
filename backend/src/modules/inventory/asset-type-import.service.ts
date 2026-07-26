@@ -73,6 +73,7 @@ async function fileTable(file: Express.Multer.File): Promise<readonly (readonly 
 
 function parseAssetTypeRows(
   table: readonly (readonly unknown[])[],
+  kindFilter?: AssetDetailKind,
 ): Array<{ rowNumber: number; kind: AssetDetailKind; name: string }> {
   const headerIndex = table.findIndex(hasValues);
   if (headerIndex < 0) throw new AppError(400, 'ASSET_TYPE_IMPORT_EMPTY', 'The import file is empty.');
@@ -89,20 +90,42 @@ function parseAssetTypeRows(
   const departmentIndex = headings.findIndex((heading) =>
     ['department', 'departments', 'dept'].includes(normalizedHeader(heading)),
   );
-  if (assetTypeIndex < 0 && locationIndex < 0 && blockIndex < 0 && departmentIndex < 0) {
+  const vendorIndex = headings.findIndex((heading) =>
+    ['vendor', 'vendors', 'vendor name'].includes(normalizedHeader(heading)),
+  );
+  const columnByKind: Record<AssetDetailKind, number> = {
+    ASSET_TYPE: assetTypeIndex,
+    LOCATION: locationIndex,
+    BLOCK: blockIndex,
+    DEPARTMENT: departmentIndex,
+    VENDOR: vendorIndex,
+  };
+  if (kindFilter && columnByKind[kindFilter] < 0) {
     throw new AppError(
       400,
       'ASSET_TYPE_IMPORT_COLUMNS_MISSING',
-      'Add at least one column: IT Asset, Location, Block, or Department.',
+      `Add the required column: ${kindLabel(kindFilter)}.`,
+    );
+  }
+  if (!kindFilter && assetTypeIndex < 0 && locationIndex < 0 && blockIndex < 0 && departmentIndex < 0 && vendorIndex < 0) {
+    throw new AppError(
+      400,
+      'ASSET_TYPE_IMPORT_COLUMNS_MISSING',
+      'Add at least one column: IT Asset, Location, Block, Department, or Vendor.',
     );
   }
   const rows = table.slice(headerIndex + 1).flatMap((row, index) => {
     const rowNumber = headerIndex + index + 2;
     const entries: Array<{ rowNumber: number; kind: AssetDetailKind; name: string }> = [];
-    if (assetTypeIndex >= 0) entries.push({ rowNumber, kind: 'ASSET_TYPE', name: text(row[assetTypeIndex]) });
-    if (locationIndex >= 0) entries.push({ rowNumber, kind: 'LOCATION', name: text(row[locationIndex]) });
-    if (blockIndex >= 0) entries.push({ rowNumber, kind: 'BLOCK', name: text(row[blockIndex]) });
-    if (departmentIndex >= 0) entries.push({ rowNumber, kind: 'DEPARTMENT', name: text(row[departmentIndex]) });
+    if (kindFilter) {
+      entries.push({ rowNumber, kind: kindFilter, name: text(row[columnByKind[kindFilter]]) });
+    } else {
+      if (assetTypeIndex >= 0) entries.push({ rowNumber, kind: 'ASSET_TYPE', name: text(row[assetTypeIndex]) });
+      if (locationIndex >= 0) entries.push({ rowNumber, kind: 'LOCATION', name: text(row[locationIndex]) });
+      if (blockIndex >= 0) entries.push({ rowNumber, kind: 'BLOCK', name: text(row[blockIndex]) });
+      if (departmentIndex >= 0) entries.push({ rowNumber, kind: 'DEPARTMENT', name: text(row[departmentIndex]) });
+      if (vendorIndex >= 0) entries.push({ rowNumber, kind: 'VENDOR', name: text(row[vendorIndex]) });
+    }
     return entries.filter((entry) => entry.name.length > 0);
   });
   if (!rows.length)
@@ -110,6 +133,14 @@ function parseAssetTypeRows(
   if (rows.length > MAX_ROWS)
     throw new AppError(413, 'ASSET_TYPE_IMPORT_TOO_MANY_ROWS', `Upload no more than ${MAX_ROWS} rows.`);
   return rows;
+}
+
+function kindLabel(kind: AssetDetailKind): string {
+  if (kind === 'ASSET_TYPE') return 'IT Asset';
+  if (kind === 'LOCATION') return 'Location';
+  if (kind === 'BLOCK') return 'Block';
+  if (kind === 'DEPARTMENT') return 'Department';
+  return 'Vendor';
 }
 
 function normalizeName(name: string): string {
@@ -123,8 +154,9 @@ function normalizeDetailName(name: string): string {
 export async function previewAssetTypeImport(
   file: Express.Multer.File,
   createdByUserId: string,
+  kindFilter?: AssetDetailKind,
 ): Promise<AssetTypeImportPreviewResult> {
-  const rows = parseAssetTypeRows(await fileTable(file));
+  const rows = parseAssetTypeRows(await fileTable(file), kindFilter);
   const seen = new Set<string>();
   const publicRows: AssetTypeImportPreviewRow[] = [];
   const inputs: Array<{ kind: AssetDetailKind; name: string }> = [];

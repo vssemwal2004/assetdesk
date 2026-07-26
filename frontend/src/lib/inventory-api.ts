@@ -41,6 +41,12 @@ export interface InventoryFilters {
   returnPolicy?: ReturnPolicy;
   stockState?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
   category?: string;
+  location?: string;
+  block?: string;
+  department?: string;
+  vendorName?: string;
+  createdFrom?: string;
+  createdTo?: string;
 }
 
 export async function getInventory(
@@ -58,6 +64,12 @@ export async function getInventory(
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
   if (filters.category) parameters.set('category', filters.category);
+  if (filters.location) parameters.set('location', filters.location);
+  if (filters.block) parameters.set('block', filters.block);
+  if (filters.department) parameters.set('department', filters.department);
+  if (filters.vendorName) parameters.set('vendorName', filters.vendorName);
+  if (filters.createdFrom) parameters.set('createdFrom', filters.createdFrom);
+  if (filters.createdTo) parameters.set('createdTo', filters.createdTo);
 
   const payload = await apiRequest<unknown>(`/api/v1/inventory?${parameters.toString()}`, {
     ...(signal ? { signal } : {}),
@@ -90,6 +102,12 @@ export async function downloadInventoryCsv(filters: Omit<InventoryFilters, 'page
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
   if (filters.category) parameters.set('category', filters.category);
+  if (filters.location) parameters.set('location', filters.location);
+  if (filters.block) parameters.set('block', filters.block);
+  if (filters.department) parameters.set('department', filters.department);
+  if (filters.vendorName) parameters.set('vendorName', filters.vendorName);
+  if (filters.createdFrom) parameters.set('createdFrom', filters.createdFrom);
+  if (filters.createdTo) parameters.set('createdTo', filters.createdTo);
   const response = await fetch(`/api/v1/inventory/export?${parameters.toString()}`, {
     credentials: 'include',
   });
@@ -150,9 +168,11 @@ export async function deleteAssetDetail(assetDetailId: string): Promise<void> {
 
 export async function previewAssetTypeImport(
   file: File,
+  kind?: AssetDetailKind,
 ): Promise<AssetTypeImportPreviewResponse['data']> {
   const form = new FormData();
   form.set('file', file);
+  if (kind) form.set('kind', kind);
   const payload = await apiRequest<unknown>('/api/v1/inventory/asset-types/imports/preview', {
     method: 'POST',
     body: form,

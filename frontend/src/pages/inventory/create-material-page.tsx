@@ -116,6 +116,7 @@ export function CreateMaterialPage() {
   const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
   const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
   const departments = detailsQuery.data?.filter((detail) => detail.kind === 'DEPARTMENT') ?? [];
+  const vendors = detailsQuery.data?.filter((detail) => detail.kind === 'VENDOR') ?? [];
 
   const mutation = useMutation({
     mutationFn: (input: CreateMaterialRequest) => createMaterial(input),
@@ -301,14 +302,19 @@ export function CreateMaterialPage() {
                 </option>
               ))}
             </SelectField>
-            <TextField
+            <SelectField
+              id="material-vendor"
               label="Vendor name (optional)"
-              maxLength={120}
-              onChange={(event) =>
-                setForm((value) => ({ ...value, vendorName: event.target.value }))
-              }
+              onChange={(vendorName) => setForm((value) => ({ ...value, vendorName }))}
               value={form.vendorName}
-            />
+            >
+              <option value="">Choose vendor</option>
+              {vendors.map((vendor) => (
+                <option key={vendor.id} value={vendor.name}>
+                  {vendor.name}
+                </option>
+              ))}
+            </SelectField>
           </div>
 
           <div className="space-y-1.5">

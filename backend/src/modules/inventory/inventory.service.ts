@@ -51,6 +51,12 @@ export interface MaterialListInput {
   returnPolicy?: ReturnPolicy;
   stockState?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
   category?: string;
+  location?: string;
+  block?: string;
+  department?: string;
+  vendorName?: string;
+  createdFrom?: Date;
+  createdTo?: Date;
 }
 
 export interface MaterialListResult {
@@ -135,6 +141,14 @@ function normalizeAssetType(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
 }
 
+function detailKindLabel(kind: AssetDetailKind): string {
+  if (kind === 'ASSET_TYPE') return 'IT asset type';
+  if (kind === 'LOCATION') return 'Location';
+  if (kind === 'BLOCK') return 'Block';
+  if (kind === 'VENDOR') return 'Vendor';
+  return 'Department';
+}
+
 export function normalizeLookupValue(value: string): string {
   return value.trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
 }
@@ -217,10 +231,12 @@ export async function deleteAssetDetail(assetDetailId: string): Promise<AssetDet
       ? await MaterialModel.exists({ category: exactCaseInsensitive(detail.name) })
       : await MaterialModel.exists({
           [detail.kind === 'LOCATION'
-            ? 'location'
-            : detail.kind === 'BLOCK'
-              ? 'block'
-              : 'department']: exactCaseInsensitive(detail.name),
+              ? 'location'
+              : detail.kind === 'BLOCK'
+                ? 'block'
+                : detail.kind === 'DEPARTMENT'
+                  ? 'department'
+                  : 'vendorName']: exactCaseInsensitive(detail.name),
         });
   if (inUse) {
     throw new AppError(
@@ -252,11 +268,11 @@ async function savedDetailName(kind: AssetDetailKind, value: string): Promise<st
 async function requireSavedDetail(kind: AssetDetailKind, value: string): Promise<string> {
   const saved = await savedDetailName(kind, value);
   if (saved) return saved;
-  const label = kind === 'ASSET_TYPE' ? 'IT asset' : kind.toLowerCase();
+  const label = detailKindLabel(kind);
   throw new AppError(
     400,
     'INVENTORY_DETAIL_NOT_ALLOWED',
-    `${label} does not match the saved dropdown data.`,
+    `${label} "${value}" is not saved in Add asset details. Check spelling or add it first.`,
   );
 }
 
@@ -372,6 +388,16 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
     filter.$expr = { $eq: ['$issuedQuantity', '$totalQuantity'] };
   }
   if (input.category) filter.category = exactCaseInsensitive(input.category);
+  if (input.location) filter.location = exactCaseInsensitive(input.location);
+  if (input.block) filter.block = exactCaseInsensitive(input.block);
+  if (input.department) filter.department = exactCaseInsensitive(input.department);
+  if (input.vendorName) filter.vendorName = exactCaseInsensitive(input.vendorName);
+  if (input.createdFrom || input.createdTo) {
+    filter.createdAt = {
+      ...(input.createdFrom ? { $gte: input.createdFrom } : {}),
+      ...(input.createdTo ? { $lte: input.createdTo } : {}),
+    };
+  }
   if (input.search) {
     const normalized = input.search.trim().toUpperCase();
     if (MaterialCodeSchema.safeParse(normalized).success) filter.materialCode = normalized;
@@ -472,6 +498,7 @@ export async function createMaterial(
   const location = await requireSavedDetail('LOCATION', input.location);
   const block = await requireSavedDetail('BLOCK', input.block);
   const department = await requireSavedDetail('DEPARTMENT', input.department);
+  const vendorName = input.vendorName ? await requireSavedDetail('VENDOR', input.vendorName) : undefined;
   const locationBlock = `${location} / ${block}`;
   const existing = await MaterialModel.exists({
     trackingMode: input.trackingMode,
@@ -498,7 +525,7 @@ export async function createMaterial(
         location,
         block,
         department,
-        ...(input.vendorName ? { vendorName: input.vendorName } : {}),
+        ...(vendorName ? { vendorName } : {}),
         locationBlock,
         identityKey: materialIdentity(input.trackingMode, input.name, category),
         ...(input.description ? { description: input.description } : {}),
@@ -683,7 +710,10 @@ export async function updateMaterial(
     if (input.block !== undefined) material.block = await requireSavedDetail('BLOCK', input.block);
     if (input.department !== undefined) material.department = await requireSavedDetail('DEPARTMENT', input.department);
     if (Object.hasOwn(input, 'vendorName')) {
-      material.set('vendorName', input.vendorName || undefined);
+      material.set(
+        'vendorName',
+        input.vendorName ? await requireSavedDetail('VENDOR', input.vendorName) : undefined,
+      );
     }
     if (input.locationBlock !== undefined && input.location === undefined && input.block === undefined) {
       material.locationBlock = input.locationBlock;

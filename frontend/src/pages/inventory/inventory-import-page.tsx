@@ -139,6 +139,9 @@ export function InventoryImportPage() {
                 : ' Required columns: Asset Type, Type/Model Name, Quantity, Unit Label, Location, Block, Department. Optional columns: Vendor Name, Return Policy, Description, Inventory Status.'}
             </p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Asset Type, Location, Block, Department, and Vendor Name are matched from saved asset details; spacing and letter case are ignored.
+            </p>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
               Inventory Status accepts Active / in use, Faulty (scrap), and Outdated (not in use).
             </p>
             <input

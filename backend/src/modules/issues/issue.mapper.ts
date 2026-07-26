@@ -38,7 +38,7 @@ function toIssueLine(line: IssueLineRecord, outstandingOnly = false): IssueLine 
     },
     issuedQuantity: line.issuedQuantity,
     outstandingQuantity: line.outstandingQuantity,
-    assets: line.assets
+    assets: (line.assets ?? [])
       .filter((asset) => !outstandingOnly || asset.outstanding)
       .map((asset) => ({
         assetTag: asset.assetTag,
@@ -57,7 +57,7 @@ export function toReturnEvent(event: ReturnEventRecord): ReturnEvent {
     issueId: event.issueId,
     returnedAt: event.returnedAt.toISOString(),
     performedBy: toIssueActor(event.performedBy),
-    items: event.items.map((item) =>
+    items: (event.items ?? []).map((item) =>
       item.trackingMode === 'QUANTITY'
         ? {
             trackingMode: 'QUANTITY' as const,
@@ -111,8 +111,8 @@ export function toIssue(issue: IssueDocument): Issue {
     status: issue.status,
     purpose: issue.purpose ?? null,
     notes: issue.notes ?? null,
-    lines: issue.lines.map((line) => toIssueLine(line)),
-    returnEvents: issue.returnEvents.map((event) => toReturnEvent(event)),
+    lines: (issue.lines ?? []).map((line) => toIssueLine(line)),
+    returnEvents: (issue.returnEvents ?? []).map((event) => toReturnEvent(event)),
     totalIssuedQuantity: issue.totalIssuedQuantity,
     totalOutstandingQuantity: issue.totalOutstandingQuantity,
     hasDamagedOutcome: issue.hasDamagedOutcome,
@@ -125,7 +125,8 @@ export function toIssue(issue: IssueDocument): Issue {
 }
 
 export function toIssueSummary(issue: IssueDocument): IssueSummary {
-  const latestReturnEvent = issue.returnEvents
+  const lines = issue.lines ?? [];
+  const latestReturnEvent = (issue.returnEvents ?? [])
     .slice()
     .sort((left, right) => right.returnedAt.getTime() - left.returnedAt.getTime())[0];
 
@@ -149,7 +150,7 @@ export function toIssueSummary(issue: IssueDocument): IssueSummary {
     lastReminderAt: issue.lastReminderAt?.toISOString() ?? null,
     createdAt: issue.createdAt.toISOString(),
     updatedAt: issue.updatedAt.toISOString(),
-    materialNames: [...new Set(issue.lines.map((line) => line.material.name))],
+    materialNames: [...new Set(lines.map((line) => line.material.name).filter(Boolean))],
     latestReturnEventId: latestReturnEvent?.returnEventId ?? null,
   };
 }
@@ -164,7 +165,7 @@ export function toReturnableIssue(issue: IssueDocument): ReturnableIssue {
     duePreset: issue.duePreset ?? null,
     assignmentType: issue.assignmentType ?? 'SHORT_TERM',
     status: issue.status,
-    lines: issue.lines
+    lines: (issue.lines ?? [])
       .filter((line) => line.outstandingQuantity > 0)
       .map((line) => toIssueLine(line, true)),
     totalOutstandingQuantity: issue.totalOutstandingQuantity,
