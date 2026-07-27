@@ -47,6 +47,9 @@ const HEADER_ALIASES: Record<string, Field> = {
   'asset type': 'category',
   assettype: 'category',
   'it asset': 'category',
+  'it consumable': 'category',
+  'consumable type': 'category',
+  consumable: 'category',
   group: 'category',
   'material group': 'category',
   'type model name': 'typeModelName',
@@ -256,28 +259,28 @@ function normalizedLookup(value: string): string {
 }
 
 async function savedLookup(
-  kind: 'ASSET_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT' | 'VENDOR',
+  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
   value: string,
 ): Promise<string | null> {
   const detail = await AssetDetailModel.findOne({ kind, normalizedName: normalizedLookup(value) });
   if (detail) return detail.name;
-  if (kind === 'ASSET_TYPE') {
+  if (kind === 'ASSET_TYPE' || kind === 'CONSUMABLE_TYPE') {
     const assetType = await AssetTypeModel.findOne({ normalizedName: normalizedAssetType(value) });
     return assetType?.name ?? null;
   }
   return null;
 }
 
-function detailKindLabel(kind: 'ASSET_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT' | 'VENDOR'): string {
+function detailKindLabel(kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT'): string {
   if (kind === 'ASSET_TYPE') return 'IT asset type';
+  if (kind === 'CONSUMABLE_TYPE') return 'IT consumable type';
   if (kind === 'LOCATION') return 'Location';
   if (kind === 'BLOCK') return 'Block';
-  if (kind === 'VENDOR') return 'Vendor';
   return 'Department';
 }
 
 function missingDropdownValue(
-  kind: 'ASSET_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT' | 'VENDOR',
+  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
   value: string,
 ): Error {
   return new Error(
@@ -291,6 +294,10 @@ function materialName(assetType: string, typeModelName: string): string {
   return model.toLocaleLowerCase('en-US').startsWith(category.toLocaleLowerCase('en-US'))
     ? model
     : `${category} ${model}`;
+}
+
+function categoryKind(mode: TrackingMode): 'ASSET_TYPE' | 'CONSUMABLE_TYPE' {
+  return mode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE';
 }
 
 function materialStatus(value: string): 'ACTIVE' | 'SCRAP' | 'NOT_IN_USE' {
@@ -371,16 +378,15 @@ export async function previewInventoryImport(
       const itemName = values.typeModelName || values.name;
       const displayName = materialName(values.category, itemName);
       if (!itemName) throw new Error('Type/model name is required.');
-      const category = await savedLookup('ASSET_TYPE', values.category);
+      const categoryDetailKind = categoryKind(mode);
+      const category = await savedLookup(categoryDetailKind, values.category);
       const location = await savedLookup('LOCATION', values.location);
       const block = await savedLookup('BLOCK', values.block);
       const department = await savedLookup('DEPARTMENT', values.department);
-      const vendorName = values.vendorName ? await savedLookup('VENDOR', values.vendorName) : null;
-      if (!category) throw missingDropdownValue('ASSET_TYPE', values.category);
+      if (!category) throw missingDropdownValue(categoryDetailKind, values.category);
       if (!location) throw missingDropdownValue('LOCATION', values.location);
       if (!block) throw missingDropdownValue('BLOCK', values.block);
       if (!department) throw missingDropdownValue('DEPARTMENT', values.department);
-      if (values.vendorName && !vendorName) throw missingDropdownValue('VENDOR', values.vendorName);
       const locationBlock = `${location} / ${block}`;
       const materialIdentity = identity(mode, displayName, category);
       if (fileIdentities.has(materialIdentity))
@@ -415,7 +421,7 @@ export async function previewInventoryImport(
           block,
           department,
           locationBlock,
-          ...(vendorName ? { vendorName } : {}),
+          ...(values.vendorName ? { vendorName: values.vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
           status: materialStatus(values.status),
           trackingMode: 'SERIALIZED',
@@ -432,7 +438,7 @@ export async function previewInventoryImport(
           block,
           department,
           locationBlock,
-          ...(vendorName ? { vendorName } : {}),
+          ...(values.vendorName ? { vendorName: values.vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
           status: materialStatus(values.status),
           trackingMode: 'QUANTITY',

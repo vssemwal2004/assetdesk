@@ -24,16 +24,20 @@ type Mode = 'individual' | 'bulk';
 
 const detailLabels: Record<AssetDetailKind, string> = {
   ASSET_TYPE: 'IT Asset',
+  CONSUMABLE_TYPE: 'IT Consumable',
   LOCATION: 'Location',
   BLOCK: 'Block',
   DEPARTMENT: 'Department',
-  VENDOR: 'Vendor',
 };
 
 const detailTemplates: Record<AssetDetailKind, { fileName: string; csv: string }> = {
   ASSET_TYPE: {
     fileName: 'assetdesk-it-asset-types-template.csv',
     csv: 'IT Asset\r\nComputer\r\nPrinter\r\nUPS\r\n',
+  },
+  CONSUMABLE_TYPE: {
+    fileName: 'assetdesk-it-consumables-template.csv',
+    csv: 'IT Consumable\r\nCable\r\nLead\r\nCartridge\r\n',
   },
   LOCATION: {
     fileName: 'assetdesk-locations-template.csv',
@@ -47,14 +51,14 @@ const detailTemplates: Record<AssetDetailKind, { fileName: string; csv: string }
     fileName: 'assetdesk-departments-template.csv',
     csv: 'Department\r\nComputer Centre\r\nIT Department\r\nElectrical Department\r\n',
   },
-  VENDOR: {
-    fileName: 'assetdesk-vendors-template.csv',
-    csv: 'Vendor\r\nDell\r\nHP\r\nLocal Vendor\r\n',
-  },
 };
 
 function detailLabel(value: string | undefined): string {
-  return value === 'LOCATION' || value === 'BLOCK' || value === 'ASSET_TYPE' || value === 'DEPARTMENT' || value === 'VENDOR'
+  return value === 'LOCATION' ||
+    value === 'BLOCK' ||
+    value === 'ASSET_TYPE' ||
+    value === 'CONSUMABLE_TYPE' ||
+    value === 'DEPARTMENT'
     ? detailLabels[value]
     : 'IT Asset';
 }
@@ -84,7 +88,7 @@ export function AssetTypePage() {
     mutationFn: ({ detailKind, detailName }: { detailKind: AssetDetailKind; detailName: string }) =>
       createAssetDetail(detailKind, detailName),
     onSuccess: async (detail) => {
-      if (detail.kind === 'ASSET_TYPE') await createAssetType(detail.name);
+      if (detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE') await createAssetType(detail.name);
       setName('');
       setMessage(`${detail.name} saved as ${detailLabels[detail.kind]}.`);
       await Promise.all([
@@ -200,7 +204,7 @@ export function AssetTypePage() {
             Back to Inventory
           </Link>
         }
-        description="Save allowed IT Asset, Location, Block, Department, and Vendor dropdown values for inventory."
+        description="Save allowed IT Asset, IT Consumable, Location, Block, and Department dropdown values for inventory."
         title="Add asset details"
       />
 
@@ -249,17 +253,17 @@ export function AssetTypePage() {
                   value={kind}
                 >
                   <option value="ASSET_TYPE">IT Asset</option>
+                  <option value="CONSUMABLE_TYPE">IT Consumable</option>
                   <option value="LOCATION">Location</option>
                   <option value="BLOCK">Block</option>
                   <option value="DEPARTMENT">Department</option>
-                  <option value="VENDOR">Vendor</option>
                 </select>
               </label>
               <TextField
                 label="Name"
                 maxLength={120}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Computer, Computer Centre, A Block, IT Department, Dell"
+                placeholder="Desktop, Cable, Computer Centre, A Block, IT Department"
                 required
                 value={name}
               />
@@ -286,10 +290,10 @@ export function AssetTypePage() {
                   value={bulkKind}
                 >
                   <option value="ASSET_TYPE">IT Asset</option>
+                  <option value="CONSUMABLE_TYPE">IT Consumable</option>
                   <option value="LOCATION">Location</option>
                   <option value="BLOCK">Block</option>
                   <option value="DEPARTMENT">Department</option>
-                  <option value="VENDOR">Vendor</option>
                 </select>
               </label>
               <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">

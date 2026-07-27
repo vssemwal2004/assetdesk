@@ -81,6 +81,11 @@ function parseAssetTypeRows(
   const assetTypeIndex = headings.findIndex((heading) =>
     ['asset type', 'assettype', 'it asset', 'itasset'].includes(normalizedHeader(heading)),
   );
+  const consumableTypeIndex = headings.findIndex((heading) =>
+    ['it consumable', 'it consumables', 'consumable', 'consumable type', 'consumabletype'].includes(
+      normalizedHeader(heading),
+    ),
+  );
   const locationIndex = headings.findIndex((heading) =>
     ['location', 'locations'].includes(normalizedHeader(heading)),
   );
@@ -90,15 +95,12 @@ function parseAssetTypeRows(
   const departmentIndex = headings.findIndex((heading) =>
     ['department', 'departments', 'dept'].includes(normalizedHeader(heading)),
   );
-  const vendorIndex = headings.findIndex((heading) =>
-    ['vendor', 'vendors', 'vendor name'].includes(normalizedHeader(heading)),
-  );
   const columnByKind: Record<AssetDetailKind, number> = {
     ASSET_TYPE: assetTypeIndex,
+    CONSUMABLE_TYPE: consumableTypeIndex,
     LOCATION: locationIndex,
     BLOCK: blockIndex,
     DEPARTMENT: departmentIndex,
-    VENDOR: vendorIndex,
   };
   if (kindFilter && columnByKind[kindFilter] < 0) {
     throw new AppError(
@@ -107,11 +109,18 @@ function parseAssetTypeRows(
       `Add the required column: ${kindLabel(kindFilter)}.`,
     );
   }
-  if (!kindFilter && assetTypeIndex < 0 && locationIndex < 0 && blockIndex < 0 && departmentIndex < 0 && vendorIndex < 0) {
+  if (
+    !kindFilter &&
+    assetTypeIndex < 0 &&
+    consumableTypeIndex < 0 &&
+    locationIndex < 0 &&
+    blockIndex < 0 &&
+    departmentIndex < 0
+  ) {
     throw new AppError(
       400,
       'ASSET_TYPE_IMPORT_COLUMNS_MISSING',
-      'Add at least one column: IT Asset, Location, Block, Department, or Vendor.',
+      'Add at least one column: IT Asset, IT Consumable, Location, Block, or Department.',
     );
   }
   const rows = table.slice(headerIndex + 1).flatMap((row, index) => {
@@ -121,10 +130,11 @@ function parseAssetTypeRows(
       entries.push({ rowNumber, kind: kindFilter, name: text(row[columnByKind[kindFilter]]) });
     } else {
       if (assetTypeIndex >= 0) entries.push({ rowNumber, kind: 'ASSET_TYPE', name: text(row[assetTypeIndex]) });
+      if (consumableTypeIndex >= 0)
+        entries.push({ rowNumber, kind: 'CONSUMABLE_TYPE', name: text(row[consumableTypeIndex]) });
       if (locationIndex >= 0) entries.push({ rowNumber, kind: 'LOCATION', name: text(row[locationIndex]) });
       if (blockIndex >= 0) entries.push({ rowNumber, kind: 'BLOCK', name: text(row[blockIndex]) });
       if (departmentIndex >= 0) entries.push({ rowNumber, kind: 'DEPARTMENT', name: text(row[departmentIndex]) });
-      if (vendorIndex >= 0) entries.push({ rowNumber, kind: 'VENDOR', name: text(row[vendorIndex]) });
     }
     return entries.filter((entry) => entry.name.length > 0);
   });
@@ -137,10 +147,10 @@ function parseAssetTypeRows(
 
 function kindLabel(kind: AssetDetailKind): string {
   if (kind === 'ASSET_TYPE') return 'IT Asset';
+  if (kind === 'CONSUMABLE_TYPE') return 'IT Consumable';
   if (kind === 'LOCATION') return 'Location';
   if (kind === 'BLOCK') return 'Block';
-  if (kind === 'DEPARTMENT') return 'Department';
-  return 'Vendor';
+  return 'Department';
 }
 
 function normalizeName(name: string): string {
@@ -183,7 +193,7 @@ export async function previewAssetTypeImport(
         normalizedName: normalizeDetailName(row.name),
       });
       const legacyAssetType =
-        row.kind === 'ASSET_TYPE'
+        row.kind === 'ASSET_TYPE' || row.kind === 'CONSUMABLE_TYPE'
           ? await AssetTypeModel.exists({ normalizedName: normalizeName(row.name) })
           : null;
       if (existing || legacyAssetType) {
@@ -268,7 +278,7 @@ export async function commitAssetTypeImport(
         continue;
       }
       created.push(await createAssetDetail(kind, name, createdByUserId));
-      if (kind === 'ASSET_TYPE') await createAssetType(name, createdByUserId);
+      if (kind === 'ASSET_TYPE' || kind === 'CONSUMABLE_TYPE') await createAssetType(name, createdByUserId);
     } catch (error) {
       const name = input.name;
       const matchingRow = record.rows.find((row) => normalizeDetailName(row.name) === normalizeDetailName(name));

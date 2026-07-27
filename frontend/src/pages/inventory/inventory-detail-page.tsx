@@ -696,7 +696,6 @@ function EditMaterialForm({
   const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
   const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
   const departments = detailsQuery.data?.filter((detail) => detail.kind === 'DEPARTMENT') ?? [];
-  const vendors = detailsQuery.data?.filter((detail) => detail.kind === 'VENDOR') ?? [];
   const mutation = useMutation({
     mutationFn: (input: UpdateMaterialRequest) => updateMaterial(material.materialCode, input),
     onSuccess: onSaved,
@@ -746,6 +745,7 @@ function EditMaterialForm({
         <MaterialCategoryField
           id="edit-material-category"
           onChange={(category) => setForm((value) => ({ ...value, category }))}
+          trackingMode={material.trackingMode}
           value={form.category}
         />
         <SelectField
@@ -787,19 +787,12 @@ function EditMaterialForm({
             </option>
           ))}
         </SelectField>
-        <SelectField
-          id="edit-material-vendor"
+        <TextField
           label="Vendor name (optional)"
-          onChange={(vendorName) => setForm((value) => ({ ...value, vendorName }))}
+          maxLength={120}
+          onChange={(event) => setForm((value) => ({ ...value, vendorName: event.target.value }))}
           value={form.vendorName}
-        >
-          <option value="">Choose vendor</option>
-          {vendors.map((vendor) => (
-            <option key={vendor.id} value={vendor.name}>
-              {vendor.name}
-            </option>
-          ))}
-        </SelectField>
+        />
       </div>
       <div className="space-y-1.5">
         <label className="field-label" htmlFor="edit-material-description">

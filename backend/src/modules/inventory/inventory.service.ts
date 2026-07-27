@@ -143,9 +143,9 @@ function normalizeAssetType(value: string): string {
 
 function detailKindLabel(kind: AssetDetailKind): string {
   if (kind === 'ASSET_TYPE') return 'IT asset type';
+  if (kind === 'CONSUMABLE_TYPE') return 'IT consumable type';
   if (kind === 'LOCATION') return 'Location';
   if (kind === 'BLOCK') return 'Block';
-  if (kind === 'VENDOR') return 'Vendor';
   return 'Department';
 }
 
@@ -227,16 +227,14 @@ export async function deleteAssetDetail(assetDetailId: string): Promise<AssetDet
   if (!detail) throw new AppError(404, 'ASSET_DETAIL_NOT_FOUND', 'This asset detail was not found.');
   const normalized = normalizeLookupValue(detail.name);
   const inUse =
-    detail.kind === 'ASSET_TYPE'
+    detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE'
       ? await MaterialModel.exists({ category: exactCaseInsensitive(detail.name) })
       : await MaterialModel.exists({
           [detail.kind === 'LOCATION'
               ? 'location'
               : detail.kind === 'BLOCK'
                 ? 'block'
-                : detail.kind === 'DEPARTMENT'
-                  ? 'department'
-                  : 'vendorName']: exactCaseInsensitive(detail.name),
+                : 'department']: exactCaseInsensitive(detail.name),
         });
   if (inUse) {
     throw new AppError(
@@ -247,7 +245,7 @@ export async function deleteAssetDetail(assetDetailId: string): Promise<AssetDet
   }
   const deleted = toAssetDetail(detail);
   await AssetDetailModel.deleteOne({ _id: detail._id });
-  if (detail.kind === 'ASSET_TYPE') {
+  if (detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE') {
     const assetType = await AssetTypeModel.findOne({ normalizedName: normalized });
     if (assetType) await AssetTypeModel.deleteOne({ _id: assetType._id });
   }
@@ -258,7 +256,7 @@ async function savedDetailName(kind: AssetDetailKind, value: string): Promise<st
   const normalizedName = normalizeLookupValue(value);
   const detail = await AssetDetailModel.findOne({ kind, normalizedName });
   if (detail) return detail.name;
-  if (kind === 'ASSET_TYPE') {
+  if (kind === 'ASSET_TYPE' || kind === 'CONSUMABLE_TYPE') {
     const assetType = await AssetTypeModel.findOne({ normalizedName: normalizeAssetType(value) });
     return assetType?.name ?? null;
   }
@@ -422,6 +420,10 @@ export function buildAssetUnitListFilter(input: {
   return filter;
 }
 
+function categoryDetailKind(trackingMode: TrackingMode): AssetDetailKind {
+  return trackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE';
+}
+
 export function buildAssetUnitMaterialFilter(input: {
   materialCode: string;
   role: UserRole;
@@ -494,11 +496,10 @@ export async function createMaterial(
   createdByUserId: string,
 ): Promise<Material> {
   const createdBy = objectId(createdByUserId);
-  const category = await requireSavedDetail('ASSET_TYPE', input.category);
+  const category = await requireSavedDetail(categoryDetailKind(input.trackingMode), input.category);
   const location = await requireSavedDetail('LOCATION', input.location);
   const block = await requireSavedDetail('BLOCK', input.block);
   const department = await requireSavedDetail('DEPARTMENT', input.department);
-  const vendorName = input.vendorName ? await requireSavedDetail('VENDOR', input.vendorName) : undefined;
   const locationBlock = `${location} / ${block}`;
   const existing = await MaterialModel.exists({
     trackingMode: input.trackingMode,
@@ -525,7 +526,7 @@ export async function createMaterial(
         location,
         block,
         department,
-        ...(vendorName ? { vendorName } : {}),
+        ...(input.vendorName ? { vendorName: input.vendorName } : {}),
         locationBlock,
         identityKey: materialIdentity(input.trackingMode, input.name, category),
         ...(input.description ? { description: input.description } : {}),
@@ -704,16 +705,15 @@ export async function updateMaterial(
       material.unitLabel = input.unitLabel;
     }
     if (input.name !== undefined) material.name = input.name;
-    if (input.category !== undefined) material.category = await requireSavedDetail('ASSET_TYPE', input.category);
+    if (input.category !== undefined) {
+      material.category = await requireSavedDetail(categoryDetailKind(material.trackingMode), input.category);
+    }
     if (input.typeModelName !== undefined) material.typeModelName = input.typeModelName;
     if (input.location !== undefined) material.location = await requireSavedDetail('LOCATION', input.location);
     if (input.block !== undefined) material.block = await requireSavedDetail('BLOCK', input.block);
     if (input.department !== undefined) material.department = await requireSavedDetail('DEPARTMENT', input.department);
     if (Object.hasOwn(input, 'vendorName')) {
-      material.set(
-        'vendorName',
-        input.vendorName ? await requireSavedDetail('VENDOR', input.vendorName) : undefined,
-      );
+      material.set('vendorName', input.vendorName || undefined);
     }
     if (input.locationBlock !== undefined && input.location === undefined && input.block === undefined) {
       material.locationBlock = input.locationBlock;

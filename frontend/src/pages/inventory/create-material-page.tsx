@@ -116,7 +116,6 @@ export function CreateMaterialPage() {
   const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
   const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
   const departments = detailsQuery.data?.filter((detail) => detail.kind === 'DEPARTMENT') ?? [];
-  const vendors = detailsQuery.data?.filter((detail) => detail.kind === 'VENDOR') ?? [];
 
   const mutation = useMutation({
     mutationFn: (input: CreateMaterialRequest) => createMaterial(input),
@@ -181,6 +180,7 @@ export function CreateMaterialPage() {
   function setTrackingMode(value: TrackingMode) {
     setForm((current) => ({
       ...current,
+      category: '',
       trackingMode: value,
       returnPolicy: value === 'SERIALIZED' ? 'REUSABLE' : current.returnPolicy,
     }));
@@ -249,6 +249,7 @@ export function CreateMaterialPage() {
             <MaterialCategoryField
               id="material-category"
               onChange={(category) => setForm((value) => ({ ...value, category }))}
+              trackingMode={form.trackingMode}
               value={form.category}
             />
             <TextField
@@ -302,19 +303,12 @@ export function CreateMaterialPage() {
                 </option>
               ))}
             </SelectField>
-            <SelectField
-              id="material-vendor"
+            <TextField
               label="Vendor name (optional)"
-              onChange={(vendorName) => setForm((value) => ({ ...value, vendorName }))}
+              maxLength={120}
+              onChange={(event) => setForm((value) => ({ ...value, vendorName: event.target.value }))}
               value={form.vendorName}
-            >
-              <option value="">Choose vendor</option>
-              {vendors.map((vendor) => (
-                <option key={vendor.id} value={vendor.name}>
-                  {vendor.name}
-                </option>
-              ))}
-            </SelectField>
+            />
           </div>
 
           <div className="space-y-1.5">

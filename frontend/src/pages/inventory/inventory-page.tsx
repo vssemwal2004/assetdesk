@@ -115,11 +115,12 @@ function materialStatsLabel(material: Material): string {
 
 function assetDetailOptions(
   details: AssetDetail[],
-  kind: AssetDetailKind,
+  kind: AssetDetailKind | AssetDetailKind[],
   selectedValue: string,
 ): string[] {
+  const kinds = Array.isArray(kind) ? kind : [kind];
   const values = details
-    .filter((detail) => detail.kind === kind)
+    .filter((detail) => kinds.includes(detail.kind))
     .map((detail) => detail.name)
     .sort((left, right) => left.localeCompare(right));
   if (selectedValue && !values.some((value) => value.toLocaleLowerCase() === selectedValue.toLocaleLowerCase())) {
@@ -199,11 +200,18 @@ export function InventoryPage() {
 
   const materials = query.data?.data ?? [];
   const assetDetails = detailQuery.data ?? [];
-  const categoryOptions = assetDetailOptions(assetDetails, 'ASSET_TYPE', category);
+  const categoryOptions = assetDetailOptions(
+    assetDetails,
+    mode === 'SERIALIZED'
+      ? 'ASSET_TYPE'
+      : mode === 'QUANTITY'
+        ? 'CONSUMABLE_TYPE'
+        : ['ASSET_TYPE', 'CONSUMABLE_TYPE'],
+    category,
+  );
   const locationOptions = assetDetailOptions(assetDetails, 'LOCATION', location);
   const blockOptions = assetDetailOptions(assetDetails, 'BLOCK', block);
   const departmentOptions = assetDetailOptions(assetDetails, 'DEPARTMENT', department);
-  const vendorOptions = assetDetailOptions(assetDetails, 'VENDOR', vendorName);
   const materialGroups = groupMaterials(materials);
   const summary = inventorySummary(materials);
   const filtered = Boolean(
@@ -402,19 +410,14 @@ export function InventoryPage() {
                   </FilterSelect>
                 </FilterField>
                 <FilterField label="Vendor">
-                  <FilterSelect
+                  <SearchForm
+                    debounceMs={300}
                     id="inventory-vendor-filter"
                     label="Filter by vendor"
-                    onChange={(value) => updateParameters({ vendorName: value })}
+                    onSearch={(value) => updateParameters({ vendorName: value })}
+                    placeholder="Any vendor"
                     value={vendorName}
-                  >
-                    <option value="">Any vendor</option>
-                    {vendorOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </FilterSelect>
+                  />
                 </FilterField>
                 <FilterField label="Added date">
                   <div className="grid gap-2 sm:grid-cols-2">

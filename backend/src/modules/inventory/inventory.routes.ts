@@ -330,7 +330,7 @@ export function createInventoryRouter(): Router {
       try {
         const input = CreateAssetDetailRequestSchema.parse(request.body);
         const detail = await createAssetDetail(input.kind, input.name, authenticated(request).userId);
-        if (input.kind === 'ASSET_TYPE') {
+        if (input.kind === 'ASSET_TYPE' || input.kind === 'CONSUMABLE_TYPE') {
           await createAssetType(input.name, authenticated(request).userId);
         }
         await audit(request, 'ASSET_DETAIL_SAVED', 'ASSET_DETAIL', detail.id, {

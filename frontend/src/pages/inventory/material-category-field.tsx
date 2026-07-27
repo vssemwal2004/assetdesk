@@ -1,52 +1,59 @@
 import { useQuery } from '@tanstack/react-query';
-import { getAssetTypes } from '../../lib/inventory-api';
 
-const DEFAULT_ASSET_TYPES = ['Computer', 'Printer', 'Network Device', 'Consumable'] as const;
+import type { AssetDetailKind, TrackingMode } from '@assetdesk/contracts';
+
+import { getAssetDetails } from '../../lib/inventory-api';
+
+function categoryKind(trackingMode: TrackingMode): AssetDetailKind {
+  return trackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE';
+}
 
 export function MaterialCategoryField({
   id,
   value,
+  trackingMode,
   onChange,
 }: {
   id: string;
   value: string;
+  trackingMode: TrackingMode;
   onChange: (value: string) => void;
 }) {
   const query = useQuery({
-    queryKey: ['asset-types'],
-    queryFn: ({ signal }) => getAssetTypes(signal),
+    queryKey: ['asset-details'],
+    queryFn: ({ signal }) => getAssetDetails(undefined, signal),
   });
-  const assetTypes = [
-    ...new Set([...DEFAULT_ASSET_TYPES, ...(query.data?.map((assetType) => assetType.name) ?? [])]),
-  ];
-  const selectValue = value && assetTypes.includes(value) ? value : '';
+  const kind = categoryKind(trackingMode);
+  const categories = (query.data ?? [])
+    .filter((detail) => detail.kind === kind)
+    .map((detail) => detail.name)
+    .sort((left, right) => left.localeCompare(right));
+  const selectValue = value && categories.includes(value) ? value : '';
   const hintId = `${id}-hint`;
+  const label = trackingMode === 'SERIALIZED' ? 'IT Asset type' : 'IT Consumable type';
 
   return (
     <div className="space-y-1.5">
       <label className="field-label" htmlFor={id}>
-        Asset type
+        {label}
       </label>
       <select
         aria-describedby={hintId}
         className="field-input"
         id={id}
-        onChange={(event) => {
-          const next = event.target.value;
-          onChange(next);
-        }}
+        onChange={(event) => onChange(event.target.value)}
         required
         value={selectValue}
       >
-        <option value="">Choose asset type</option>
-        {assetTypes.map((category) => (
+        <option value="">Choose {label.toLowerCase()}</option>
+        {categories.map((category) => (
           <option key={category} value={category}>
             {category}
           </option>
         ))}
       </select>
       <p className="text-xs leading-5 text-[var(--color-text-muted)]" id={hintId}>
-        Add new asset types from Inventory, Add asset type.
+        Add values from Inventory, Add asset details.
       </p>
     </div>
   );
