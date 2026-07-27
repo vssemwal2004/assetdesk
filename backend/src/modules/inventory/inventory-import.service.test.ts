@@ -51,6 +51,23 @@ describe('inventory import parsing', () => {
     });
   });
 
+  it('accepts common misspellings of the IT Consumable category column', () => {
+    const rows = parseInventoryImportTable(
+      [
+        ['Material Name', 'IT CONSUBABLE', 'QTY', 'Unit', 'Location', 'Block', 'Dept'],
+        ['USB-C Cable', 'Cable', 50, 'pieces', 'Store Room', 'B Block', 'IT'],
+      ],
+      'QUANTITY',
+    );
+
+    expect(rows[0]?.values).toMatchObject({
+      category: 'Cable',
+      quantity: '50',
+      unitLabel: 'pieces',
+      department: 'IT',
+    });
+  });
+
   it('rejects a file before preview when required columns are missing', () => {
     expect(() =>
       parseInventoryImportTable(

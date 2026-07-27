@@ -53,6 +53,7 @@ export async function ensureDatabaseIndexes(): Promise<void> {
 export async function connectDatabase(): Promise<void> {
   mongoose.set('strictQuery', true);
   mongoose.set('autoIndex', env.NODE_ENV !== 'production');
+  mongoose.set('bufferCommands', false);
 
   await mongoose.connect(env.MONGODB_URI, {
     dbName: env.MONGODB_DB_NAME,

@@ -86,7 +86,7 @@ export function createAuthRouter(): Router {
     }
   });
 
-  router.post('/refresh', requireTrustedOrigin, async (request, response, next) => {
+  router.post('/refresh', async (request, response, next) => {
     try {
       const refreshToken = cookieValue(request, REFRESH_COOKIE);
       if (!refreshToken) {

@@ -7,7 +7,10 @@ import { connectDatabase, disconnectDatabase } from './db/mongoose.js';
 import { startEmailWorkerLoop } from './modules/notifications/email-worker.service.js';
 
 function databaseRequiredOnStart(): boolean {
-  return env.DATABASE_REQUIRED_ON_START ?? env.NODE_ENV === 'production';
+  return (
+    env.DATABASE_REQUIRED_ON_START ??
+    (env.NODE_ENV === 'production' || env.APP_ORIGIN.startsWith('https://'))
+  );
 }
 
 function startupError(error: unknown): { name: string; message: string } {

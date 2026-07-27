@@ -7,7 +7,7 @@ export const AUTH_COOKIE = 'ad_access';
 export const REFRESH_COOKIE = 'ad_refresh';
 export const CSRF_COOKIE = 'ad_csrf';
 
-const secure = env.NODE_ENV === 'production';
+const secure = env.NODE_ENV === 'production' || env.APP_ORIGIN.startsWith('https://');
 const ACCESS_COOKIE_PATH = '/api/v1';
 const REFRESH_COOKIE_PATH = '/api/v1/auth/refresh';
 const CSRF_COOKIE_PATH = '/';

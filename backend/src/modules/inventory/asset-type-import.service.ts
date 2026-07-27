@@ -82,9 +82,26 @@ function parseAssetTypeRows(
     ['asset type', 'assettype', 'it asset', 'itasset'].includes(normalizedHeader(heading)),
   );
   const consumableTypeIndex = headings.findIndex((heading) =>
-    ['it consumable', 'it consumables', 'consumable', 'consumable type', 'consumabletype'].includes(
-      normalizedHeader(heading),
-    ),
+    [
+      'it consumable',
+      'it consumables',
+      'it consumbale',
+      'it consumbales',
+      'it consubable',
+      'it consubables',
+      'it conusmble',
+      'it conusmbles',
+      'consumable',
+      'consumables',
+      'consumbale',
+      'consumbales',
+      'consubable',
+      'consubables',
+      'conusmble',
+      'conusmbles',
+      'consumable type',
+      'consumabletype',
+    ].includes(normalizedHeader(heading)),
   );
   const locationIndex = headings.findIndex((heading) =>
     ['location', 'locations'].includes(normalizedHeader(heading)),
