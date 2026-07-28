@@ -10,9 +10,9 @@ describe('inventory import parsing', () => {
   it('accepts case-insensitive asset headers and preserves one serial per row', () => {
     const rows = parseInventoryImportTable(
       [
-        ['MATERIAL_NAME', 'material-group', 'SERIAL NUMBER', 'Location', 'Block', 'Department'],
-        ['Dell Latitude', 'Laptops', 'dl-001', 'Computer Centre', 'A Block', 'IT'],
-        ['Dell Latitude', 'Laptops', 'DL-002', 'Computer Centre', 'A Block', 'IT'],
+        ['MATERIAL_NAME', 'material-group', 'SERIAL NUMBER', 'Location', 'Block'],
+        ['Dell Latitude', 'Laptops', 'dl-001', 'Computer Centre', 'A Block'],
+        ['Dell Latitude', 'Laptops', 'DL-002', 'Computer Centre', 'A Block'],
       ],
       'SERIALIZED',
     );
@@ -26,7 +26,6 @@ describe('inventory import parsing', () => {
         serialNumber: 'dl-001',
         location: 'Computer Centre',
         block: 'A Block',
-        department: 'IT',
       },
     });
   });
@@ -34,8 +33,8 @@ describe('inventory import parsing', () => {
   it('accepts the IT Consumable template columns', () => {
     const rows = parseInventoryImportTable(
       [
-        ['Material Name', 'Group', 'QTY', 'Unit', 'Location', 'Block', 'Department'],
-        ['USB-C Cable', 'Cables', 50, 'pieces', 'Store Room', 'B Block', 'IT'],
+        ['Material Name', 'Group', 'QTY', 'Unit', 'Location', 'Block'],
+        ['USB-C Cable', 'Cables', 50, 'pieces', 'Store Room', 'B Block'],
       ],
       'QUANTITY',
     );
@@ -47,15 +46,14 @@ describe('inventory import parsing', () => {
       unitLabel: 'pieces',
       location: 'Store Room',
       block: 'B Block',
-      department: 'IT',
     });
   });
 
   it('accepts common misspellings of the IT Consumable category column', () => {
     const rows = parseInventoryImportTable(
       [
-        ['Material Name', 'IT CONSUBABLE', 'QTY', 'Unit', 'Location', 'Block', 'Dept'],
-        ['USB-C Cable', 'Cable', 50, 'pieces', 'Store Room', 'B Block', 'IT'],
+        ['Material Name', 'IT CONSUBABLE', 'QTY', 'Unit', 'Location', 'Block'],
+        ['USB-C Cable', 'Cable', 50, 'pieces', 'Store Room', 'B Block'],
       ],
       'QUANTITY',
     );
@@ -64,7 +62,6 @@ describe('inventory import parsing', () => {
       category: 'Cable',
       quantity: '50',
       unitLabel: 'pieces',
-      department: 'IT',
     });
   });
 
@@ -80,6 +77,29 @@ describe('inventory import parsing', () => {
     ).toThrowError(AppError);
   });
 
+  it('preserves blank required cells so preview can report the exact missing value', () => {
+    const rows = parseInventoryImportTable(
+      [
+        [
+          'IT Consumable',
+          'Type/Model Name',
+          'Quantity',
+          'Unit Label',
+          'Location',
+          'Block',
+        ],
+        ['Cartridge', 'CARTRIDGE 05A', 10, 'pieces', 'Param Centre Store', ''],
+      ],
+      'QUANTITY',
+    );
+
+    expect(rows[0]?.values).toMatchObject({
+      category: 'Cartridge',
+      typeModelName: 'CARTRIDGE 05A',
+      block: '',
+    });
+  });
+
   it('cleans quantity import inputs before strict material creation parsing', () => {
     const input = importInputToCreateMaterialRequest({
       name: 'Consumable USB-C Cable',
@@ -87,7 +107,6 @@ describe('inventory import parsing', () => {
       typeModelName: 'USB-C Cable',
       location: 'Store Room',
       block: 'B Block',
-      department: 'IT',
       locationBlock: 'Store Room / B Block',
       assignmentTypes: ['SHORT_TERM'],
       trackingMode: 'QUANTITY',
@@ -103,7 +122,6 @@ describe('inventory import parsing', () => {
       trackingMode: 'QUANTITY',
       location: 'Store Room',
       block: 'B Block',
-      department: 'IT',
       totalQuantity: 50,
       unitLabel: 'pieces',
     });

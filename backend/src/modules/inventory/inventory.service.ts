@@ -499,7 +499,6 @@ export async function createMaterial(
   const category = await requireSavedDetail(categoryDetailKind(input.trackingMode), input.category);
   const location = await requireSavedDetail('LOCATION', input.location);
   const block = await requireSavedDetail('BLOCK', input.block);
-  const department = await requireSavedDetail('DEPARTMENT', input.department);
   const locationBlock = `${location} / ${block}`;
   const existing = await MaterialModel.exists({
     trackingMode: input.trackingMode,
@@ -525,7 +524,6 @@ export async function createMaterial(
         typeModelName: input.typeModelName,
         location,
         block,
-        department,
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),
         locationBlock,
         identityKey: materialIdentity(input.trackingMode, input.name, category),

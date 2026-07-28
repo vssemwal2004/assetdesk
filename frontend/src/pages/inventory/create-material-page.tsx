@@ -24,7 +24,6 @@ interface MaterialForm {
   typeModelName: string;
   location: string;
   block: string;
-  department: string;
   vendorName: string;
   description: string;
   trackingMode: TrackingMode;
@@ -41,7 +40,6 @@ const initialForm: MaterialForm = {
   typeModelName: '',
   location: '',
   block: '',
-  department: '',
   vendorName: '',
   description: '',
   trackingMode: 'SERIALIZED',
@@ -83,7 +81,6 @@ function materialFormMessage(form: MaterialForm): string | null {
   if (form.typeModelName.trim().length < 2) return 'Enter a type/model name with at least 2 characters.';
   if (form.location.trim().length < 1) return 'Choose a location from Add asset details.';
   if (form.block.trim().length < 1) return 'Choose a block from Add asset details.';
-  if (form.department.trim().length < 1) return 'Choose a department from Add asset details.';
   if (form.trackingMode === 'SERIALIZED') {
     const quantity = Number(form.totalQuantity);
     const serialNumbers = normalizedSerialNumbers(form.serialNumbers);
@@ -115,7 +112,6 @@ export function CreateMaterialPage() {
   });
   const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
   const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
-  const departments = detailsQuery.data?.filter((detail) => detail.kind === 'DEPARTMENT') ?? [];
 
   const mutation = useMutation({
     mutationFn: (input: CreateMaterialRequest) => createMaterial(input),
@@ -146,7 +142,6 @@ export function CreateMaterialPage() {
       typeModelName: form.typeModelName,
       location: form.location,
       block: form.block,
-      department: form.department,
       ...(form.vendorName.trim() ? { vendorName: form.vendorName } : {}),
       ...(form.description.trim() ? { description: form.description } : {}),
       status: form.status,
@@ -287,19 +282,6 @@ export function CreateMaterialPage() {
               {blocks.map((block) => (
                 <option key={block.id} value={block.name}>
                   {block.name}
-                </option>
-              ))}
-            </SelectField>
-            <SelectField
-              id="material-department"
-              label="Department"
-              onChange={(department) => setForm((value) => ({ ...value, department }))}
-              value={form.department}
-            >
-              <option value="">Choose department</option>
-              {departments.map((department) => (
-                <option key={department.id} value={department.name}>
-                  {department.name}
                 </option>
               ))}
             </SelectField>

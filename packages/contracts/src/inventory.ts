@@ -30,7 +30,6 @@ const CreateMaterialBaseSchema = z.object({
   typeModelName: NameSchema,
   location: LocationSchema,
   block: BlockSchema,
-  department: DepartmentSchema,
   vendorName: VendorNameSchema.optional(),
   locationBlock: LocationBlockSchema.optional(),
   description: DescriptionSchema.optional(),

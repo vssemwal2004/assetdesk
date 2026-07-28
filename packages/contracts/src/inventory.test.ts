@@ -28,6 +28,22 @@ const materialBase = {
 };
 
 describe('inventory contracts', () => {
+  it('creates material without an inventory department', () => {
+    expect(
+      CreateMaterialRequestSchema.safeParse({
+        name: 'Core switch 48-port',
+        category: 'Networking',
+        typeModelName: '48-port',
+        location: 'Computer Centre',
+        block: 'A Block',
+        trackingMode: 'SERIALIZED',
+        returnPolicy: 'REUSABLE',
+        serialNumbers: ['SW-001'],
+        assignmentTypes: ['LONG_TERM'],
+      }).success,
+    ).toBe(true);
+  });
+
   it('requires serialized materials to be reusable', () => {
     expect(
       CreateMaterialRequestSchema.safeParse({

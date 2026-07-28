@@ -19,7 +19,7 @@ import {
   type InventoryImportInput,
   type InventoryImportPreviewRow,
 } from './inventory-import.model.js';
-import { createMaterial } from './inventory.service.js';
+import { createAssetType, createMaterial } from './inventory.service.js';
 import { MaterialModel } from './material.model.js';
 
 const MAX_ROWS = 1_000;
@@ -30,7 +30,6 @@ type Field =
   | 'typeModelName'
   | 'location'
   | 'block'
-  | 'department'
   | 'vendorName'
   | 'locationBlock'
   | 'description'
@@ -66,8 +65,6 @@ const HEADER_ALIASES: Record<string, Field> = {
   'location / block': 'locationBlock',
   location: 'location',
   block: 'block',
-  department: 'department',
-  dept: 'department',
   vendor: 'vendorName',
   'vendor name': 'vendorName',
   description: 'description',
@@ -148,8 +145,8 @@ export function parseInventoryImportTable(
   });
   const required: Field[] =
     mode === 'SERIALIZED'
-      ? ['category', 'location', 'block', 'department', 'serialNumber']
-      : ['category', 'location', 'block', 'department', 'quantity', 'unitLabel'];
+      ? ['category', 'location', 'block', 'serialNumber']
+      : ['category', 'location', 'block', 'quantity', 'unitLabel'];
   const missing = required.filter((field) => !columns.has(field));
   if (missing.length)
     throw new AppError(
@@ -232,7 +229,6 @@ export function importInputToCreateMaterialRequest(input: InventoryImportInput):
     typeModelName: record.typeModelName,
     location: record.location,
     block: record.block,
-    department: record.department,
     ...(record.vendorName ? { vendorName: record.vendorName } : {}),
     ...(record.locationBlock ? { locationBlock: record.locationBlock } : {}),
     ...(record.description ? { description: record.description } : {}),
@@ -252,10 +248,6 @@ function identity(mode: TrackingMode, name: string, category: string): string {
   return `${mode}|${name.trim().toUpperCase()}|${category.trim().toUpperCase()}`;
 }
 
-function exact(value: string): RegExp {
-  return new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
-}
-
 function normalizedAssetType(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
 }
@@ -265,7 +257,7 @@ function normalizedLookup(value: string): string {
 }
 
 async function savedLookup(
-  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
+  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK',
   value: string,
 ): Promise<string | null> {
   const detail = await AssetDetailModel.findOne({ kind, normalizedName: normalizedLookup(value) });
@@ -277,16 +269,15 @@ async function savedLookup(
   return null;
 }
 
-function detailKindLabel(kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT'): string {
+function detailKindLabel(kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK'): string {
   if (kind === 'ASSET_TYPE') return 'IT asset type';
   if (kind === 'CONSUMABLE_TYPE') return 'IT consumable type';
   if (kind === 'LOCATION') return 'Location';
-  if (kind === 'BLOCK') return 'Block';
-  return 'Department';
+  return 'Block';
 }
 
 function missingDropdownValue(
-  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
+  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK',
   value: string,
 ): Error {
   return new Error(
@@ -304,6 +295,11 @@ function materialName(assetType: string, typeModelName: string): string {
 
 function categoryKind(mode: TrackingMode): 'ASSET_TYPE' | 'CONSUMABLE_TYPE' {
   return mode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE';
+}
+
+function requireRowValue(value: string, label: string): string {
+  if (!value.trim()) throw new Error(`${label} is required.`);
+  return value;
 }
 
 function materialStatus(value: string): 'ACTIVE' | 'SCRAP' | 'NOT_IN_USE' {
@@ -338,17 +334,14 @@ export async function previewInventoryImport(
   createdByUserId: string,
 ): Promise<InventoryImportPreviewResult> {
   const rows = parseInventoryImportTable(await fileTable(file), mode);
-  const groups =
-    mode === 'SERIALIZED'
-      ? Object.values(
-          rows.reduce<Record<string, ImportRow[]>>((result, row) => {
-            const itemName = row.values.typeModelName || row.values.name;
-            const key = `${itemName.toUpperCase()}\0${row.values.category.toUpperCase()}`;
-            (result[key] ??= []).push(row);
-            return result;
-          }, {}),
-        )
-      : rows.map((row) => [row]);
+  const groups = Object.values(
+    rows.reduce<Record<string, ImportRow[]>>((result, row) => {
+      const itemName = row.values.typeModelName || row.values.name;
+      const key = `${itemName.trim().toUpperCase()}\0${row.values.category.trim().toUpperCase()}`;
+      (result[key] ??= []).push(row);
+      return result;
+    }, {}),
+  );
 
   const previewRows = new Map<number, InventoryImportPreviewRow>(
     rows.map((row) => [
@@ -360,7 +353,6 @@ export async function previewInventoryImport(
         ...(row.values.typeModelName ? { typeModelName: row.values.typeModelName } : {}),
         ...(row.values.location ? { location: row.values.location } : {}),
         ...(row.values.block ? { block: row.values.block } : {}),
-        ...(row.values.department ? { department: row.values.department } : {}),
         ...(row.values.vendorName ? { vendorName: row.values.vendorName } : {}),
         ...(row.values.locationBlock ? { locationBlock: row.values.locationBlock } : {}),
         ...(row.values.serialNumber ? { serialNumber: row.values.serialNumber } : {}),
@@ -373,8 +365,43 @@ export async function previewInventoryImport(
     ]),
   );
   const inputs: InventoryImportInput[] = [];
-  const fileIdentities = new Set<string>();
   const fileSerials = new Set<string>();
+  const categoryDetailKind = categoryKind(mode);
+  const categoryEntries = await Promise.all(
+    [...new Set(rows.map((row) => row.values.category))].map(async (value) => [
+      normalizedLookup(value),
+      (await savedLookup(categoryDetailKind, value)) ??
+        (mode === 'QUANTITY' ? value.trim().replace(/\s+/g, ' ') : null),
+    ] as const),
+  );
+  const locationEntries = await Promise.all(
+    [...new Set(rows.map((row) => row.values.location))].map(async (value) => [
+      normalizedLookup(value),
+      await savedLookup('LOCATION', value),
+    ] as const),
+  );
+  const blockEntries = await Promise.all(
+    [...new Set(rows.map((row) => row.values.block))].map(async (value) => [
+      normalizedLookup(value),
+      await savedLookup('BLOCK', value),
+    ] as const),
+  );
+  const categories = new Map(categoryEntries);
+  const locations = new Map(locationEntries);
+  const blocks = new Map(blockEntries);
+  const candidateIdentities = groups.flatMap((group) => {
+    const first = group[0];
+    if (!first) return [];
+    const itemName = first.values.typeModelName || first.values.name;
+    const category = categories.get(normalizedLookup(first.values.category));
+    return category ? [identity(mode, materialName(category, itemName), category)] : [];
+  });
+  const existingMaterials = await MaterialModel.find({
+    identityKey: { $in: candidateIdentities },
+  })
+    .select('identityKey')
+    .lean();
+  const existingIdentities = new Set(existingMaterials.map((material) => material.identityKey));
 
   for (const group of groups) {
     const first = group[0];
@@ -382,28 +409,27 @@ export async function previewInventoryImport(
     try {
       const values = first.values;
       const itemName = values.typeModelName || values.name;
-      const displayName = materialName(values.category, itemName);
-      if (!itemName) throw new Error('Type/model name is required.');
-      const categoryDetailKind = categoryKind(mode);
-      const category = await savedLookup(categoryDetailKind, values.category);
-      const location = await savedLookup('LOCATION', values.location);
-      const block = await savedLookup('BLOCK', values.block);
-      const department = await savedLookup('DEPARTMENT', values.department);
+      requireRowValue(itemName, 'Type/model name');
+      requireRowValue(values.category, mode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable');
+      requireRowValue(values.location, 'Location');
+      requireRowValue(values.block, 'Block');
+      if (mode === 'SERIALIZED') {
+        group.forEach((row) => requireRowValue(row.values.serialNumber, 'Serial number'));
+      } else {
+        requireRowValue(values.quantity, 'Quantity');
+        requireRowValue(values.unitLabel, 'Unit label');
+      }
+      const category = categories.get(normalizedLookup(values.category));
+      const location = locations.get(normalizedLookup(values.location));
+      const block = blocks.get(normalizedLookup(values.block));
       if (!category) throw missingDropdownValue(categoryDetailKind, values.category);
       if (!location) throw missingDropdownValue('LOCATION', values.location);
       if (!block) throw missingDropdownValue('BLOCK', values.block);
-      if (!department) throw missingDropdownValue('DEPARTMENT', values.department);
+      const displayName = materialName(category, itemName);
       const locationBlock = `${location} / ${block}`;
       const materialIdentity = identity(mode, displayName, category);
-      if (fileIdentities.has(materialIdentity))
-        throw new Error('Duplicate material in this import file.');
-      fileIdentities.add(materialIdentity);
-      const existingMaterial = await MaterialModel.exists({
-        trackingMode: mode,
-        name: exact(displayName),
-        category: exact(category),
-      });
-      if (existingMaterial) throw new Error('This material already exists in Inventory.');
+      if (existingIdentities.has(materialIdentity))
+        throw new Error('This material already exists in Inventory.');
       let draft: CreateMaterialRequest;
       if (mode === 'SERIALIZED') {
         const serialNumbers = group.map((row) => row.values.serialNumber);
@@ -425,7 +451,6 @@ export async function previewInventoryImport(
           typeModelName: itemName,
           location,
           block,
-          department,
           locationBlock,
           ...(values.vendorName ? { vendorName: values.vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
@@ -436,13 +461,40 @@ export async function previewInventoryImport(
           serialNumbers,
         });
       } else {
+        const comparableFields: Field[] = [
+          'unitLabel',
+          'location',
+          'block',
+          'vendorName',
+          'description',
+          'returnPolicy',
+          'status',
+        ];
+        if (
+          group.some((row) =>
+            comparableFields.some(
+              (field) =>
+                (row.values[field] ?? '').trim().toUpperCase() !==
+                (values[field] ?? '').trim().toUpperCase(),
+            ),
+          )
+        ) {
+          throw new Error(
+            'Repeated consumable rows must use the same unit, location, block, return policy, status, vendor, and description.',
+          );
+        }
+        const totalQuantity = group.reduce((sum, row) => {
+          const quantity = Number(row.values.quantity);
+          if (!Number.isInteger(quantity) || quantity < 0)
+            throw new Error('Quantity must be a whole number of 0 or more.');
+          return sum + quantity;
+        }, 0);
         draft = CreateMaterialRequestSchema.parse({
           name: displayName,
           category,
           typeModelName: itemName,
           location,
           block,
-          department,
           locationBlock,
           ...(values.vendorName ? { vendorName: values.vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
@@ -451,7 +503,7 @@ export async function previewInventoryImport(
           returnPolicy:
             values.returnPolicy.toUpperCase() === 'CONSUMABLE' ? 'CONSUMABLE' : 'REUSABLE',
           assignmentTypes: ['SHORT_TERM'],
-          totalQuantity: Number(values.quantity),
+          totalQuantity,
           unitLabel: values.unitLabel,
         });
       }
@@ -560,6 +612,9 @@ export async function commitInventoryImport(
     let parsed: CreateMaterialRequest;
     try {
       parsed = importInputToCreateMaterialRequest(input);
+      if (parsed.trackingMode === 'QUANTITY') {
+        await createAssetType(parsed.category, createdByUserId);
+      }
       const material = await createMaterial(parsed, createdByUserId);
       created.push({
         materialCode: material.materialCode,
