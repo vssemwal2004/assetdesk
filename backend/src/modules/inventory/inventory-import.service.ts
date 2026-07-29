@@ -63,6 +63,10 @@ const HEADER_ALIASES: Record<string, Field> = {
   model: 'typeModelName',
   'model name': 'typeModelName',
   configuration: 'configuration',
+  configration: 'configuration',
+  'asset configuration': 'configuration',
+  'it asset configuration': 'configuration',
+  'configuration details': 'configuration',
   config: 'configuration',
   'location block': 'locationBlock',
   'location / block': 'locationBlock',
@@ -220,7 +224,9 @@ function cleanReason(message: string): string {
   return trimmed || 'Check this row.';
 }
 
-export function importInputToCreateMaterialRequest(input: InventoryImportInput): CreateMaterialRequest {
+export function importInputToCreateMaterialRequest(
+  input: InventoryImportInput,
+): CreateMaterialRequest {
   const source =
     input && typeof input === 'object' && 'toObject' in input
       ? (input as { toObject: () => unknown }).toObject()
@@ -312,10 +318,19 @@ function materialStatus(value: string): 'ACTIVE' | 'SCRAP' | 'NOT_IN_USE' {
     .replace(/[^A-Z0-9]+/gi, ' ')
     .replace(/\s+/g, ' ')
     .toUpperCase();
-  if (!normalized || normalized === 'ACTIVE' || normalized.includes('ACTIVE IN USE') || normalized === 'WORKING') {
+  if (
+    !normalized ||
+    normalized === 'ACTIVE' ||
+    normalized.includes('ACTIVE IN USE') ||
+    normalized === 'WORKING'
+  ) {
     return 'ACTIVE';
   }
-  if (normalized.includes('SCRAP') || normalized.includes('FAULTY') || normalized.includes('SCRAPE')) {
+  if (
+    normalized.includes('SCRAP') ||
+    normalized.includes('FAULTY') ||
+    normalized.includes('SCRAPE')
+  ) {
     return 'SCRAP';
   }
   if (
@@ -329,7 +344,9 @@ function materialStatus(value: string): 'ACTIVE' | 'SCRAP' | 'NOT_IN_USE' {
   ) {
     return 'NOT_IN_USE';
   }
-  throw new Error('Inventory status must be Active / in use, Faulty (scrap), or Outdated (not in use).');
+  throw new Error(
+    'Inventory status must be Active / in use, Faulty (scrap), or Outdated (not in use).',
+  );
 }
 
 export async function previewInventoryImport(
@@ -373,23 +390,24 @@ export async function previewInventoryImport(
   const fileSerials = new Set<string>();
   const categoryDetailKind = categoryKind(mode);
   const categoryEntries = await Promise.all(
-    [...new Set(rows.map((row) => row.values.category))].map(async (value) => [
-      normalizedLookup(value),
-      (await savedLookup(categoryDetailKind, value)) ??
-        (mode === 'QUANTITY' ? value.trim().replace(/\s+/g, ' ') : null),
-    ] as const),
+    [...new Set(rows.map((row) => row.values.category))].map(
+      async (value) =>
+        [
+          normalizedLookup(value),
+          (await savedLookup(categoryDetailKind, value)) ??
+            (mode === 'QUANTITY' ? value.trim().replace(/\s+/g, ' ') : null),
+        ] as const,
+    ),
   );
   const locationEntries = await Promise.all(
-    [...new Set(rows.map((row) => row.values.location))].map(async (value) => [
-      normalizedLookup(value),
-      await savedLookup('LOCATION', value),
-    ] as const),
+    [...new Set(rows.map((row) => row.values.location))].map(
+      async (value) => [normalizedLookup(value), await savedLookup('LOCATION', value)] as const,
+    ),
   );
   const blockEntries = await Promise.all(
-    [...new Set(rows.map((row) => row.values.block))].map(async (value) => [
-      normalizedLookup(value),
-      await savedLookup('BLOCK', value),
-    ] as const),
+    [...new Set(rows.map((row) => row.values.block))].map(
+      async (value) => [normalizedLookup(value), await savedLookup('BLOCK', value)] as const,
+    ),
   );
   const categories = new Map(categoryEntries);
   const locations = new Map(locationEntries);
@@ -638,8 +656,12 @@ export async function commitInventoryImport(
         quantity: material.totalQuantity,
       });
     } catch (error) {
-      const inputName = String(input.name ?? '').trim().toUpperCase();
-      const inputCategory = String(input.category ?? '').trim().toUpperCase();
+      const inputName = String(input.name ?? '')
+        .trim()
+        .toUpperCase();
+      const inputCategory = String(input.category ?? '')
+        .trim()
+        .toUpperCase();
       const matchingRows = record.rows.filter(
         (row) =>
           (row.name.trim().toUpperCase() === inputName ||
@@ -647,7 +669,11 @@ export async function commitInventoryImport(
           row.category.trim().toUpperCase() === inputCategory,
       );
       matchingRows.forEach((row) =>
-        failed.push({ rowNumber: row.rowNumber, name: row.name, reason: cleanReason(issueMessage(error)) }),
+        failed.push({
+          rowNumber: row.rowNumber,
+          name: row.name,
+          reason: cleanReason(issueMessage(error)),
+        }),
       );
     }
   }

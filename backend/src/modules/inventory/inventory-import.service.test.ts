@@ -7,10 +7,52 @@ import {
 } from './inventory-import.service.js';
 
 describe('inventory import parsing', () => {
+  it('accepts the complete IT Asset template headings', () => {
+    const rows = parseInventoryImportTable(
+      [
+        [
+          'IT Asset',
+          'Type/Model Name',
+          'Configuration',
+          'Serial Number',
+          'Location',
+          'Block',
+          'Vendor Name',
+          'Description',
+          'Inventory Status',
+        ],
+        [
+          'Computer',
+          'Dell Latitude 5450',
+          '16 GB RAM / 512 GB SSD',
+          'DL-001',
+          'Computer Centre',
+          'A Block',
+          'Dell',
+          'Staff laptop',
+          'Active / in use',
+        ],
+      ],
+      'SERIALIZED',
+    );
+
+    expect(rows[0]?.values).toMatchObject({
+      category: 'Computer',
+      typeModelName: 'Dell Latitude 5450',
+      configuration: '16 GB RAM / 512 GB SSD',
+      serialNumber: 'DL-001',
+      location: 'Computer Centre',
+      block: 'A Block',
+      vendorName: 'Dell',
+      description: 'Staff laptop',
+      status: 'Active / in use',
+    });
+  });
+
   it('accepts case-insensitive asset headers and preserves one serial per row', () => {
     const rows = parseInventoryImportTable(
       [
-        ['MATERIAL_NAME', 'material-group', 'Configuration', 'SERIAL NUMBER', 'Location', 'Block'],
+        ['MATERIAL_NAME', 'material-group', 'Configration', 'SERIAL NUMBER', 'Location', 'Block'],
         ['Dell Latitude', 'Laptops', '16 GB RAM', 'dl-001', 'Computer Centre', 'A Block'],
         ['Dell Latitude', 'Laptops', '16 GB RAM', 'DL-002', 'Computer Centre', 'A Block'],
       ],
@@ -81,14 +123,7 @@ describe('inventory import parsing', () => {
   it('preserves blank required cells so preview can report the exact missing value', () => {
     const rows = parseInventoryImportTable(
       [
-        [
-          'IT Consumable',
-          'Type/Model Name',
-          'Quantity',
-          'Unit Label',
-          'Location',
-          'Block',
-        ],
+        ['IT Consumable', 'Type/Model Name', 'Quantity', 'Unit Label', 'Location', 'Block'],
         ['Cartridge', 'CARTRIDGE 05A', 10, 'pieces', 'Param Centre Store', ''],
       ],
       'QUANTITY',

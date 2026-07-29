@@ -1,5 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Download, FileSpreadsheet, PackagePlus, Trash2, Upload } from 'lucide-react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  FileSpreadsheet,
+  PackagePlus,
+  Search,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link } from 'react-router';
 
@@ -7,7 +16,15 @@ import type { AssetDetail, AssetDetailKind } from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
 import { hasPermission } from '../../auth/permissions';
-import { AppCard, Button, ErrorState, ErrorSummary, LoadingPanel, PageHeader, TextField } from '../../components/ui';
+import {
+  AppCard,
+  Button,
+  ErrorState,
+  ErrorSummary,
+  LoadingPanel,
+  PageHeader,
+  TextField,
+} from '../../components/ui';
 import {
   commitAssetTypeImport,
   createAssetDetail,
@@ -73,6 +90,9 @@ export function AssetTypePage() {
   const [name, setName] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageIsSuccess, setMessageIsSuccess] = useState(false);
+  const [savedSearch, setSavedSearch] = useState('');
+  const [savedKind, setSavedKind] = useState<AssetDetailKind | 'ALL'>('ALL');
   const [preview, setPreview] = useState<AssetTypeImportPreviewResponse['data'] | null>(null);
   const [result, setResult] = useState<AssetTypeImportResponse['data'] | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AssetDetail | null>(null);
@@ -88,16 +108,20 @@ export function AssetTypePage() {
     mutationFn: ({ detailKind, detailName }: { detailKind: AssetDetailKind; detailName: string }) =>
       createAssetDetail(detailKind, detailName),
     onSuccess: async (detail) => {
-      if (detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE') await createAssetType(detail.name);
+      if (detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE')
+        await createAssetType(detail.name);
       setName('');
+      setMessageIsSuccess(true);
       setMessage(`${detail.name} saved as ${detailLabels[detail.kind]}.`);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['asset-types'] }),
         queryClient.invalidateQueries({ queryKey: ['asset-details'] }),
       ]);
     },
-    onError: (error) =>
-      setMessage(isApiError(error) ? error.message : 'The asset detail could not be saved.'),
+    onError: (error) => {
+      setMessageIsSuccess(false);
+      setMessage(isApiError(error) ? error.message : 'The asset detail could not be saved.');
+    },
   });
 
   const previewMutation = useMutation({
@@ -106,13 +130,21 @@ export function AssetTypePage() {
     onSuccess: (importPreview) => {
       setPreview(importPreview);
     },
-    onError: (error) =>
-      setMessage(isApiError(error) ? error.message : 'The asset type sheet could not be validated.'),
+    onError: (error) => {
+      setMessageIsSuccess(false);
+      setMessage(
+        isApiError(error) ? error.message : 'The asset type sheet could not be validated.',
+      );
+    },
   });
 
   const commitMutation = useMutation({
     mutationFn: (importId: string) => commitAssetTypeImport(importId),
     onSuccess: async (importResult) => {
+      setMessageIsSuccess(true);
+      setMessage(
+        `${importResult.created.length} asset detail${importResult.created.length === 1 ? '' : 's'} uploaded successfully.`,
+      );
       setResult(importResult);
       setPreview(null);
       await Promise.all([
@@ -120,27 +152,33 @@ export function AssetTypePage() {
         queryClient.invalidateQueries({ queryKey: ['asset-details'] }),
       ]);
     },
-    onError: (error) =>
-      setMessage(isApiError(error) ? error.message : 'The asset type sheet could not be uploaded.'),
+    onError: (error) => {
+      setMessageIsSuccess(false);
+      setMessage(isApiError(error) ? error.message : 'The asset type sheet could not be uploaded.');
+    },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (assetDetail: AssetDetail) => deleteAssetDetail(assetDetail.id),
     onSuccess: async () => {
       setDeleteTarget(null);
+      setMessageIsSuccess(true);
       setMessage('Asset detail deleted.');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['asset-types'] }),
         queryClient.invalidateQueries({ queryKey: ['asset-details'] }),
       ]);
     },
-    onError: (error) =>
-      setMessage(isApiError(error) ? error.message : 'The asset type could not be deleted.'),
+    onError: (error) => {
+      setMessageIsSuccess(false);
+      setMessage(isApiError(error) ? error.message : 'The asset type could not be deleted.');
+    },
   });
 
   function submitIndividual(event: FormEvent) {
     event.preventDefault();
     setMessage(null);
+    setMessageIsSuccess(false);
     setResult(null);
     setPreview(null);
     const trimmed = name.trim();
@@ -150,6 +188,7 @@ export function AssetTypePage() {
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     setMessage(null);
+    setMessageIsSuccess(false);
     setResult(null);
     const selected = event.target.files?.[0] ?? null;
     if (!selected) return setFile(null);
@@ -170,6 +209,7 @@ export function AssetTypePage() {
   function submitBulk(event: FormEvent) {
     event.preventDefault();
     setMessage(null);
+    setMessageIsSuccess(false);
     setResult(null);
     if (!file) {
       setMessage('Choose a CSV or XLSX file first.');
@@ -208,36 +248,57 @@ export function AssetTypePage() {
         title="Add asset details"
       />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_430px]">
         <AppCard>
           <div className="mb-5 grid grid-cols-2 gap-2">
-            {canAddAssetTypes ? <Button
-              onClick={() => {
-                setMode('individual');
-                setMessage(null);
-                setResult(null);
-              }}
-              type="button"
-              variant={mode === 'individual' ? 'primary' : 'secondary'}
-            >
-              <PackagePlus aria-hidden="true" size={18} />
-              Individual
-            </Button> : null}
-            {canAddAssetTypes ? <Button
-              onClick={() => {
-                setMode('bulk');
-                setMessage(null);
-                setResult(null);
-              }}
-              type="button"
-              variant={mode === 'bulk' ? 'primary' : 'secondary'}
-            >
-              <FileSpreadsheet aria-hidden="true" size={18} />
-              Bulk upload
-            </Button> : null}
+            {canAddAssetTypes ? (
+              <Button
+                onClick={() => {
+                  setMode('individual');
+                  setMessage(null);
+                  setResult(null);
+                }}
+                type="button"
+                variant={mode === 'individual' ? 'primary' : 'secondary'}
+              >
+                <PackagePlus aria-hidden="true" size={18} />
+                Individual
+              </Button>
+            ) : null}
+            {canAddAssetTypes ? (
+              <Button
+                onClick={() => {
+                  setMode('bulk');
+                  setMessage(null);
+                  setResult(null);
+                }}
+                type="button"
+                variant={mode === 'bulk' ? 'primary' : 'secondary'}
+              >
+                <FileSpreadsheet aria-hidden="true" size={18} />
+                Bulk upload
+              </Button>
+            ) : null}
           </div>
 
-          {message ? <ErrorSummary message={message} title={mode === 'individual' ? 'Asset detail' : 'Upload'} /> : null}
+          {message ? (
+            messageIsSuccess ? (
+              <div
+                className="rounded-[12px] border border-emerald-200 bg-[var(--color-success-soft)] p-4 text-[var(--color-success)]"
+                role="status"
+              >
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 aria-hidden="true" className="shrink-0" size={20} />
+                  <p className="font-bold">{message}</p>
+                </div>
+              </div>
+            ) : (
+              <ErrorSummary
+                message={message}
+                title={mode === 'individual' ? 'Asset detail' : 'Upload'}
+              />
+            )
+          ) : null}
 
           {!canAddAssetTypes ? (
             <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-sm font-semibold text-[var(--color-text-muted)]">
@@ -302,7 +363,8 @@ export function AssetTypePage() {
                     Upload {detailLabels[bulkKind]} list
                   </p>
                   <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                    CSV and XLSX, maximum 5 MB and 1,000 rows. Required column: {detailLabels[bulkKind]}.
+                    CSV and XLSX, maximum 5 MB and 1,000 rows. Required column:{' '}
+                    {detailLabels[bulkKind]}.
                   </p>
                   <input
                     accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -387,7 +449,8 @@ export function AssetTypePage() {
                 Upload complete
               </h2>
               <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                {result.created.length} saved. {result.skipped.length} skipped. {result.failed.length} failed.
+                {result.created.length} saved. {result.skipped.length} skipped.{' '}
+                {result.failed.length} failed.
               </p>
               {result.skipped.length > 0 || result.failed.length > 0 ? (
                 <div className="mt-4 rounded-[8px] border border-[var(--color-border)]">
@@ -404,7 +467,10 @@ export function AssetTypePage() {
                         ...result.skipped.map((row, index) => ({ ...row, rowNumber: index + 1 })),
                         ...result.failed,
                       ].map((row) => (
-                        <tr className="border-t border-[var(--color-border)]" key={`${row.rowNumber}-${row.name}-${row.reason}`}>
+                        <tr
+                          className="border-t border-[var(--color-border)]"
+                          key={`${row.rowNumber}-${row.name}-${row.reason}`}
+                        >
                           <td className="p-3">{row.rowNumber}</td>
                           <td className="p-3">{row.name || 'Missing'}</td>
                           <td className="p-3 font-bold text-[var(--color-danger)]">{row.reason}</td>
@@ -419,39 +485,85 @@ export function AssetTypePage() {
         </AppCard>
 
         <AppCard>
-          <h2 className="font-extrabold text-[var(--color-primary-strong)]">Saved asset details</h2>
+          <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+            Saved asset details
+          </h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px] lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_160px]">
+            <label className="relative block">
+              <span className="sr-only">Search saved asset details</span>
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+                size={17}
+              />
+              <input
+                className="field-input pl-10"
+                onChange={(event) => setSavedSearch(event.target.value)}
+                placeholder="Search details"
+                type="search"
+                value={savedSearch}
+              />
+            </label>
+            <label>
+              <span className="sr-only">Filter saved details by type</span>
+              <select
+                className="field-input"
+                onChange={(event) => setSavedKind(event.target.value as AssetDetailKind | 'ALL')}
+                value={savedKind}
+              >
+                <option value="ALL">All types</option>
+                <option value="ASSET_TYPE">IT Asset</option>
+                <option value="CONSUMABLE_TYPE">IT Consumable</option>
+                <option value="LOCATION">Location</option>
+                <option value="BLOCK">Block</option>
+                <option value="DEPARTMENT">Department</option>
+              </select>
+            </label>
+          </div>
           {query.isPending ? (
             <LoadingPanel label="Loading asset details" />
           ) : query.isError ? (
-            <ErrorState message="Asset details could not be loaded." onRetry={() => void query.refetch()} />
+            <ErrorState
+              message="Asset details could not be loaded."
+              onRetry={() => void query.refetch()}
+            />
           ) : query.data.length === 0 ? (
-            <p className="mt-3 text-sm text-[var(--color-text-muted)]">No asset details saved yet.</p>
+            <p className="mt-3 text-sm text-[var(--color-text-muted)]">
+              No asset details saved yet.
+            </p>
           ) : (
-            <ul className="mt-4 max-h-[480px] space-y-2 overflow-auto">
-              {query.data.map((assetType) => (
-                <li
-                  className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--color-border)] px-3 py-2 text-sm font-bold text-[var(--color-text-strong)]"
-                  key={assetType.id}
-                >
-                  <span className="min-w-0 break-words">
-                    <span className="mr-2 rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-xs text-[var(--color-primary)]">
-                      {detailLabels[assetType.kind]}
-                    </span>
-                    {assetType.name}
-                  </span>
-                  {canDeleteAssetTypes ? <Button
-                    aria-label={`Delete ${assetType.name}`}
-                    onClick={() => {
-                      setMessage(null);
-                      setDeleteTarget(assetType);
-                    }}
-                    type="button"
-                    variant="danger"
+            <ul className="mt-4 max-h-[560px] space-y-2 overflow-auto pr-1">
+              {query.data
+                .filter((detail) => savedKind === 'ALL' || detail.kind === savedKind)
+                .filter((detail) =>
+                  detail.name.toLocaleLowerCase().includes(savedSearch.trim().toLocaleLowerCase()),
+                )
+                .map((assetType) => (
+                  <li
+                    className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--color-border)] px-3 py-3 text-[15px] font-bold text-[var(--color-text-strong)]"
+                    key={assetType.id}
                   >
-                    <Trash2 aria-hidden="true" size={16} />
-                  </Button> : null}
-                </li>
-              ))}
+                    <span className="min-w-0 break-words">
+                      <span className="mr-2 rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-xs text-[var(--color-primary)]">
+                        {detailLabels[assetType.kind]}
+                      </span>
+                      {assetType.name}
+                    </span>
+                    {canDeleteAssetTypes ? (
+                      <Button
+                        aria-label={`Delete ${assetType.name}`}
+                        onClick={() => {
+                          setMessage(null);
+                          setDeleteTarget(assetType);
+                        }}
+                        type="button"
+                        variant="danger"
+                      >
+                        <Trash2 aria-hidden="true" size={16} />
+                      </Button>
+                    ) : null}
+                  </li>
+                ))}
             </ul>
           )}
         </AppCard>
@@ -473,8 +585,8 @@ export function AssetTypePage() {
                   Delete asset detail?
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-                  {deleteTarget.name} will be removed from the {detailLabels[deleteTarget.kind]} dropdown. It cannot be
-                  deleted while inventory data is using it.
+                  {deleteTarget.name} will be removed from the {detailLabels[deleteTarget.kind]}{' '}
+                  dropdown. It cannot be deleted while inventory data is using it.
                 </p>
               </div>
             </div>

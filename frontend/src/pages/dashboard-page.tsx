@@ -83,9 +83,7 @@ function AdminDashboard({ adminName }: { adminName: string }) {
       ) : query.isError ? (
         <ErrorState
           message={
-            isApiError(query.error)
-              ? query.error.message
-              : 'Dashboard counts could not be loaded.'
+            isApiError(query.error) ? query.error.message : 'Dashboard counts could not be loaded.'
           }
           onRetry={() => void query.refetch()}
         />
@@ -308,21 +306,23 @@ function SmallMetric({
 }) {
   return (
     <Link
-      className="group flex min-h-16 items-center gap-3 rounded-[12px] border border-[var(--color-border)] bg-white px-4 py-3 shadow-[var(--shadow-card)] transition hover:border-[var(--color-primary-border)]"
+      className="group flex min-h-16 min-w-0 items-center gap-3 overflow-hidden rounded-[12px] border border-[var(--color-border)] bg-white px-3 py-3 shadow-[var(--shadow-card)] transition hover:border-[var(--color-primary-border)] sm:px-4"
       to={to}
     >
       <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
         <Icon aria-hidden="true" size={18} />
       </span>
-      <span className="min-w-0">
+      <span className="min-w-0 flex-1">
         <span className="block text-xl font-extrabold leading-none text-[var(--color-primary-strong)]">
           {value.toLocaleString('en-IN')}
         </span>
-        <span className="mt-1 block text-xs font-bold text-[var(--color-text-muted)]">{label}</span>
+        <span className="mt-1 block truncate text-xs font-bold text-[var(--color-text-muted)]">
+          {label}
+        </span>
       </span>
       <ArrowRight
         aria-hidden="true"
-        className="ml-auto text-[var(--color-text-muted)] transition-transform group-hover:translate-x-0.5"
+        className="ml-auto shrink-0 text-[var(--color-text-muted)] transition-transform group-hover:translate-x-0.5"
         size={17}
       />
     </Link>
