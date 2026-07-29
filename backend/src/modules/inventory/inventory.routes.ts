@@ -9,6 +9,7 @@ import {
   AssetUnitStatusSchema,
   CreateAssetDetailRequestSchema,
   CreateAssetTypeRequestSchema,
+  BulkUpdateMaterialStatusRequestSchema,
   CreateAssetUnitRequestSchema,
   CreateMaterialRequestSchema,
   MaterialCodeSchema,
@@ -90,14 +91,11 @@ const MaterialListQuerySchema = z
     page: z.coerce.number().int().positive().default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20),
     search: OptionalQueryTextSchema,
-    issueable: z.preprocess(
-      (value) => {
-        if (value === 'true' || value === true) return true;
-        if (value === 'false' || value === false) return false;
-        return undefined;
-      },
-      z.boolean().optional(),
-    ),
+    issueable: z.preprocess((value) => {
+      if (value === 'true' || value === true) return true;
+      if (value === 'false' || value === false) return false;
+      return undefined;
+    }, z.boolean().optional()),
     status: z.preprocess(
       (value) => (value === '' ? undefined : value),
       MaterialStatusSchema.optional(),
@@ -112,9 +110,7 @@ const MaterialListQuerySchema = z
     ),
     stockState: z.preprocess(
       (value) => (value === '' ? undefined : value),
-      z
-        .enum(['AVAILABLE', 'LOW_STOCK', 'OUT_OF_STOCK', 'ISSUED', 'FULLY_ISSUED'])
-        .optional(),
+      z.enum(['AVAILABLE', 'LOW_STOCK', 'OUT_OF_STOCK', 'ISSUED', 'FULLY_ISSUED']).optional(),
     ),
     category: OptionalQueryTextSchema,
     location: OptionalQueryTextSchema,
@@ -251,26 +247,34 @@ export function createInventoryRouter(): Router {
     }
   });
 
-  router.get('/asset-types', requirePermission('INVENTORY_VIEW'), async (_request, response, next) => {
-    try {
-      const result = await listAssetTypes();
-      response.json({ data: result.assetTypes });
-    } catch (error) {
-      next(error);
-    }
-  });
+  router.get(
+    '/asset-types',
+    requirePermission('INVENTORY_VIEW'),
+    async (_request, response, next) => {
+      try {
+        const result = await listAssetTypes();
+        response.json({ data: result.assetTypes });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
-  router.get('/asset-details', requirePermission('INVENTORY_VIEW'), async (request, response, next) => {
-    try {
-      const kind = request.query.kind
-        ? AssetDetailKindSchema.parse(request.query.kind)
-        : undefined;
-      const result = await listAssetDetails(kind);
-      response.json({ data: result.assetDetails });
-    } catch (error) {
-      next(error);
-    }
-  });
+  router.get(
+    '/asset-details',
+    requirePermission('INVENTORY_VIEW'),
+    async (request, response, next) => {
+      try {
+        const kind = request.query.kind
+          ? AssetDetailKindSchema.parse(request.query.kind)
+          : undefined;
+        const result = await listAssetDetails(kind);
+        response.json({ data: result.assetDetails });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.get('/export', requirePermission('INVENTORY_EXPORT'), async (request, response, next) => {
     try {
@@ -312,7 +316,9 @@ export function createInventoryRouter(): Router {
       try {
         const input = CreateAssetTypeRequestSchema.parse(request.body);
         const assetType = await createAssetType(input.name, authenticated(request).userId);
-        await audit(request, 'ASSET_TYPE_SAVED', 'ASSET_TYPE', assetType.id, { name: assetType.name });
+        await audit(request, 'ASSET_TYPE_SAVED', 'ASSET_TYPE', assetType.id, {
+          name: assetType.name,
+        });
         response.status(201).json({ data: { assetType } });
       } catch (error) {
         next(error);
@@ -329,7 +335,11 @@ export function createInventoryRouter(): Router {
     async (request, response, next) => {
       try {
         const input = CreateAssetDetailRequestSchema.parse(request.body);
-        const detail = await createAssetDetail(input.kind, input.name, authenticated(request).userId);
+        const detail = await createAssetDetail(
+          input.kind,
+          input.name,
+          authenticated(request).userId,
+        );
         if (input.kind === 'ASSET_TYPE' || input.kind === 'CONSUMABLE_TYPE') {
           await createAssetType(input.name, authenticated(request).userId);
         }
@@ -396,10 +406,12 @@ export function createInventoryRouter(): Router {
       try {
         if (!request.file)
           throw new AppError(400, 'ASSET_TYPE_IMPORT_FILE_REQUIRED', 'Choose a CSV or XLSX file.');
-        const kind = request.body.kind
-          ? AssetDetailKindSchema.parse(request.body.kind)
-          : undefined;
-        const result = await previewAssetTypeImport(request.file, authenticated(request).userId, kind);
+        const kind = request.body.kind ? AssetDetailKindSchema.parse(request.body.kind) : undefined;
+        const result = await previewAssetTypeImport(
+          request.file,
+          authenticated(request).userId,
+          kind,
+        );
         await audit(request, 'ASSET_TYPE_IMPORT_PREVIEWED', 'ASSET_TYPE_IMPORT', result.importId, {
           validRows: result.validRows,
           invalidRows: result.invalidRows,
@@ -520,6 +532,40 @@ export function createInventoryRouter(): Router {
     },
   );
 
+  router.patch(
+    '/bulk-status',
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('INVENTORY_EDIT'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const input = BulkUpdateMaterialStatusRequestSchema.parse(request.body);
+        const updated = [];
+        const failed: Array<{ materialCode: string; reason: string }> = [];
+        for (const code of input.materialCodes) {
+          try {
+            const result = await updateMaterialStatus(code, input.status);
+            updated.push(result.material);
+            await audit(request, 'MATERIAL_STATUS_CHANGED', 'MATERIAL', code, {
+              previousStatus: result.previousStatus,
+              status: result.material.status,
+              bulk: true,
+            });
+          } catch (error) {
+            failed.push({
+              materialCode: code,
+              reason: error instanceof Error ? error.message : 'Status update failed.',
+            });
+          }
+        }
+        response.json({ data: { updated, failed } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.get(
     '/:materialCode',
     requirePermission('INVENTORY_VIEW'),
@@ -630,29 +676,26 @@ export function createInventoryRouter(): Router {
     },
   );
 
-  router.get(
-    '/:materialCode/units',
-    async (request, response, next) => {
-      try {
-        const query = AssetUnitListQuerySchema.parse(request.query);
-        ensureAssetUnitListAccess(request, query.status);
-        const actor = authenticated(request);
-        const result = await listAssetUnits({
-          materialCode: materialCode(request),
-          page: query.page,
-          pageSize: query.pageSize,
-          role: actor.role,
-          actorUserId: actor.userId,
-          dataScope: actor.dataAccess.inventory,
-          ...(query.search ? { search: query.search } : {}),
-          ...(query.status ? { status: query.status } : {}),
-        });
-        response.json({ data: result.units, meta: pageMeta(result) });
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
+  router.get('/:materialCode/units', async (request, response, next) => {
+    try {
+      const query = AssetUnitListQuerySchema.parse(request.query);
+      ensureAssetUnitListAccess(request, query.status);
+      const actor = authenticated(request);
+      const result = await listAssetUnits({
+        materialCode: materialCode(request),
+        page: query.page,
+        pageSize: query.pageSize,
+        role: actor.role,
+        actorUserId: actor.userId,
+        dataScope: actor.dataAccess.inventory,
+        ...(query.search ? { search: query.search } : {}),
+        ...(query.status ? { status: query.status } : {}),
+      });
+      response.json({ data: result.units, meta: pageMeta(result) });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   router.post(
     '/:materialCode/units',

@@ -27,6 +27,7 @@ const labels: Record<string, string> = {
   DUE_SOON: 'Due soon',
   SCRAP: 'Faulty (scrap)',
   NOT_IN_USE: 'Outdated (not in use)',
+  UNDER_MAINTENANCE: 'Under maintenance',
   FAULTY: 'Faulty (scrap)',
   OUTDATED: 'Outdated (not in use)',
   WORKING: 'Active / in use',

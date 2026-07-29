@@ -91,7 +91,7 @@ const ImportInputSchema = new Schema<InventoryImportInput>(
     serialNumbers: { type: [String] },
     totalQuantity: { type: Number },
     unitLabel: { type: String },
-    status: { type: String, enum: ['ACTIVE', 'SCRAP', 'NOT_IN_USE'] },
+    status: { type: String, enum: ['ACTIVE', 'UNDER_MAINTENANCE', 'SCRAP', 'NOT_IN_USE'] },
   },
   { _id: false },
 );

@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Archive,
   ArrowLeft,
   Boxes,
   CheckCircle2,
@@ -27,6 +26,7 @@ import {
   type AssetUnitsListResponse,
   type ManualAssetUnitStatus,
   type Material,
+  type MaterialStatus,
   type ReturnPolicy,
   type UpdateMaterialRequest,
 } from '@assetdesk/contracts';
@@ -76,6 +76,7 @@ export function InventoryDetailPage() {
   const unitPage = Math.max(1, Number(parameters.get('unitPage')) || 1);
   const [editing, setEditing] = useState(parameters.get('edit') === '1');
   const [dialog, setDialog] = useState<'status' | 'quantity' | 'add-unit' | 'delete' | null>(null);
+  const [nextMaterialStatus, setNextMaterialStatus] = useState<MaterialStatus>('ACTIVE');
   const [editUnit, setEditUnit] = useState<AssetUnit | null>(null);
   const [unitStatus, setUnitStatus] = useState<AssetUnitStatus | ''>('');
   const [actionError, setActionError] = useState<string | null>(null);
@@ -128,12 +129,19 @@ export function InventoryDetailPage() {
     await queryClient.invalidateQueries({ queryKey: ['inventory'] });
   }
 
+  useEffect(() => {
+    if (parameters.get('status') === '1' && query.data && canChangeStatus) {
+      setNextMaterialStatus(query.data.status);
+      setDialog('status');
+      const next = new URLSearchParams(parameters);
+      next.delete('status');
+      setParameters(next, { replace: true });
+    }
+  }, [canChangeStatus, parameters, query.data, setParameters]);
+
   const statusMutation = useMutation({
-    mutationFn: (material: Material) =>
-      setMaterialStatus(
-        material.materialCode,
-        material.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE',
-      ),
+    mutationFn: ({ material, status }: { material: Material; status: MaterialStatus }) =>
+      setMaterialStatus(material.materialCode, status),
     onSuccess: async (material) => {
       await updateCached(material);
       setDialog(null);
@@ -234,7 +242,10 @@ export function InventoryDetailPage() {
               {material.trackingMode === 'SERIALIZED' ? (
                 <DetailRow label="Configuration" value={material.configuration ?? 'Not provided'} />
               ) : null}
-              <DetailRow label="Location / block" value={material.locationBlock ?? 'Not provided'} />
+              <DetailRow
+                label="Location / block"
+                value={material.locationBlock ?? 'Not provided'}
+              />
               <DetailRow label="Department" value={material.department ?? 'Not provided'} />
               <DetailRow label="Vendor name" value={material.vendorName ?? 'Not provided'} />
               <DetailRow
@@ -273,35 +284,39 @@ export function InventoryDetailPage() {
                 variant="secondary"
               >
                 <SlidersHorizontal aria-hidden="true" size={18} />
-                {material.trackingMode === 'SERIALIZED' ? 'Change IT Asset quantity' : 'Adjust quantity'}
+                {material.trackingMode === 'SERIALIZED'
+                  ? 'Change IT Asset quantity'
+                  : 'Adjust quantity'}
               </Button>
             ) : null}
           </AppCard>
           <AppCard>
             <h2 className="font-extrabold text-[var(--color-primary-strong)]">Record status</h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-              {material.status === 'ACTIVE'
-                ? 'This material appears in active inventory searches.'
-                : 'This material is archived and retained for history.'}
+              Change this record between Active, Under maintenance, Faulty, Outdated, and Archived.
+              Status changes apply to both IT Assets and IT Consumables.
             </p>
             {canChangeStatus || canDeleteInventory ? (
               <div className="mt-4 space-y-2">
-                {canChangeStatus ? <Button
-                  className="w-full"
-                  onClick={() => setDialog('status')}
-                  variant={material.status === 'ACTIVE' ? 'danger' : 'secondary'}
-                >
-                  {material.status === 'ACTIVE' ? (
-                    <Archive aria-hidden="true" size={18} />
-                  ) : (
+                {canChangeStatus ? (
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      setNextMaterialStatus(material.status);
+                      setDialog('status');
+                    }}
+                    variant="secondary"
+                  >
                     <RotateCcw aria-hidden="true" size={18} />
-                  )}
-                  {material.status === 'ACTIVE' ? 'Archive material' : 'Restore material'}
-                </Button> : null}
-                {canDeleteInventory ? <Button className="w-full" onClick={() => setDialog('delete')} variant="danger">
-                  <Trash2 aria-hidden="true" size={18} />
-                  Delete material
-                </Button> : null}
+                    Change inventory status
+                  </Button>
+                ) : null}
+                {canDeleteInventory ? (
+                  <Button className="w-full" onClick={() => setDialog('delete')} variant="danger">
+                    <Trash2 aria-hidden="true" size={18} />
+                    Delete material
+                  </Button>
+                ) : null}
               </div>
             ) : (
               <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-xs font-semibold text-[var(--color-text-muted)]">
@@ -352,19 +367,21 @@ export function InventoryDetailPage() {
           material={material}
           loading={statusMutation.isPending}
           onCancel={() => setDialog(null)}
-          onConfirm={() => statusMutation.mutate(material)}
+          onConfirm={(status) => statusMutation.mutate({ material, status })}
+          onStatusChange={setNextMaterialStatus}
+          status={nextMaterialStatus}
         />
       ) : null}
       {dialog === 'quantity' ? (
-          <QuantityDialog
-            material={material}
-            onCancel={() => setDialog(null)}
-            onSaved={async (updated) => {
-              await updateCached(updated);
-              await queryClient.invalidateQueries({ queryKey: ['asset-units', materialCode] });
-              setDialog(null);
-            }}
-          />
+        <QuantityDialog
+          material={material}
+          onCancel={() => setDialog(null)}
+          onSaved={async (updated) => {
+            await updateCached(updated);
+            await queryClient.invalidateQueries({ queryKey: ['asset-units', materialCode] });
+            setDialog(null);
+          }}
+        />
       ) : null}
       {dialog === 'add-unit' ? (
         <UnitDialog
@@ -660,7 +677,8 @@ function editMaterialMessage(
   material: Material,
 ): string | null {
   if (form.category.trim().length < 2) return 'Choose an asset type, or add a new asset type.';
-  if (form.typeModelName.trim().length < 2) return 'Enter a type/model name with at least 2 characters.';
+  if (form.typeModelName.trim().length < 2)
+    return 'Enter a type/model name with at least 2 characters.';
   if (form.location.trim().length < 1) return 'Choose a location from Add asset details.';
   if (form.block.trim().length < 1) return 'Choose a block from Add asset details.';
   if (form.department.trim().length < 1) return 'Choose a department from Add asset details.';
@@ -1100,29 +1118,49 @@ function Dialog({
 
 function ConfirmStatusDialog({
   material,
+  status,
   loading,
   onConfirm,
+  onStatusChange,
   onCancel,
 }: {
   material: Material;
+  status: MaterialStatus;
   loading: boolean;
-  onConfirm: () => void;
+  onConfirm: (status: MaterialStatus) => void;
+  onStatusChange: (status: MaterialStatus) => void;
   onCancel: () => void;
 }) {
-  const active = material.status === 'ACTIVE';
   return (
-    <Dialog onClose={onCancel} title={active ? 'Archive material?' : 'Restore material?'}>
+    <Dialog onClose={onCancel} title="Change inventory status">
       <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-        {active
-          ? 'It will be removed from active inventory searches. Existing history and stock records are preserved.'
-          : 'It will become available in active inventory searches again.'}
+        Choose the new status for {material.name}. Non-active statuses are blocked while stock is
+        issued.
       </p>
+      <label className="mt-5 block space-y-1.5">
+        <span className="field-label">Inventory status</span>
+        <select
+          className="field-input"
+          onChange={(event) => onStatusChange(event.target.value as MaterialStatus)}
+          value={status}
+        >
+          <option value="ACTIVE">Active / in use</option>
+          <option value="UNDER_MAINTENANCE">Under maintenance</option>
+          <option value="SCRAP">Faulty (scrap)</option>
+          <option value="NOT_IN_USE">Outdated (not in use)</option>
+          <option value="ARCHIVED">Archived</option>
+        </select>
+      </label>
       <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button disabled={loading} onClick={onCancel} variant="secondary">
           Cancel
         </Button>
-        <Button loading={loading} onClick={onConfirm} variant={active ? 'danger' : 'primary'}>
-          {loading ? 'Working…' : active ? 'Archive material' : 'Restore material'}
+        <Button
+          disabled={status === material.status}
+          loading={loading}
+          onClick={() => onConfirm(status)}
+        >
+          {loading ? 'Saving…' : 'Save status'}
         </Button>
       </div>
     </Dialog>
@@ -1195,7 +1233,8 @@ function QuantityDialog({
   const quantityDelta = Number(delta);
   const availableUnitsQuery = useQuery({
     queryKey: ['asset-units-removable', material.materialCode],
-    queryFn: ({ signal }) => getAssetUnits(material.materialCode, 1, { status: 'AVAILABLE', pageSize: 100 }, signal),
+    queryFn: ({ signal }) =>
+      getAssetUnits(material.materialCode, 1, { status: 'AVAILABLE', pageSize: 100 }, signal),
     enabled: material.trackingMode === 'SERIALIZED' && quantityDelta < 0,
   });
   const mutation = useMutation({
@@ -1230,7 +1269,9 @@ function QuantityDialog({
     const next = Number(rawValue);
     if (material.trackingMode !== 'SERIALIZED') return;
     if (Number.isInteger(next) && next > 0 && next <= 1000) {
-      setSerialNumbers((current) => Array.from({ length: next }, (_, index) => current[index] ?? ''));
+      setSerialNumbers((current) =>
+        Array.from({ length: next }, (_, index) => current[index] ?? ''),
+      );
     } else {
       setSerialNumbers([]);
     }
@@ -1254,7 +1295,9 @@ function QuantityDialog({
       if (result.data.quantityDelta > 0) {
         const prepared = serialNumbers.map((value) => value.trim());
         if (prepared.length !== result.data.quantityDelta || prepared.some((value) => !value)) {
-          setMessage(`Enter one serial number for each of the ${result.data.quantityDelta} IT Assets.`);
+          setMessage(
+            `Enter one serial number for each of the ${result.data.quantityDelta} IT Assets.`,
+          );
           return;
         }
         const unique = new Set(prepared.map((value) => value.toLocaleUpperCase('en-US')));
@@ -1267,13 +1310,16 @@ function QuantityDialog({
         result.data.quantityDelta < 0 &&
         selectedAssetTags.length !== Math.abs(result.data.quantityDelta)
       ) {
-        setMessage(`Select ${Math.abs(result.data.quantityDelta)} available IT Asset units to remove.`);
+        setMessage(
+          `Select ${Math.abs(result.data.quantityDelta)} available IT Asset units to remove.`,
+        );
         return;
       }
     }
     mutation.mutate(result.data);
   }
-  const title = material.trackingMode === 'SERIALIZED' ? 'Change IT Asset quantity' : 'Adjust quantity';
+  const title =
+    material.trackingMode === 'SERIALIZED' ? 'Change IT Asset quantity' : 'Adjust quantity';
   return (
     <Dialog onClose={onCancel} title={title}>
       <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
@@ -1475,7 +1521,11 @@ function UnitDialog({
       >
         <TextField
           disabled={unit?.status === 'ISSUED'}
-          hint={unit?.status === 'ISSUED' ? 'Serial number is locked while this IT Asset is issued.' : undefined}
+          hint={
+            unit?.status === 'ISSUED'
+              ? 'Serial number is locked while this IT Asset is issued.'
+              : undefined
+          }
           label="Serial number"
           onChange={(event) => setSerialNumber(event.target.value)}
           required

@@ -192,6 +192,41 @@ describe('inventory route authorization', () => {
     expect(service.deleteMaterial).not.toHaveBeenCalled();
   });
 
+  it('bulk-updates selected inventory statuses for an Admin', async () => {
+    authState.role = 'ADMIN';
+    service.updateMaterialStatus.mockResolvedValue({
+      material: {
+        id: 'material-id',
+        materialCode: 'GEU-MAT-000001',
+        name: 'Network switch',
+        category: 'Networking',
+        trackingMode: 'SERIALIZED',
+        returnPolicy: 'REUSABLE',
+        assignmentTypes: ['LONG_TERM'],
+        status: 'UNDER_MAINTENANCE',
+        totalQuantity: 1,
+        availableQuantity: 1,
+        issuedQuantity: 0,
+        unitLabel: null,
+      },
+      previousStatus: 'ACTIVE',
+    });
+
+    const response = await request(testApp())
+      .patch('/api/v1/inventory/bulk-status')
+      .send({
+        materialCodes: ['GEU-MAT-000001'],
+        status: 'UNDER_MAINTENANCE',
+      })
+      .expect(200);
+
+    expect(response.body.data.updated).toHaveLength(1);
+    expect(service.updateMaterialStatus).toHaveBeenCalledWith(
+      'GEU-MAT-000001',
+      'UNDER_MAINTENANCE',
+    );
+  });
+
   it('previews an Admin bulk upload without creating inventory', async () => {
     authState.role = 'ADMIN';
     importService.previewInventoryImport.mockResolvedValue({

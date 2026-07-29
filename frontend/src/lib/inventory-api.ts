@@ -7,6 +7,7 @@ import {
   AssetTypeImportResponseSchema,
   AssetTypesResponseSchema,
   MaterialResponseSchema,
+  MaterialSchema,
   MaterialsListResponseSchema,
   type AdjustQuantityRequest,
   type AssetDetail,
@@ -93,7 +94,9 @@ export async function createMaterial(input: CreateMaterialRequest): Promise<Mate
   return MaterialResponseSchema.parse(payload).data.material;
 }
 
-export async function downloadInventoryCsv(filters: Omit<InventoryFilters, 'page' | 'pageSize'>): Promise<Blob> {
+export async function downloadInventoryCsv(
+  filters: Omit<InventoryFilters, 'page' | 'pageSize'>,
+): Promise<Blob> {
   const parameters = new URLSearchParams({ page: '1' });
   if (filters.search) parameters.set('search', filters.search);
   if (filters.status) parameters.set('status', filters.status);
@@ -149,10 +152,7 @@ export async function getAssetDetails(
   return AssetDetailsResponseSchema.parse(payload).data;
 }
 
-export async function createAssetDetail(
-  kind: AssetDetailKind,
-  name: string,
-): Promise<AssetDetail> {
+export async function createAssetDetail(kind: AssetDetailKind, name: string): Promise<AssetDetail> {
   const payload = await apiRequest<{ data: { detail: AssetDetail } }>(
     '/api/v1/inventory/asset-details',
     { method: 'POST', json: { kind, name } },
@@ -161,9 +161,12 @@ export async function createAssetDetail(
 }
 
 export async function deleteAssetDetail(assetDetailId: string): Promise<void> {
-  await apiRequest<unknown>(`/api/v1/inventory/asset-details/${encodeURIComponent(assetDetailId)}`, {
-    method: 'DELETE',
-  });
+  await apiRequest<unknown>(
+    `/api/v1/inventory/asset-details/${encodeURIComponent(assetDetailId)}`,
+    {
+      method: 'DELETE',
+    },
+  );
 }
 
 export async function previewAssetTypeImport(
@@ -271,6 +274,28 @@ export async function setMaterialStatus(
     { method: 'PATCH', json: { status } },
   );
   return MaterialResponseSchema.parse(payload).data.material;
+}
+
+export async function setBulkMaterialStatus(
+  materialCodes: string[],
+  status: MaterialStatus,
+): Promise<{
+  updated: Material[];
+  failed: Array<{ materialCode: string; reason: string }>;
+}> {
+  const payload = await apiRequest<{
+    data: {
+      updated: Material[];
+      failed: Array<{ materialCode: string; reason: string }>;
+    };
+  }>('/api/v1/inventory/bulk-status', {
+    method: 'PATCH',
+    json: { materialCodes, status },
+  });
+  return {
+    updated: payload.data.updated.map((material) => MaterialSchema.parse(material)),
+    failed: payload.data.failed,
+  };
 }
 
 export async function deleteMaterial(materialCode: string): Promise<void> {

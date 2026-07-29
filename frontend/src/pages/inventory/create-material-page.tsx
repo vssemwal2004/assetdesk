@@ -80,7 +80,8 @@ export function serialFieldsForQuantity(current: string[], rawQuantity: string):
 
 function materialFormMessage(form: MaterialForm): string | null {
   if (form.category.trim().length < 2) return 'Choose an asset type, or add a new asset type.';
-  if (form.typeModelName.trim().length < 2) return 'Enter a type/model name with at least 2 characters.';
+  if (form.typeModelName.trim().length < 2)
+    return 'Enter a type/model name with at least 2 characters.';
   if (form.trackingMode === 'SERIALIZED' && !form.configuration.trim())
     return 'Enter the IT Asset configuration.';
   if (form.location.trim().length < 1) return 'Choose a location from Add asset details.';
@@ -123,7 +124,7 @@ export function CreateMaterialPage() {
       await queryClient.invalidateQueries({ queryKey: ['inventory'] });
       navigate(`/inventory/${material.materialCode}`, {
         replace: true,
-      state: { notice: `${material.name} was added to Inventory.` },
+        state: { notice: `${material.name} was added to Inventory.` },
       });
     },
     onError: (error) => {
@@ -293,7 +294,9 @@ export function CreateMaterialPage() {
             <TextField
               label="Vendor name (optional)"
               maxLength={120}
-              onChange={(event) => setForm((value) => ({ ...value, vendorName: event.target.value }))}
+              onChange={(event) =>
+                setForm((value) => ({ ...value, vendorName: event.target.value }))
+              }
               value={form.vendorName}
             />
             {form.trackingMode === 'SERIALIZED' ? (
@@ -347,6 +350,7 @@ export function CreateMaterialPage() {
               value={form.status}
             >
               <option value="ACTIVE">{inventoryStatusLabel('ACTIVE')}</option>
+              <option value="UNDER_MAINTENANCE">{inventoryStatusLabel('UNDER_MAINTENANCE')}</option>
               <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
               <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
             </SelectField>

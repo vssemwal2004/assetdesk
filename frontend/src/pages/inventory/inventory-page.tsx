@@ -1,9 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Eye, MoreVertical, PackagePlus, PackageSearch, Pencil, Trash2 } from 'lucide-react';
+import {
+  Download,
+  Eye,
+  MoreVertical,
+  PackagePlus,
+  PackageSearch,
+  Pencil,
+  Trash2,
+} from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
-import type { AssetDetail, AssetDetailKind, Material, MaterialStatus, ReturnPolicy, TrackingMode } from '@assetdesk/contracts';
+import type {
+  AssetDetail,
+  AssetDetailKind,
+  Material,
+  MaterialStatus,
+  ReturnPolicy,
+  TrackingMode,
+} from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
 import { hasPermission } from '../../auth/permissions';
@@ -18,7 +33,13 @@ import {
   PageHeader,
   SearchForm,
 } from '../../components/ui';
-import { deleteMaterial, downloadInventoryCsv, getAssetDetails, getInventory } from '../../lib/inventory-api';
+import {
+  deleteMaterial,
+  downloadInventoryCsv,
+  getAssetDetails,
+  getInventory,
+  setBulkMaterialStatus,
+} from '../../lib/inventory-api';
 import { isApiError } from '../../lib/api-client';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
 import { inventoryStatusLabel, normalizeInventoryStatus } from '../../lib/inventory-status';
@@ -62,9 +83,11 @@ function inventorySummary(materials: Material[]) {
       summary.issued += material.issuedQuantity;
       if (material.status === 'SCRAP') summary.scrap += material.totalQuantity;
       if (material.status === 'NOT_IN_USE') summary.notInUse += material.totalQuantity;
+      if (material.status === 'UNDER_MAINTENANCE')
+        summary.underMaintenance += material.totalQuantity;
       return summary;
     },
-    { total: 0, available: 0, issued: 0, scrap: 0, notInUse: 0 },
+    { total: 0, available: 0, issued: 0, scrap: 0, notInUse: 0, underMaintenance: 0 },
   );
 }
 
@@ -80,15 +103,13 @@ function groupMaterials(materials: Material[]): MaterialGroup[] {
   const groups = new Map<string, MaterialGroup>();
   for (const material of materials) {
     const category = material.category || 'Unassigned asset type';
-    const group =
-      groups.get(category) ??
-      {
-        category,
-        materials: [],
-        totalQuantity: 0,
-        availableQuantity: 0,
-        issuedQuantity: 0,
-      };
+    const group = groups.get(category) ?? {
+      category,
+      materials: [],
+      totalQuantity: 0,
+      availableQuantity: 0,
+      issuedQuantity: 0,
+    };
     group.materials.push(material);
     group.totalQuantity += material.totalQuantity;
     group.availableQuantity += material.availableQuantity;
@@ -102,6 +123,7 @@ function materialStatsLabel(material: Material): string {
   if (material.status === 'ARCHIVED') return inventoryStatusLabel(material.status);
   if (material.status === 'SCRAP') return inventoryStatusLabel(material.status);
   if (material.status === 'NOT_IN_USE') return inventoryStatusLabel(material.status);
+  if (material.status === 'UNDER_MAINTENANCE') return inventoryStatusLabel(material.status);
   if (material.availableQuantity === 0) return 'Out of stock';
   if (material.issuedQuantity > 0 && material.issuedQuantity === material.totalQuantity) {
     return 'Fully issued';
@@ -123,7 +145,10 @@ function assetDetailOptions(
     .filter((detail) => kinds.includes(detail.kind))
     .map((detail) => detail.name)
     .sort((left, right) => left.localeCompare(right));
-  if (selectedValue && !values.some((value) => value.toLocaleLowerCase() === selectedValue.toLocaleLowerCase())) {
+  if (
+    selectedValue &&
+    !values.some((value) => value.toLocaleLowerCase() === selectedValue.toLocaleLowerCase())
+  ) {
     return [selectedValue, ...values];
   }
   return values;
@@ -134,6 +159,9 @@ export function InventoryPage() {
   const queryClient = useQueryClient();
   const [parameters, setParameters] = useSearchParams();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState<MaterialStatus>('ACTIVE');
   const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
   const [viewMaterial, setViewMaterial] = useState<Material | null>(null);
   const [downloading, setDownloading] = useState(false);
@@ -156,6 +184,24 @@ export function InventoryPage() {
   const canManageInventory = canEditInventory || canDeleteInventory;
   const canExportInventory = hasPermission(user, 'INVENTORY_EXPORT');
 
+  const bulkStatusMutation = useMutation({
+    mutationFn: () => setBulkMaterialStatus(selectedCodes, bulkStatus),
+    onSuccess: async (result) => {
+      setActionError(
+        result.failed.length
+          ? `${result.failed.length} record${result.failed.length === 1 ? '' : 's'} could not be changed. ${result.failed[0]?.reason ?? ''}`
+          : null,
+      );
+      setActionNotice(
+        `${result.updated.length} inventory record${result.updated.length === 1 ? '' : 's'} changed to ${inventoryStatusLabel(bulkStatus)}.`,
+      );
+      setSelectedCodes([]);
+      await queryClient.invalidateQueries({ queryKey: ['inventory'] });
+    },
+    onError: (error) =>
+      setActionError(isApiError(error) ? error.message : 'Bulk status update failed.'),
+  });
+
   const detailQuery = useQuery({
     queryKey: ['asset-details'],
     queryFn: ({ signal }) => getAssetDetails(undefined, signal),
@@ -164,7 +210,21 @@ export function InventoryPage() {
   const query = useQuery({
     queryKey: [
       'inventory',
-      { page, search, category, location, block, department, vendorName, createdFrom, createdTo, status, mode, policy, stock },
+      {
+        page,
+        search,
+        category,
+        location,
+        block,
+        department,
+        vendorName,
+        createdFrom,
+        createdTo,
+        status,
+        mode,
+        policy,
+        stock,
+      },
     ],
     queryFn: ({ signal }) =>
       getInventory(
@@ -216,17 +276,17 @@ export function InventoryPage() {
   const summary = inventorySummary(materials);
   const filtered = Boolean(
     search ||
-      category ||
-      location ||
-      block ||
-      department ||
-      vendorName ||
-      createdFrom ||
-      createdTo ||
-      status ||
-      mode ||
-      policy ||
-      stock,
+    category ||
+    location ||
+    block ||
+    department ||
+    vendorName ||
+    createdFrom ||
+    createdTo ||
+    status ||
+    mode ||
+    policy ||
+    stock,
   );
   const deleteMutation = useMutation({
     mutationFn: (material: Material) => deleteMaterial(material.materialCode),
@@ -284,12 +344,23 @@ export function InventoryPage() {
       <PageHeader
         actions={
           <div className="flex flex-wrap gap-2">
-            {canExportInventory ? <Button loading={downloading} onClick={() => void downloadData()} type="button" variant="secondary">
-              <Download aria-hidden="true" size={18} />
-              {downloading ? 'Downloading...' : 'Download data'}
-            </Button> : null}
+            {canExportInventory ? (
+              <Button
+                loading={downloading}
+                onClick={() => void downloadData()}
+                type="button"
+                variant="secondary"
+              >
+                <Download aria-hidden="true" size={18} />
+                {downloading ? 'Downloading...' : 'Download data'}
+              </Button>
+            ) : null}
             {canAddInventory ? (
-              <Link aria-label="Add material to inventory" className="button-primary" to="/inventory/new">
+              <Link
+                aria-label="Add material to inventory"
+                className="button-primary"
+                to="/inventory/new"
+              >
                 <PackagePlus aria-hidden="true" size={18} />
                 Add material
               </Link>
@@ -317,19 +388,21 @@ export function InventoryPage() {
             value={search}
           />
           <FilterPopover
-            activeCount={[
-              category,
-              location,
-              block,
-              department,
-              vendorName,
-              createdFrom,
-              createdTo,
-              status,
-              mode,
-              policy,
-              stock,
-            ].filter(Boolean).length}
+            activeCount={
+              [
+                category,
+                location,
+                block,
+                department,
+                vendorName,
+                createdFrom,
+                createdTo,
+                status,
+                mode,
+                policy,
+                stock,
+              ].filter(Boolean).length
+            }
             onClear={() =>
               updateParameters({
                 category: '',
@@ -450,6 +523,9 @@ export function InventoryPage() {
                   >
                     <option value="">Any status</option>
                     <option value="ACTIVE">{inventoryStatusLabel('ACTIVE')}</option>
+                    <option value="UNDER_MAINTENANCE">
+                      {inventoryStatusLabel('UNDER_MAINTENANCE')}
+                    </option>
                     <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
                     <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
                     <option value="ARCHIVED">Archived</option>
@@ -502,7 +578,7 @@ export function InventoryPage() {
       </section>
 
       {query.data ? (
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <SummaryCard label="Listed quantity" value={summary.total} />
           <SummaryCard label="Available" value={summary.available} />
           <SummaryCard label="Issued" value={summary.issued} />
@@ -512,9 +588,22 @@ export function InventoryPage() {
             tone="warning"
             value={summary.notInUse}
           />
+          <SummaryCard
+            label={inventoryStatusLabel('UNDER_MAINTENANCE')}
+            tone="warning"
+            value={summary.underMaintenance}
+          />
         </section>
       ) : null}
 
+      {actionNotice ? (
+        <div
+          className="rounded-[12px] border border-emerald-200 bg-[var(--color-success-soft)] p-4 text-sm font-bold text-[var(--color-success)]"
+          role="status"
+        >
+          {actionNotice}
+        </div>
+      ) : null}
       {query.isPending ? (
         <LoadingPanel label="Loading inventory" />
       ) : query.isError ? (
@@ -577,8 +666,35 @@ export function InventoryPage() {
             canEdit={canEditInventory}
             materials={materials}
             onDelete={confirmDelete}
+            onSelectionChange={setSelectedCodes}
             onView={setViewMaterial}
+            selectedCodes={selectedCodes}
           />
+          {canEditInventory ? (
+            <div className="flex flex-wrap items-end gap-3 rounded-[12px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]">
+              <div className="min-w-[220px] flex-1">
+                <p className="field-label">Bulk inventory status</p>
+                <select
+                  className="field-input mt-1.5"
+                  onChange={(event) => setBulkStatus(event.target.value as MaterialStatus)}
+                  value={bulkStatus}
+                >
+                  <option value="ACTIVE">Active / in use</option>
+                  <option value="UNDER_MAINTENANCE">Under maintenance</option>
+                  <option value="SCRAP">Faulty (scrap)</option>
+                  <option value="NOT_IN_USE">Outdated (not in use)</option>
+                  <option value="ARCHIVED">Archived</option>
+                </select>
+              </div>
+              <Button
+                disabled={selectedCodes.length === 0}
+                loading={bulkStatusMutation.isPending}
+                onClick={() => bulkStatusMutation.mutate()}
+              >
+                Update {selectedCodes.length} selected
+              </Button>
+            </div>
+          ) : null}
           {query.data && query.data.meta.totalPages > 1 ? (
             <nav aria-label="Inventory pages" className="flex items-center justify-between gap-3">
               <Button
@@ -819,14 +935,14 @@ function MaterialQuickViewDialog({
             Full record
           </Link>
           {canEdit ? (
-              <Link className="button-secondary" to={`/inventory/${material.materialCode}?edit=1`}>
-                Edit
-              </Link>
+            <Link className="button-secondary" to={`/inventory/${material.materialCode}?edit=1`}>
+              Edit
+            </Link>
           ) : null}
           {canDelete ? (
-              <Button onClick={() => onDelete(material)} variant="danger">
-                Delete
-              </Button>
+            <Button onClick={() => onDelete(material)} variant="danger">
+              Delete
+            </Button>
           ) : null}
         </div>
       </div>
@@ -930,20 +1046,26 @@ function MaterialActions({
           View details
         </Link>
         {canEdit ? (
-            <Link className="menu-item" to={`/inventory/${material.materialCode}?edit=1`}>
-              <Pencil aria-hidden="true" size={17} />
-              Edit
-            </Link>
+          <Link className="menu-item" to={`/inventory/${material.materialCode}?status=1`}>
+            <Pencil aria-hidden="true" size={17} />
+            Change status
+          </Link>
+        ) : null}
+        {canEdit ? (
+          <Link className="menu-item" to={`/inventory/${material.materialCode}?edit=1`}>
+            <Pencil aria-hidden="true" size={17} />
+            Edit
+          </Link>
         ) : null}
         {canDelete ? (
-            <button
-              className="menu-item w-full text-[var(--color-danger)]"
-              onClick={() => onDelete(material)}
-              type="button"
-            >
-              <Trash2 aria-hidden="true" size={17} />
-              Delete
-            </button>
+          <button
+            className="menu-item w-full text-[var(--color-danger)]"
+            onClick={() => onDelete(material)}
+            type="button"
+          >
+            <Trash2 aria-hidden="true" size={17} />
+            Delete
+          </button>
         ) : null}
       </div>
     </details>
@@ -972,7 +1094,12 @@ function MaterialCard({
             <h2 className="font-extrabold text-[var(--color-text-strong)]">{material.name}</h2>
             <div className="flex items-center gap-2">
               <CatalogBadge value={material.status} />
-              <MaterialActions canDelete={canDelete} canEdit={canEdit} material={material} onDelete={onDelete} />
+              <MaterialActions
+                canDelete={canDelete}
+                canEdit={canEdit}
+                material={material}
+                onDelete={onDelete}
+              />
             </div>
           </div>
           <p className="mt-1 text-xs font-bold text-[var(--color-primary)]">
@@ -999,12 +1126,16 @@ function MaterialTable({
   canDelete,
   onDelete,
   onView,
+  selectedCodes,
+  onSelectionChange,
 }: {
   materials: Material[];
   canEdit: boolean;
   canDelete: boolean;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
+  selectedCodes: string[];
+  onSelectionChange: (codes: string[]) => void;
 }) {
   const groups = groupMaterials(materials);
   return (
@@ -1013,6 +1144,32 @@ function MaterialTable({
         <caption className="sr-only">Inventory materials</caption>
         <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
           <tr>
+            {canEdit ? (
+              <th className="h-11 w-12 px-4" scope="col">
+                <input
+                  aria-label="Select all inventory records on this page"
+                  checked={
+                    materials.length > 0 &&
+                    materials.every((material) => selectedCodes.includes(material.materialCode))
+                  }
+                  onChange={(event) =>
+                    onSelectionChange(
+                      event.target.checked
+                        ? [
+                            ...new Set([
+                              ...selectedCodes,
+                              ...materials.map((material) => material.materialCode),
+                            ]),
+                          ]
+                        : selectedCodes.filter(
+                            (code) => !materials.some((material) => material.materialCode === code),
+                          ),
+                    )
+                  }
+                  type="checkbox"
+                />
+              </th>
+            ) : null}
             <th className="h-11 px-4 font-bold" scope="col">
               IT asset
             </th>
@@ -1039,6 +1196,8 @@ function MaterialTable({
               key={group.category}
               onDelete={onDelete}
               onView={onView}
+              onSelectionChange={onSelectionChange}
+              selectedCodes={selectedCodes}
             />
           ))}
         </tbody>
@@ -1053,17 +1212,21 @@ function GroupedMaterialRows({
   canDelete,
   onDelete,
   onView,
+  selectedCodes,
+  onSelectionChange,
 }: {
   group: MaterialGroup;
   canEdit: boolean;
   canDelete: boolean;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
+  selectedCodes: string[];
+  onSelectionChange: (codes: string[]) => void;
 }) {
   return (
     <>
       <tr className="border-t border-[var(--color-border)] bg-[var(--color-primary-soft)]">
-        <td className="px-4 py-3" colSpan={5}>
+        <td className="px-4 py-3" colSpan={canEdit ? 6 : 5}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
@@ -1088,6 +1251,22 @@ function GroupedMaterialRows({
           onClick={() => onView(material)}
           tabIndex={0}
         >
+          {canEdit ? (
+            <td className="px-4" onClick={(event) => event.stopPropagation()}>
+              <input
+                aria-label={`Select ${material.name}`}
+                checked={selectedCodes.includes(material.materialCode)}
+                onChange={(event) =>
+                  onSelectionChange(
+                    event.target.checked
+                      ? [...selectedCodes, material.materialCode]
+                      : selectedCodes.filter((code) => code !== material.materialCode),
+                  )
+                }
+                type="checkbox"
+              />
+            </td>
+          ) : null}
           <td className="px-4">
             <p className="text-sm font-bold text-[var(--color-text-strong)]">{material.name}</p>
             <p className="text-xs text-[var(--color-text-muted)]">
@@ -1097,15 +1276,18 @@ function GroupedMaterialRows({
           <td className="px-4">
             <CatalogBadge value={material.trackingMode} />
           </td>
-          <td className="px-4 text-sm text-[var(--color-text-muted)]">
-            {quantityLabel(material)}
-          </td>
+          <td className="px-4 text-sm text-[var(--color-text-muted)]">{quantityLabel(material)}</td>
           <td className="px-4">
             <CatalogBadge value={material.status} />
           </td>
           <td className="px-4 text-right">
             <div onClick={(event) => event.stopPropagation()}>
-              <MaterialActions canDelete={canDelete} canEdit={canEdit} material={material} onDelete={onDelete} />
+              <MaterialActions
+                canDelete={canDelete}
+                canEdit={canEdit}
+                material={material}
+                onDelete={onDelete}
+              />
             </div>
           </td>
         </tr>

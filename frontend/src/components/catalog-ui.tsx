@@ -24,6 +24,7 @@ export function CatalogBadge({ value }: { value: string }) {
     'PARTIALLY_RETURNED',
     'DUE_SOON',
     'NOT_IN_USE',
+    'UNDER_MAINTENANCE',
     'OUTDATED',
   ].includes(value);
 

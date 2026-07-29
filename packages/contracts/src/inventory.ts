@@ -22,7 +22,13 @@ const ConditionSchema = z.string().trim().min(1).max(120);
 const SerialNumberSchema = z.string().trim().min(1).max(120);
 const ConfigurationSchema = z.string().trim().min(1).max(1_000);
 
-export const MaterialStatusSchema = z.enum(['ACTIVE', 'SCRAP', 'NOT_IN_USE', 'ARCHIVED']);
+export const MaterialStatusSchema = z.enum([
+  'ACTIVE',
+  'UNDER_MAINTENANCE',
+  'SCRAP',
+  'NOT_IN_USE',
+  'ARCHIVED',
+]);
 export type MaterialStatus = z.infer<typeof MaterialStatusSchema>;
 
 const CreateMaterialBaseSchema = z.object({
@@ -82,6 +88,13 @@ export const UpdateMaterialRequestSchema = z
 
 export const UpdateMaterialStatusRequestSchema = z
   .object({ status: MaterialStatusSchema })
+  .strict();
+
+export const BulkUpdateMaterialStatusRequestSchema = z
+  .object({
+    materialCodes: z.array(MaterialCodeSchema).min(1).max(1_000),
+    status: MaterialStatusSchema,
+  })
   .strict();
 
 export const AdjustQuantityRequestSchema = z
@@ -264,7 +277,13 @@ export const AssetTypeImportResponseSchema = z.object({
   data: z.object({
     created: z.array(AssetTypeSchema),
     skipped: z.array(z.object({ name: z.string().min(1), reason: z.string().min(1) })),
-    failed: z.array(z.object({ rowNumber: z.number().int().positive(), name: z.string(), reason: z.string().min(1) })),
+    failed: z.array(
+      z.object({
+        rowNumber: z.number().int().positive(),
+        name: z.string(),
+        reason: z.string().min(1),
+      }),
+    ),
   }),
 });
 export const AssetTypeImportPreviewResponseSchema = z.object({
@@ -289,6 +308,7 @@ export const AssetTypeImportPreviewResponseSchema = z.object({
 
 export type CreateMaterialRequest = z.infer<typeof CreateMaterialRequestSchema>;
 export type UpdateMaterialRequest = z.infer<typeof UpdateMaterialRequestSchema>;
+export type BulkUpdateMaterialStatusRequest = z.infer<typeof BulkUpdateMaterialStatusRequestSchema>;
 export type AdjustQuantityRequest = z.infer<typeof AdjustQuantityRequestSchema>;
 export type CreateAssetUnitRequest = z.infer<typeof CreateAssetUnitRequestSchema>;
 export type UpdateAssetUnitRequest = z.infer<typeof UpdateAssetUnitRequestSchema>;

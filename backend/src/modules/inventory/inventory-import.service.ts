@@ -312,12 +312,19 @@ function requireRowValue(value: string, label: string): string {
   return value;
 }
 
-function materialStatus(value: string): 'ACTIVE' | 'SCRAP' | 'NOT_IN_USE' {
+function materialStatus(value: string): 'ACTIVE' | 'UNDER_MAINTENANCE' | 'SCRAP' | 'NOT_IN_USE' {
   const normalized = value
     .trim()
     .replace(/[^A-Z0-9]+/gi, ' ')
     .replace(/\s+/g, ' ')
     .toUpperCase();
+  if (
+    normalized.includes('UNDER MAINTENANCE') ||
+    normalized.includes('UNDER MAINTANCE') ||
+    normalized === 'MAINTENANCE'
+  ) {
+    return 'UNDER_MAINTENANCE';
+  }
   if (
     !normalized ||
     normalized === 'ACTIVE' ||
@@ -345,7 +352,7 @@ function materialStatus(value: string): 'ACTIVE' | 'SCRAP' | 'NOT_IN_USE' {
     return 'NOT_IN_USE';
   }
   throw new Error(
-    'Inventory status must be Active / in use, Faulty (scrap), or Outdated (not in use).',
+    'Inventory status must be Active / in use, Under maintenance, Faulty (scrap), or Outdated (not in use).',
   );
 }
 

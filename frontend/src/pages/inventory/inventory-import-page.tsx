@@ -7,14 +7,12 @@ import type { TrackingMode } from '@assetdesk/contracts';
 import { SelectField } from '../../components/catalog-ui';
 import { AppCard, Button, ErrorSummary, PageHeader } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
-import {
-  previewInventoryImport,
-} from '../../lib/inventory-api';
+import { previewInventoryImport } from '../../lib/inventory-api';
 
 const ASSET_TEMPLATE =
-  'IT Asset,Type/Model Name,Configuration,Serial Number,Location,Block,Vendor Name,Description,Inventory Status\r\nComputer,Dell Latitude 5450,Intel Core i5 / 16 GB RAM / 512 GB SSD,DL5450-001,Computer Centre,A Block,Dell,Staff laptop,Active / in use\r\nComputer,Dell Latitude 5450,Intel Core i5 / 16 GB RAM / 512 GB SSD,DL5450-002,Computer Centre,A Block,Dell,Spare laptop,Faulty (scrap)\r\nPrinter,HP LaserJet 1020,Monochrome laser / USB,HPLJ1020-OLD-01,Store Room,B Block,HP,Old printer not in regular use,Outdated (not in use)\r\n';
+  'IT Asset,Type/Model Name,Configuration,Serial Number,Location,Block,Vendor Name,Description,Inventory Status\r\nComputer,Dell Latitude 5450,Intel Core i5 / 16 GB RAM / 512 GB SSD,DL5450-001,Computer Centre,A Block,Dell,Staff laptop,Active / in use\r\nComputer,Dell Latitude 5450,Intel Core i5 / 16 GB RAM / 512 GB SSD,DL5450-002,Computer Centre,A Block,Dell,Service required,Under maintenance\r\nPrinter,HP LaserJet 1020,Monochrome laser / USB,HPLJ1020-OLD-01,Store Room,B Block,HP,Old printer not in regular use,Outdated (not in use)\r\n';
 const CONSUMABLE_TEMPLATE =
-  'IT Consumable,Type/Model Name,Quantity,Unit Label,Return Policy,Location,Block,Vendor Name,Description,Inventory Status\r\nCable,USB-C Cable,50,pieces,CONSUMABLE,Computer Centre,A Block,Local Vendor,One metre cable,Active / in use\r\nCartridge,Printer Toner,12,pieces,CONSUMABLE,Store Room,B Block,HP,Reserve stock,Outdated (not in use)\r\n';
+  'IT Consumable,Type/Model Name,Quantity,Unit Label,Return Policy,Location,Block,Vendor Name,Description,Inventory Status\r\nCable,USB-C Cable,50,pieces,CONSUMABLE,Computer Centre,A Block,Local Vendor,One metre cable,Active / in use\r\nCartridge,Printer Toner,12,pieces,CONSUMABLE,Store Room,B Block,HP,Stock inspection in progress,Under maintenance\r\n';
 
 export function InventoryImportPage() {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -139,7 +137,8 @@ export function InventoryImportPage() {
                 : ' Required columns: IT Consumable, Type/Model Name, Quantity, Unit Label, Location, Block. Optional columns: Vendor Name, Return Policy, Description, Inventory Status.'}
             </p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              IT Asset, IT Consumable, Location, and Block are matched from saved asset details; spacing and letter case are ignored. Vendor Name is saved as entered.
+              IT Asset, IT Consumable, Location, and Block are matched from saved asset details;
+              spacing and letter case are ignored. Vendor Name is saved as entered.
             </p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
               Inventory Status accepts Active / in use, Faulty (scrap), and Outdated (not in use).

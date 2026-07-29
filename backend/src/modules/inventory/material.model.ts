@@ -65,7 +65,7 @@ const MaterialSchema = new Schema<MaterialRecord>(
     returnPolicy: { type: String, enum: ['REUSABLE', 'CONSUMABLE'], required: true },
     status: {
       type: String,
-      enum: ['ACTIVE', 'SCRAP', 'NOT_IN_USE', 'ARCHIVED'],
+      enum: ['ACTIVE', 'UNDER_MAINTENANCE', 'SCRAP', 'NOT_IN_USE', 'ARCHIVED'],
       required: true,
       default: 'ACTIVE',
     },

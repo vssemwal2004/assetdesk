@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CreateMaterialRequestSchema,
+  MaterialStatusSchema,
   MaterialSchema,
   UpdateAssetUnitRequestSchema,
 } from './inventory.js';
@@ -28,6 +29,10 @@ const materialBase = {
 };
 
 describe('inventory contracts', () => {
+  it('supports Under maintenance for inventory records and imports', () => {
+    expect(MaterialStatusSchema.parse('UNDER_MAINTENANCE')).toBe('UNDER_MAINTENANCE');
+  });
+
   it('creates material without an inventory department', () => {
     expect(
       CreateMaterialRequestSchema.safeParse({
