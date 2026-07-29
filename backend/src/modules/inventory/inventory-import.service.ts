@@ -254,8 +254,16 @@ export function importInputToCreateMaterialRequest(
   );
 }
 
-function identity(mode: TrackingMode, name: string, category: string): string {
-  return `${mode}|${name.trim().toUpperCase()}|${category.trim().toUpperCase()}`;
+function identity(
+  mode: TrackingMode,
+  name: string,
+  category: string,
+  configuration?: string,
+): string {
+  const base = `${mode}|${name.trim().toUpperCase()}|${category.trim().toUpperCase()}`;
+  return mode === 'SERIALIZED'
+    ? `${base}|${normalizeImportConfiguration(configuration ?? '')}`
+    : base;
 }
 
 function normalizedAssetType(value: string): string {
@@ -263,7 +271,16 @@ function normalizedAssetType(value: string): string {
 }
 
 function normalizedLookup(value: string): string {
-  return value.trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
+  return value.normalize('NFKC').trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
+}
+
+export function normalizeImportConfiguration(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toLocaleUpperCase('en-US');
 }
 
 async function savedLookup(
@@ -365,7 +382,9 @@ export async function previewInventoryImport(
   const groups = Object.values(
     rows.reduce<Record<string, ImportRow[]>>((result, row) => {
       const itemName = row.values.typeModelName || row.values.name;
-      const key = `${itemName.trim().toUpperCase()}\0${row.values.category.trim().toUpperCase()}`;
+      const configuration =
+        mode === 'SERIALIZED' ? `\0${normalizeImportConfiguration(row.values.configuration)}` : '';
+      const key = `${itemName.trim().toUpperCase()}\0${row.values.category.trim().toUpperCase()}${configuration}`;
       (result[key] ??= []).push(row);
       return result;
     }, {}),
@@ -424,7 +443,9 @@ export async function previewInventoryImport(
     if (!first) return [];
     const itemName = first.values.typeModelName || first.values.name;
     const category = categories.get(normalizedLookup(first.values.category));
-    return category ? [identity(mode, materialName(category, itemName), category)] : [];
+    return category
+      ? [identity(mode, materialName(category, itemName), category, first.values.configuration)]
+      : [];
   });
   const existingMaterials = await MaterialModel.find({
     identityKey: { $in: candidateIdentities },
@@ -458,20 +479,11 @@ export async function previewInventoryImport(
       if (!block) throw missingDropdownValue('BLOCK', values.block);
       const displayName = materialName(category, itemName);
       const locationBlock = `${location} / ${block}`;
-      const materialIdentity = identity(mode, displayName, category);
+      const materialIdentity = identity(mode, displayName, category, values.configuration);
       if (existingIdentities.has(materialIdentity))
         throw new Error('This material already exists in Inventory.');
       let draft: CreateMaterialRequest;
       if (mode === 'SERIALIZED') {
-        if (
-          group.some(
-            (row) =>
-              row.values.configuration.trim().toUpperCase() !==
-              values.configuration.trim().toUpperCase(),
-          )
-        ) {
-          throw new Error('All rows for the same IT Asset must use the same configuration.');
-        }
         const serialNumbers = group.map((row) => row.values.serialNumber);
         const unique = new Set(serialNumbers.map((value) => value.toUpperCase()));
         if (unique.size !== serialNumbers.length)
@@ -669,11 +681,17 @@ export async function commitInventoryImport(
       const inputCategory = String(input.category ?? '')
         .trim()
         .toUpperCase();
+      const inputConfiguration =
+        input.trackingMode === 'SERIALIZED'
+          ? normalizeImportConfiguration(String(input.configuration ?? ''))
+          : '';
       const matchingRows = record.rows.filter(
         (row) =>
           (row.name.trim().toUpperCase() === inputName ||
             materialName(row.category, row.name).toUpperCase() === inputName) &&
-          row.category.trim().toUpperCase() === inputCategory,
+          row.category.trim().toUpperCase() === inputCategory &&
+          (input.trackingMode !== 'SERIALIZED' ||
+            normalizeImportConfiguration(row.configuration ?? '') === inputConfiguration),
       );
       matchingRows.forEach((row) =>
         failed.push({

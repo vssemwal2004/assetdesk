@@ -24,6 +24,13 @@ describe('Admin dashboard API', () => {
               outstandingItems: 19,
               activeWorkers: 7,
             },
+            inventory: {
+              materialCount: 12,
+              totalQuantity: 104,
+              availableQuantity: 85,
+              issuedQuantity: 19,
+              breakdown: [],
+            },
             attentionIssues: [],
             recentIssues: [],
             generatedAt: '2026-07-16T09:30:00.000Z',

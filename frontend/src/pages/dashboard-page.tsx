@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import {
   ArrowRight,
   AlertTriangle,
@@ -11,6 +12,8 @@ import {
   FileUp,
   ListChecks,
   PackagePlus,
+  PackageCheck,
+  PackageOpen,
   RefreshCw,
   RotateCcw,
   UserPlus,
@@ -18,7 +21,13 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router';
 
-import type { AdminDashboardStats, IssueSummary } from '@assetdesk/contracts';
+import type {
+  AdminDashboardStats,
+  DashboardInventory,
+  IssueSummary,
+  MaterialStatus,
+  TrackingMode,
+} from '@assetdesk/contracts';
 
 import { useAuth } from '../auth/auth-context';
 import { CatalogBadge } from '../components/catalog-ui';
@@ -93,6 +102,7 @@ function AdminDashboard({ adminName }: { adminName: string }) {
           attentionIssues={query.data.data.attentionIssues}
           recentIssues={query.data.data.recentIssues}
           stats={query.data.data.stats}
+          inventory={query.data.data.inventory}
         />
       )}
     </div>
@@ -104,11 +114,13 @@ function DashboardContent({
   attentionIssues,
   recentIssues,
   generatedAt,
+  inventory,
 }: {
   stats: AdminDashboardStats;
   attentionIssues: IssueSummary[];
   recentIssues: IssueSummary[];
   generatedAt: string;
+  inventory: DashboardInventory;
 }) {
   const primaryMetrics = [
     {
@@ -194,6 +206,8 @@ function DashboardContent({
         </div>
       </section>
 
+      <InventoryOverview inventory={inventory} />
+
       <section aria-labelledby="quick-actions-heading" className="space-y-3">
         <div>
           <h2
@@ -224,6 +238,91 @@ function DashboardContent({
         <IssuePanel issues={recentIssues} kind="recent" title="Recent Issues" viewAll="/issues" />
       </div>
     </>
+  );
+}
+
+const inventoryStatuses: Array<{ value: MaterialStatus | 'ALL'; label: string }> = [
+  { value: 'ALL', label: 'All statuses' },
+  { value: 'ACTIVE', label: 'Active / in use' },
+  { value: 'UNDER_MAINTENANCE', label: 'Under maintenance' },
+  { value: 'NOT_IN_USE', label: 'Outdated / not in use' },
+  { value: 'SCRAP', label: 'Faulty / scrap' },
+  { value: 'ARCHIVED', label: 'Archived' },
+];
+
+function InventoryOverview({ inventory }: { inventory: DashboardInventory }) {
+  const [trackingMode, setTrackingMode] = useState<TrackingMode | 'ALL'>('ALL');
+  const [status, setStatus] = useState<MaterialStatus | 'ALL'>('ALL');
+  const totals = useMemo(
+    () =>
+      inventory.breakdown
+        .filter(
+          (row) =>
+            (trackingMode === 'ALL' || row.trackingMode === trackingMode) &&
+            (status === 'ALL' || row.status === status),
+        )
+        .reduce(
+          (sum, row) => ({
+            materialCount: sum.materialCount + row.materialCount,
+            totalQuantity: sum.totalQuantity + row.totalQuantity,
+            availableQuantity: sum.availableQuantity + row.availableQuantity,
+            issuedQuantity: sum.issuedQuantity + row.issuedQuantity,
+          }),
+          { materialCount: 0, totalQuantity: 0, availableQuantity: 0, issuedQuantity: 0 },
+        ),
+    [inventory.breakdown, status, trackingMode],
+  );
+
+  return (
+    <section aria-labelledby="inventory-overview-heading" className="space-y-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2
+            className="text-lg font-extrabold text-[var(--color-primary-strong)]"
+            id="inventory-overview-heading"
+          >
+            Inventory counts
+          </h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Material records and actual physical quantity, including every inventory state.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="text-xs font-bold text-[var(--color-text-muted)]">
+            Material type
+            <select
+              className="mt-1 block min-w-0 rounded-[9px] border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text-strong)]"
+              onChange={(event) => setTrackingMode(event.target.value as TrackingMode | 'ALL')}
+              value={trackingMode}
+            >
+              <option value="ALL">All types</option>
+              <option value="SERIALIZED">IT assets</option>
+              <option value="QUANTITY">IT consumables</option>
+            </select>
+          </label>
+          <label className="text-xs font-bold text-[var(--color-text-muted)]">
+            Inventory state
+            <select
+              className="mt-1 block min-w-0 rounded-[9px] border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text-strong)]"
+              onChange={(event) => setStatus(event.target.value as MaterialStatus | 'ALL')}
+              value={status}
+            >
+              {inventoryStatuses.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <SmallMetric icon={Boxes} label="Material records" to="/inventory" value={totals.materialCount} />
+        <SmallMetric icon={PackageOpen} label="Total quantity" to="/inventory" value={totals.totalQuantity} />
+        <SmallMetric icon={PackageCheck} label="Available quantity" to="/inventory?stockState=AVAILABLE" value={totals.availableQuantity} />
+        <SmallMetric icon={Clock3} label="Issued quantity" to="/inventory?stockState=ISSUED" value={totals.issuedQuantity} />
+      </div>
+    </section>
   );
 }
 

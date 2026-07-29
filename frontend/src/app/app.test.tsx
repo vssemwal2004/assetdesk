@@ -133,6 +133,13 @@ describe('AssetDesk application routes', () => {
                 outstandingItems: 19,
                 activeWorkers: 7,
               },
+              inventory: {
+                materialCount: 12,
+                totalQuantity: 104,
+                availableQuantity: 85,
+                issuedQuantity: 19,
+                breakdown: [],
+              },
               attentionIssues: [issueSummary],
               recentIssues: [issueSummary],
               generatedAt: '2026-07-16T09:30:00.000Z',
@@ -444,8 +451,9 @@ describe('AssetDesk application routes', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'GEU-ISS-2026-000004' }))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'GEU-ISS-2026-000004' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Dell Latitude 5450')).toBeInTheDocument();
     expect(screen.getByText('DL5450-001')).toBeInTheDocument();
     expect(screen.getByText('Not applicable')).toBeInTheDocument();

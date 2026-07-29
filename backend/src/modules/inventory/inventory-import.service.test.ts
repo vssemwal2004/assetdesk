@@ -3,10 +3,21 @@ import { describe, expect, it } from 'vitest';
 import { AppError } from '../../middleware/error-handler.js';
 import {
   importInputToCreateMaterialRequest,
+  normalizeImportConfiguration,
   parseInventoryImportTable,
 } from './inventory-import.service.js';
 
 describe('inventory import parsing', () => {
+  it('treats visually identical spreadsheet configurations as the same value', () => {
+    expect(normalizeImportConfiguration('  600VA\u200B ')).toBe(
+      normalizeImportConfiguration('６００VA'),
+    );
+    expect(normalizeImportConfiguration('16  GB RAM')).toBe(
+      normalizeImportConfiguration('16 GB RAM'),
+    );
+    expect(normalizeImportConfiguration('600 VA')).toBe(normalizeImportConfiguration('600VA'));
+  });
+
   it('accepts the complete IT Asset template headings', () => {
     const rows = parseInventoryImportTable(
       [

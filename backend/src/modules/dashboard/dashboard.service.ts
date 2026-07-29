@@ -3,6 +3,7 @@ import type { AdminDashboardResponse, AdminDashboardStats } from '@assetdesk/con
 import { istDayRange } from '../issues/issue-date.js';
 import { toIssueSummary } from '../issues/issue.mapper.js';
 import { IssueModel } from '../issues/issue.model.js';
+import { MaterialModel } from '../inventory/material.model.js';
 import { UserModel } from '../users/user.model.js';
 
 interface DashboardAggregationRow {
@@ -14,6 +15,14 @@ interface DashboardAggregationRow {
   dueToday: number;
   returnedToday: number;
   outstandingItems: number;
+}
+
+interface InventoryAggregationRow {
+  _id: { trackingMode: 'SERIALIZED' | 'QUANTITY'; status: 'ACTIVE' | 'UNDER_MAINTENANCE' | 'SCRAP' | 'NOT_IN_USE' | 'ARCHIVED' };
+  materialCount: number;
+  totalQuantity: number;
+  availableQuantity: number;
+  issuedQuantity: number;
 }
 
 const emptyIssueStats: Omit<AdminDashboardStats, 'activeWorkers'> = {
@@ -54,7 +63,7 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
     ],
   };
 
-  const [aggregation, attentionRecords, recentRecords, activeWorkers] = await Promise.all([
+  const [aggregation, attentionRecords, recentRecords, activeWorkers, inventoryRows] = await Promise.all([
     IssueModel.aggregate<DashboardAggregationRow>([
       {
         $group: {
@@ -134,9 +143,39 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
       .limit(5),
     IssueModel.find().select(issueSummaryFields).sort({ issuedAt: -1, _id: -1 }).limit(5),
     UserModel.countDocuments({ role: 'WORKER', status: 'ACTIVE' }),
+    MaterialModel.aggregate<InventoryAggregationRow>([
+      {
+        $group: {
+          _id: { trackingMode: '$trackingMode', status: '$status' },
+          materialCount: { $sum: 1 },
+          totalQuantity: { $sum: { $ifNull: ['$totalQuantity', 0] } },
+          availableQuantity: { $sum: { $ifNull: ['$availableQuantity', 0] } },
+          issuedQuantity: { $sum: { $ifNull: ['$issuedQuantity', 0] } },
+        },
+      },
+      { $sort: { '_id.trackingMode': 1, '_id.status': 1 } },
+    ]),
   ]);
 
   const issueStats = aggregation[0] ?? emptyIssueStats;
+  const inventoryBreakdown = inventoryRows.map((row) => ({
+    trackingMode: row._id.trackingMode,
+    status: row._id.status,
+    materialCount: row.materialCount,
+    totalQuantity: row.totalQuantity,
+    availableQuantity: row.availableQuantity,
+    issuedQuantity: row.issuedQuantity,
+  }));
+  const inventory = inventoryBreakdown.reduce(
+    (total, row) => ({
+      materialCount: total.materialCount + row.materialCount,
+      totalQuantity: total.totalQuantity + row.totalQuantity,
+      availableQuantity: total.availableQuantity + row.availableQuantity,
+      issuedQuantity: total.issuedQuantity + row.issuedQuantity,
+      breakdown: inventoryBreakdown,
+    }),
+    { materialCount: 0, totalQuantity: 0, availableQuantity: 0, issuedQuantity: 0, breakdown: inventoryBreakdown },
+  );
   return {
     stats: {
       todayIssued: issueStats.todayIssued,
@@ -148,6 +187,7 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
       outstandingItems: issueStats.outstandingItems,
       activeWorkers,
     },
+    inventory,
     attentionIssues: attentionRecords.map(toIssueSummary),
     recentIssues: recentRecords.map(toIssueSummary),
     generatedAt: now.toISOString(),

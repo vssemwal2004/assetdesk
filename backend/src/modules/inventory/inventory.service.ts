@@ -195,7 +195,11 @@ export async function createAssetType(name: string, createdByUserId: string): Pr
 }
 
 export async function listAssetDetails(kind?: AssetDetailKind): Promise<AssetDetailListResult> {
-  const records = await AssetDetailModel.find(kind ? { kind } : {}).sort({ kind: 1, name: 1, _id: 1 });
+  const records = await AssetDetailModel.find(kind ? { kind } : {}).sort({
+    kind: 1,
+    name: 1,
+    _id: 1,
+  });
   return { assetDetails: records.map((record) => toAssetDetail(record)) };
 }
 
@@ -209,7 +213,12 @@ export async function createAssetDetail(
   const existing = await AssetDetailModel.findOne({ kind, normalizedName });
   if (existing) return toAssetDetail(existing);
   try {
-    const detail = await AssetDetailModel.create({ kind, name: name.trim(), normalizedName, createdBy });
+    const detail = await AssetDetailModel.create({
+      kind,
+      name: name.trim(),
+      normalizedName,
+      createdBy,
+    });
     return toAssetDetail(detail);
   } catch (error) {
     if (duplicateField(error) === 'kind' || duplicateField(error) === 'normalizedName') {
@@ -224,17 +233,18 @@ export async function deleteAssetDetail(assetDetailId: string): Promise<AssetDet
   if (!Types.ObjectId.isValid(assetDetailId))
     throw new AppError(404, 'ASSET_DETAIL_NOT_FOUND', 'This asset detail was not found.');
   const detail = await AssetDetailModel.findById(assetDetailId);
-  if (!detail) throw new AppError(404, 'ASSET_DETAIL_NOT_FOUND', 'This asset detail was not found.');
+  if (!detail)
+    throw new AppError(404, 'ASSET_DETAIL_NOT_FOUND', 'This asset detail was not found.');
   const normalized = normalizeLookupValue(detail.name);
   const inUse =
     detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE'
       ? await MaterialModel.exists({ category: exactCaseInsensitive(detail.name) })
       : await MaterialModel.exists({
           [detail.kind === 'LOCATION'
-              ? 'location'
-              : detail.kind === 'BLOCK'
-                ? 'block'
-                : 'department']: exactCaseInsensitive(detail.name),
+            ? 'location'
+            : detail.kind === 'BLOCK'
+              ? 'block'
+              : 'department']: exactCaseInsensitive(detail.name),
         });
   if (inUse) {
     throw new AppError(
@@ -322,10 +332,27 @@ function normalizeSerial(serialNumber: string): string {
   return serialNumber.trim().toLocaleUpperCase('en-US');
 }
 
-function materialIdentity(trackingMode: TrackingMode, name: string, category: string): string {
-  return `${trackingMode}|${name.trim().toLocaleUpperCase('en-US')}|${category
+function normalizeConfiguration(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toLocaleUpperCase('en-US');
+}
+
+function materialIdentity(
+  trackingMode: TrackingMode,
+  name: string,
+  category: string,
+  configuration?: string,
+): string {
+  const base = `${trackingMode}|${name.trim().toLocaleUpperCase('en-US')}|${category
     .trim()
     .toLocaleUpperCase('en-US')}`;
+  return trackingMode === 'SERIALIZED'
+    ? `${base}|${normalizeConfiguration(configuration ?? '')}`
+    : base;
 }
 
 function materialConflict(): AppError {
@@ -377,7 +404,9 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
   if (input.stockState === 'AVAILABLE') filter.availableQuantity = { $gt: 0 };
   if (input.stockState === 'LOW_STOCK') {
     filter.availableQuantity = { $gt: 0 };
-    filter.$expr = { $lte: ['$availableQuantity', { $ceil: { $multiply: ['$totalQuantity', 0.2] } }] };
+    filter.$expr = {
+      $lte: ['$availableQuantity', { $ceil: { $multiply: ['$totalQuantity', 0.2] } }],
+    };
   }
   if (input.stockState === 'OUT_OF_STOCK') filter.availableQuantity = 0;
   if (input.stockState === 'ISSUED') filter.issuedQuantity = { $gt: 0 };
@@ -433,8 +462,7 @@ export function buildAssetUnitMaterialFilter(input: {
 }): Record<string, unknown> {
   const filter: Record<string, unknown> = { materialCode: input.materialCode };
   if (input.role === 'WORKER') {
-    filter.status =
-      input.status === 'AVAILABLE' ? { $in: ['ACTIVE', 'NOT_IN_USE'] } : 'ACTIVE';
+    filter.status = input.status === 'AVAILABLE' ? { $in: ['ACTIVE', 'NOT_IN_USE'] } : 'ACTIVE';
   }
   if (input.role === 'WORKER' && input.dataScope !== 'ALL' && input.actorUserId) {
     filter.createdBy = objectId(input.actorUserId);
@@ -504,6 +532,9 @@ export async function createMaterial(
     trackingMode: input.trackingMode,
     name: exactCaseInsensitive(input.name),
     category: exactCaseInsensitive(category),
+    ...(input.trackingMode === 'SERIALIZED'
+      ? { configuration: exactCaseInsensitive(input.configuration) }
+      : {}),
   });
   if (existing) throw materialConflict();
 
@@ -527,7 +558,12 @@ export async function createMaterial(
         block,
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),
         locationBlock,
-        identityKey: materialIdentity(input.trackingMode, input.name, category),
+        identityKey: materialIdentity(
+          input.trackingMode,
+          input.name,
+          category,
+          input.trackingMode === 'SERIALIZED' ? input.configuration : undefined,
+        ),
         ...(input.description ? { description: input.description } : {}),
         trackingMode: input.trackingMode,
         returnPolicy: input.returnPolicy,
@@ -661,7 +697,8 @@ export async function getMaterial(
 ): Promise<Material> {
   const filter: Record<string, unknown> = { materialCode };
   if (role === 'WORKER') filter.status = 'ACTIVE';
-  if (role === 'WORKER' && dataScope !== 'ALL' && actorUserId) filter.createdBy = objectId(actorUserId);
+  if (role === 'WORKER' && dataScope !== 'ALL' && actorUserId)
+    filter.createdBy = objectId(actorUserId);
   const material = await MaterialModel.findOne(filter);
   if (!material) throw materialNotFound();
   return toMaterial(material);
@@ -705,31 +742,54 @@ export async function updateMaterial(
     }
     if (input.name !== undefined) material.name = input.name;
     if (input.category !== undefined) {
-      material.category = await requireSavedDetail(categoryDetailKind(material.trackingMode), input.category);
+      material.category = await requireSavedDetail(
+        categoryDetailKind(material.trackingMode),
+        input.category,
+      );
     }
     if (input.typeModelName !== undefined) material.typeModelName = input.typeModelName;
-    if (input.location !== undefined) material.location = await requireSavedDetail('LOCATION', input.location);
+    if (input.configuration !== undefined) material.configuration = input.configuration;
+    if (input.location !== undefined)
+      material.location = await requireSavedDetail('LOCATION', input.location);
     if (input.block !== undefined) material.block = await requireSavedDetail('BLOCK', input.block);
-    if (input.department !== undefined) material.department = await requireSavedDetail('DEPARTMENT', input.department);
+    if (input.department !== undefined)
+      material.department = await requireSavedDetail('DEPARTMENT', input.department);
     if (Object.hasOwn(input, 'vendorName')) {
       material.set('vendorName', input.vendorName || undefined);
     }
-    if (input.locationBlock !== undefined && input.location === undefined && input.block === undefined) {
+    if (
+      input.locationBlock !== undefined &&
+      input.location === undefined &&
+      input.block === undefined
+    ) {
       material.locationBlock = input.locationBlock;
     }
     if (input.location !== undefined || input.block !== undefined) {
       material.locationBlock = [material.location, material.block].filter(Boolean).join(' / ');
     }
-    if (input.name !== undefined || input.category !== undefined) {
+    if (
+      input.name !== undefined ||
+      input.category !== undefined ||
+      input.configuration !== undefined
+    ) {
       const duplicate = await MaterialModel.exists({
         _id: { $ne: material._id },
         trackingMode: material.trackingMode,
         name: exactCaseInsensitive(material.name),
         category: exactCaseInsensitive(material.category),
+        ...(material.trackingMode === 'SERIALIZED' && material.configuration
+          ? { configuration: exactCaseInsensitive(material.configuration) }
+          : {}),
       });
       if (duplicate) throw materialConflict();
-      material.identityKey = materialIdentity(material.trackingMode, material.name, material.category);
-      if (input.category !== undefined) await createAssetType(material.category, material.createdBy.toString());
+      material.identityKey = materialIdentity(
+        material.trackingMode,
+        material.name,
+        material.category,
+        material.configuration,
+      );
+      if (input.category !== undefined)
+        await createAssetType(material.category, material.createdBy.toString());
     }
     if (input.assignmentTypes !== undefined) material.assignmentTypes = input.assignmentTypes;
     if (Object.hasOwn(input, 'description')) {
@@ -1102,7 +1162,10 @@ export async function updateAssetUnit(
     const unit = await AssetUnitModel.findOne({ assetTag, materialId: material._id });
     if (!unit) throw assetUnitNotFound();
     const previousUnit = toAssetUnit(unit);
-    if (unit.status === 'ISSUED' && (input.status !== undefined || input.serialNumber !== undefined)) {
+    if (
+      unit.status === 'ISSUED' &&
+      (input.status !== undefined || input.serialNumber !== undefined)
+    ) {
       throw new AppError(
         409,
         'ISSUED_ASSET_IS_SYSTEM_CONTROLLED',

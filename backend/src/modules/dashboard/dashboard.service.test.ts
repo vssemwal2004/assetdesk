@@ -2,8 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const models = vi.hoisted(() => ({
   aggregate: vi.fn(),
+  materialAggregate: vi.fn(),
   find: vi.fn(),
   countDocuments: vi.fn(),
+}));
+
+vi.mock('../inventory/material.model.js', () => ({
+  MaterialModel: {
+    aggregate: models.materialAggregate,
+  },
 }));
 
 vi.mock('../issues/issue.model.js', () => ({
@@ -49,6 +56,36 @@ describe('Admin dashboard service', () => {
     ]);
     models.find.mockImplementation(() => findQuery());
     models.countDocuments.mockResolvedValue(4);
+    models.materialAggregate.mockResolvedValue([
+      {
+        _id: { trackingMode: 'SERIALIZED', status: 'ACTIVE' },
+        materialCount: 2,
+        totalQuantity: 10,
+        availableQuantity: 7,
+        issuedQuantity: 3,
+      },
+    ]);
+  });
+
+  it('returns inventory material and physical quantity totals with filterable breakdowns', async () => {
+    const dashboard = await getAdminDashboard(new Date('2026-07-23T06:30:00.000Z'));
+
+    expect(dashboard.inventory).toEqual({
+      materialCount: 2,
+      totalQuantity: 10,
+      availableQuantity: 7,
+      issuedQuantity: 3,
+      breakdown: [
+        {
+          trackingMode: 'SERIALIZED',
+          status: 'ACTIVE',
+          materialCount: 2,
+          totalQuantity: 10,
+          availableQuantity: 7,
+          issuedQuantity: 3,
+        },
+      ],
+    });
   });
 
   it('guards dashboard aggregation against legacy issue rows with missing arrays or counts', async () => {
