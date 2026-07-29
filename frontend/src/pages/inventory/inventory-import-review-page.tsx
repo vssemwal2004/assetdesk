@@ -227,6 +227,9 @@ function ReviewTable({
             <th className="w-28 p-3 font-bold">Status</th>
             <th className="w-64 p-3 font-bold">Reason</th>
             <th className="w-56 p-3 font-bold">Type/model name</th>
+            {mode === 'SERIALIZED' ? (
+              <th className="w-56 p-3 font-bold">Configuration</th>
+            ) : null}
             <th className="w-44 p-3 font-bold">
               {mode === 'SERIALIZED' ? 'Asset type' : 'Consumable type'}
             </th>
@@ -257,6 +260,9 @@ function ReviewTable({
                 {row.valid ? 'Ready to upload' : row.errors.join(' ')}
               </td>
               <td className="break-words p-3 font-bold">{row.name || 'Missing'}</td>
+              {mode === 'SERIALIZED' ? (
+                <td className="break-words p-3">{row.configuration || 'Missing'}</td>
+              ) : null}
               <td className="break-words p-3">{row.category || 'Missing'}</td>
               <td className="break-words p-3">{inventoryStatusLabel(row.status ?? 'ACTIVE')}</td>
               <td className="break-words p-3">{row.location || 'Missing'}</td>

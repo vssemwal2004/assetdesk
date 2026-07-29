@@ -10,9 +10,9 @@ describe('inventory import parsing', () => {
   it('accepts case-insensitive asset headers and preserves one serial per row', () => {
     const rows = parseInventoryImportTable(
       [
-        ['MATERIAL_NAME', 'material-group', 'SERIAL NUMBER', 'Location', 'Block'],
-        ['Dell Latitude', 'Laptops', 'dl-001', 'Computer Centre', 'A Block'],
-        ['Dell Latitude', 'Laptops', 'DL-002', 'Computer Centre', 'A Block'],
+        ['MATERIAL_NAME', 'material-group', 'Configuration', 'SERIAL NUMBER', 'Location', 'Block'],
+        ['Dell Latitude', 'Laptops', '16 GB RAM', 'dl-001', 'Computer Centre', 'A Block'],
+        ['Dell Latitude', 'Laptops', '16 GB RAM', 'DL-002', 'Computer Centre', 'A Block'],
       ],
       'SERIALIZED',
     );
@@ -23,6 +23,7 @@ describe('inventory import parsing', () => {
       values: {
         name: 'Dell Latitude',
         category: 'Laptops',
+        configuration: '16 GB RAM',
         serialNumber: 'dl-001',
         location: 'Computer Centre',
         block: 'A Block',

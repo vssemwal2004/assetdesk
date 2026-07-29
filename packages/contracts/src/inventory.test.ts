@@ -38,6 +38,7 @@ describe('inventory contracts', () => {
         block: 'A Block',
         trackingMode: 'SERIALIZED',
         returnPolicy: 'REUSABLE',
+        configuration: '48 ports / managed switch',
         serialNumbers: ['SW-001'],
         assignmentTypes: ['LONG_TERM'],
       }).success,

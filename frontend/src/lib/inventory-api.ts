@@ -208,6 +208,7 @@ export interface InventoryImportPreview {
     category: string;
     serialNumber?: string;
     typeModelName?: string;
+    configuration?: string;
     location?: string;
     block?: string;
     vendorName?: string;

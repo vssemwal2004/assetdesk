@@ -231,6 +231,9 @@ export function InventoryDetailPage() {
               <DetailRow label="Inventory code" value={material.materialCode} />
               <DetailRow label="Asset type" value={material.category} />
               <DetailRow label="Type/model name" value={material.typeModelName ?? material.name} />
+              {material.trackingMode === 'SERIALIZED' ? (
+                <DetailRow label="Configuration" value={material.configuration ?? 'Not provided'} />
+              ) : null}
               <DetailRow label="Location / block" value={material.locationBlock ?? 'Not provided'} />
               <DetailRow label="Department" value={material.department ?? 'Not provided'} />
               <DetailRow label="Vendor name" value={material.vendorName ?? 'Not provided'} />

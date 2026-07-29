@@ -22,6 +22,7 @@ interface MaterialForm {
   name: string;
   category: string;
   typeModelName: string;
+  configuration: string;
   location: string;
   block: string;
   vendorName: string;
@@ -38,6 +39,7 @@ const initialForm: MaterialForm = {
   name: '',
   category: '',
   typeModelName: '',
+  configuration: '',
   location: '',
   block: '',
   vendorName: '',
@@ -79,6 +81,8 @@ export function serialFieldsForQuantity(current: string[], rawQuantity: string):
 function materialFormMessage(form: MaterialForm): string | null {
   if (form.category.trim().length < 2) return 'Choose an asset type, or add a new asset type.';
   if (form.typeModelName.trim().length < 2) return 'Enter a type/model name with at least 2 characters.';
+  if (form.trackingMode === 'SERIALIZED' && !form.configuration.trim())
+    return 'Enter the IT Asset configuration.';
   if (form.location.trim().length < 1) return 'Choose a location from Add asset details.';
   if (form.block.trim().length < 1) return 'Choose a block from Add asset details.';
   if (form.trackingMode === 'SERIALIZED') {
@@ -154,6 +158,7 @@ export function CreateMaterialPage() {
             ...base,
             trackingMode: 'SERIALIZED',
             returnPolicy: 'REUSABLE',
+            configuration: form.configuration,
             serialNumbers: normalizedSerialNumbers(form.serialNumbers),
           }
         : {
@@ -291,6 +296,17 @@ export function CreateMaterialPage() {
               onChange={(event) => setForm((value) => ({ ...value, vendorName: event.target.value }))}
               value={form.vendorName}
             />
+            {form.trackingMode === 'SERIALIZED' ? (
+              <TextField
+                label="Configuration"
+                maxLength={1000}
+                onChange={(event) =>
+                  setForm((value) => ({ ...value, configuration: event.target.value }))
+                }
+                required
+                value={form.configuration}
+              />
+            ) : null}
           </div>
 
           <div className="space-y-1.5">

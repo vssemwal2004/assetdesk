@@ -28,6 +28,7 @@ type Field =
   | 'name'
   | 'category'
   | 'typeModelName'
+  | 'configuration'
   | 'location'
   | 'block'
   | 'vendorName'
@@ -61,6 +62,8 @@ const HEADER_ALIASES: Record<string, Field> = {
   'type/model name': 'typeModelName',
   model: 'typeModelName',
   'model name': 'typeModelName',
+  configuration: 'configuration',
+  config: 'configuration',
   'location block': 'locationBlock',
   'location / block': 'locationBlock',
   location: 'location',
@@ -145,7 +148,7 @@ export function parseInventoryImportTable(
   });
   const required: Field[] =
     mode === 'SERIALIZED'
-      ? ['category', 'location', 'block', 'serialNumber']
+      ? ['category', 'configuration', 'location', 'block', 'serialNumber']
       : ['category', 'location', 'block', 'quantity', 'unitLabel'];
   const missing = required.filter((field) => !columns.has(field));
   if (missing.length)
@@ -227,6 +230,7 @@ export function importInputToCreateMaterialRequest(input: InventoryImportInput):
     name: record.name,
     category: record.category,
     typeModelName: record.typeModelName,
+    ...(record.trackingMode === 'SERIALIZED' ? { configuration: record.configuration } : {}),
     location: record.location,
     block: record.block,
     ...(record.vendorName ? { vendorName: record.vendorName } : {}),
@@ -351,6 +355,7 @@ export async function previewInventoryImport(
         name: row.values.typeModelName || row.values.name,
         category: row.values.category,
         ...(row.values.typeModelName ? { typeModelName: row.values.typeModelName } : {}),
+        ...(row.values.configuration ? { configuration: row.values.configuration } : {}),
         ...(row.values.location ? { location: row.values.location } : {}),
         ...(row.values.block ? { block: row.values.block } : {}),
         ...(row.values.vendorName ? { vendorName: row.values.vendorName } : {}),
@@ -414,6 +419,7 @@ export async function previewInventoryImport(
       requireRowValue(values.location, 'Location');
       requireRowValue(values.block, 'Block');
       if (mode === 'SERIALIZED') {
+        requireRowValue(values.configuration, 'Configuration');
         group.forEach((row) => requireRowValue(row.values.serialNumber, 'Serial number'));
       } else {
         requireRowValue(values.quantity, 'Quantity');
@@ -432,6 +438,15 @@ export async function previewInventoryImport(
         throw new Error('This material already exists in Inventory.');
       let draft: CreateMaterialRequest;
       if (mode === 'SERIALIZED') {
+        if (
+          group.some(
+            (row) =>
+              row.values.configuration.trim().toUpperCase() !==
+              values.configuration.trim().toUpperCase(),
+          )
+        ) {
+          throw new Error('All rows for the same IT Asset must use the same configuration.');
+        }
         const serialNumbers = group.map((row) => row.values.serialNumber);
         const unique = new Set(serialNumbers.map((value) => value.toUpperCase()));
         if (unique.size !== serialNumbers.length)
@@ -457,6 +472,7 @@ export async function previewInventoryImport(
           status: materialStatus(values.status),
           trackingMode: 'SERIALIZED',
           returnPolicy: 'REUSABLE',
+          configuration: values.configuration,
           assignmentTypes: ['LONG_TERM'],
           serialNumbers,
         });

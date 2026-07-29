@@ -20,6 +20,7 @@ const VendorNameSchema = z.string().trim().max(120);
 const UnitLabelSchema = z.string().trim().min(1).max(40);
 const ConditionSchema = z.string().trim().min(1).max(120);
 const SerialNumberSchema = z.string().trim().min(1).max(120);
+const ConfigurationSchema = z.string().trim().min(1).max(1_000);
 
 export const MaterialStatusSchema = z.enum(['ACTIVE', 'SCRAP', 'NOT_IN_USE', 'ARCHIVED']);
 export type MaterialStatus = z.infer<typeof MaterialStatusSchema>;
@@ -41,6 +42,7 @@ export const CreateMaterialRequestSchema = z.discriminatedUnion('trackingMode', 
   CreateMaterialBaseSchema.extend({
     trackingMode: z.literal('SERIALIZED'),
     returnPolicy: z.literal('REUSABLE'),
+    configuration: ConfigurationSchema,
     serialNumbers: z
       .array(SerialNumberSchema)
       .min(1)
@@ -64,6 +66,7 @@ export const UpdateMaterialRequestSchema = z
     name: NameSchema.optional(),
     category: CategorySchema.optional(),
     typeModelName: NameSchema.optional(),
+    configuration: ConfigurationSchema.optional(),
     location: LocationSchema.optional(),
     block: BlockSchema.optional(),
     department: DepartmentSchema.optional(),
@@ -118,6 +121,7 @@ export const MaterialSchema = z
     name: z.string().min(1),
     category: z.string().min(1),
     typeModelName: z.string().nullable().optional().default(null),
+    configuration: z.string().nullable().optional(),
     location: z.string().nullable().optional().default(null),
     block: z.string().nullable().optional().default(null),
     department: z.string().nullable().optional().default(null),

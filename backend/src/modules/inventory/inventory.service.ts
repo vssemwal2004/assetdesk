@@ -522,6 +522,7 @@ export async function createMaterial(
         name: input.name,
         category,
         typeModelName: input.typeModelName,
+        ...(input.trackingMode === 'SERIALIZED' ? { configuration: input.configuration } : {}),
         location,
         block,
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),

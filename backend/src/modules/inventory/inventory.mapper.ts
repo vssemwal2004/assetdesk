@@ -10,6 +10,7 @@ export function toMaterial(material: MaterialDocument): Material {
     name: material.name,
     category: material.category,
     typeModelName: material.typeModelName ?? null,
+    configuration: material.configuration ?? null,
     location: material.location ?? null,
     block: material.block ?? null,
     department: material.department ?? null,
