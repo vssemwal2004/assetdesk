@@ -10,6 +10,7 @@ interface DashboardAggregationRow {
   _id: null;
   todayIssued: number;
   totalIssues: number;
+  permanentIssues: number;
   pendingReturns: number;
   overdueReturns: number;
   dueToday: number;
@@ -28,6 +29,7 @@ interface InventoryAggregationRow {
 const emptyIssueStats: Omit<AdminDashboardStats, 'activeWorkers'> = {
   todayIssued: 0,
   totalIssues: 0,
+  permanentIssues: 0,
   pendingReturns: 0,
   overdueReturns: 0,
   dueToday: 0,
@@ -58,6 +60,7 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
   const { start, end } = istDayRange(now);
   const hasOutstanding = {
     $and: [
+      { $eq: ['$assignmentType', 'SHORT_TERM'] },
       { $gt: [{ $ifNull: ['$totalOutstandingQuantity', 0] }, 0] },
       { $in: ['$status', ['ISSUED', 'PARTIALLY_RETURNED']] },
     ],
@@ -69,6 +72,20 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
         $group: {
           _id: null,
           totalIssues: { $sum: 1 },
+          permanentIssues: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$assignmentType', 'LONG_TERM'] },
+                    { $ne: ['$status', 'CANCELLED'] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
           todayIssued: {
             $sum: {
               $cond: [
@@ -180,6 +197,7 @@ export async function getAdminDashboard(now = new Date()): Promise<AdminDashboar
     stats: {
       todayIssued: issueStats.todayIssued,
       totalIssues: issueStats.totalIssues,
+      permanentIssues: issueStats.permanentIssues,
       pendingReturns: issueStats.pendingReturns,
       overdueReturns: issueStats.overdueReturns,
       dueToday: issueStats.dueToday,

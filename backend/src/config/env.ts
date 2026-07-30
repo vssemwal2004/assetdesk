@@ -66,10 +66,10 @@ const EnvSchema = z.object({
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
     z.string().min(64).optional(),
   ),
-  ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(30).default(10),
-  WORKER_SESSION_IDLE_MINUTES: z.coerce.number().int().min(15).max(720).default(720),
-  ADMIN_SESSION_IDLE_MINUTES: z.coerce.number().int().min(15).max(720).default(720),
-  SESSION_ABSOLUTE_HOURS: z.coerce.number().int().min(1).max(24).default(24),
+  ACCESS_TOKEN_TTL_MINUTES: z.coerce.number().int().min(5).max(30).default(5),
+  WORKER_SESSION_IDLE_MINUTES: z.coerce.number().int().min(15).max(720).default(15),
+  ADMIN_SESSION_IDLE_MINUTES: z.coerce.number().int().min(15).max(720).default(15),
+  SESSION_ABSOLUTE_HOURS: z.coerce.number().int().min(1).max(24).default(8),
   TEMP_PASSWORD_TTL_HOURS: z.coerce.number().int().min(1).max(72).default(24),
   TRUST_PROXY: z
     .enum(['true', 'false'])

@@ -47,7 +47,7 @@ describe('shared contracts', () => {
         permissions: ['ASSIGNMENTS_CREATE'],
       }).email,
     ).toBe('anita@example.edu');
-    expect(() => PasswordSchema.parse('too-short')).toThrow();
+    expect(() => PasswordSchema.parse('abc!')).toThrow();
     expect(() => PasswordSchema.parse(' '.repeat(15))).toThrow();
     expect(() => PasswordSchema.parse(`valid passphrase\u0000`)).toThrow();
   });

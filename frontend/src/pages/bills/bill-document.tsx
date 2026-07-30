@@ -109,7 +109,6 @@ export function BillDocument({
                 <th scope="col">Material type</th>
                 <th scope="col">Policy</th>
                 <th scope="col">Issued</th>
-                <th scope="col">Outstanding</th>
               </tr>
             </thead>
             <tbody>
@@ -126,9 +125,6 @@ export function BillDocument({
                   <td>
                     {line.issuedQuantity} {line.material.unitLabel ?? 'unit'}
                   </td>
-                  <td>
-                    {line.outstandingQuantity} {line.material.unitLabel ?? 'unit'}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -136,7 +132,6 @@ export function BillDocument({
               <tr>
                 <td colSpan={6}>Total</td>
                 <td>{totalIssued(issue)}</td>
-                <td>{issue.totalOutstandingQuantity}</td>
               </tr>
             </tfoot>
           </table>
@@ -226,10 +221,6 @@ function ReturnBillDocument({
         />
         <BillField label="Returned at" value={formatIstDateTime(returnEvent.returnedAt)} />
         <BillField label="Returned units" value={String(returnedTotal(returnEvent))} />
-        <BillField
-          label="Remaining outstanding"
-          value={String(returnEvent.remainingOutstandingQuantity)}
-        />
       </section>
 
       <section className="bill-two-column">
@@ -290,9 +281,7 @@ function ReturnBillDocument({
               <tr>
                 <td colSpan={3}>Total returned</td>
                 <td>{returnedTotal(returnEvent)}</td>
-                <td colSpan={3}>
-                  Remaining outstanding: {returnEvent.remainingOutstandingQuantity}
-                </td>
+                <td colSpan={3} />
               </tr>
             </tfoot>
           </table>

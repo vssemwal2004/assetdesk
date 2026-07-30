@@ -33,8 +33,12 @@ export function ChangePasswordPage() {
       currentRef.current?.focus();
       return;
     }
-    if (newPassword.length < 15 || newPassword.length > 128) {
-      setErrors({ newPassword: 'Use a password between 15 and 128 characters.' });
+    if (newPassword.length < 6 || newPassword.length > 128) {
+      setErrors({ newPassword: 'Use a password between 6 and 128 characters.' });
+      return;
+    }
+    if (!/[^A-Za-z0-9\s]/u.test(newPassword)) {
+      setErrors({ newPassword: 'Include at least one special character.' });
       return;
     }
     if (newPassword !== confirmation) {
@@ -74,7 +78,9 @@ export function ChangePasswordPage() {
           </span>
           <div>
             <h2 className="font-extrabold text-[var(--color-primary-strong)]">Account security</h2>
-            <p className="text-sm text-[var(--color-text-muted)]">Use 15 to 128 characters.</p>
+            <p className="text-sm text-[var(--color-text-muted)]">
+              Use at least 6 characters and 1 special character.
+            </p>
           </div>
         </div>
         {success ? (
@@ -104,7 +110,7 @@ export function ChangePasswordPage() {
           <PasswordField
             autoComplete="new-password"
             error={errors.newPassword}
-            hint="Do not include your name, email, or common words."
+            hint="Minimum 6 characters with at least 1 special character."
             label="New password"
             onChange={(event) => setNewPassword(event.target.value)}
             value={newPassword}

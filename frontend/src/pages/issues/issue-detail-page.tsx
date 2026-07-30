@@ -197,7 +197,11 @@ export function IssueDetailPage() {
               accessScope: 'FULL',
               data: { issue: updated },
             });
-            void queryClient.invalidateQueries({ queryKey: ['issues'] });
+            void Promise.all([
+              queryClient.invalidateQueries({ queryKey: ['issues'] }),
+              queryClient.invalidateQueries({ queryKey: ['bill', issueId] }),
+              queryClient.invalidateQueries({ queryKey: ['receipts'] }),
+            ]);
             setEditing(false);
           }}
         />

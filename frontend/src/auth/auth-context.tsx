@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   AuthUser,
@@ -30,6 +30,19 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const TAB_SESSION_KEY = 'assetdesk:authenticated-tab';
+
+function markTabAuthenticated(): void {
+  window.sessionStorage.setItem(TAB_SESSION_KEY, '1');
+}
+
+function clearTabAuthentication(): void {
+  window.sessionStorage.removeItem(TAB_SESSION_KEY);
+}
+
+function isAuthenticatedTab(): boolean {
+  return window.sessionStorage.getItem(TAB_SESSION_KEY) === '1';
+}
 
 function sessionErrorMessage(error: unknown): string {
   if (isApiError(error)) {
@@ -42,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<AuthUser | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const disconnectedSession = useRef(false);
 
   const reload = useCallback(async () => {
     setStatus('loading');
@@ -63,6 +77,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
+
+    if (!isAuthenticatedTab()) {
+      void logoutRequest().catch(() => undefined);
+      setUser(null);
+      setStatus('unauthenticated');
+      return () => {
+        active = false;
+      };
+    }
 
     void getCurrentUser()
       .then((nextUser) => {
@@ -89,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(
     () =>
       onSessionExpired(() => {
+        clearTabAuthentication();
         setUser(null);
         setError(null);
         setStatus('unauthenticated');
@@ -115,8 +139,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [status]);
 
+  useEffect(() => {
+    function expireDisconnectedSession() {
+      if (status !== 'authenticated') return;
+      disconnectedSession.current = true;
+      clearTabAuthentication();
+      setUser(null);
+      setError(null);
+      setStatus('unauthenticated');
+    }
+
+    function revokeReconnectedSession() {
+      if (!disconnectedSession.current) return;
+      disconnectedSession.current = false;
+      void logoutRequest().catch(() => undefined);
+    }
+
+    window.addEventListener('offline', expireDisconnectedSession);
+    window.addEventListener('online', revokeReconnectedSession);
+    if (!navigator.onLine) expireDisconnectedSession();
+    return () => {
+      window.removeEventListener('offline', expireDisconnectedSession);
+      window.removeEventListener('online', revokeReconnectedSession);
+    };
+  }, [status]);
+
   const login = useCallback(async (input: LoginRequest) => {
     const nextUser = await loginRequest(input);
+    markTabAuthenticated();
     setUser(nextUser);
     setStatus('authenticated');
     setError(null);
@@ -125,6 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const changeInitialPassword = useCallback(async (input: ChangeInitialPasswordRequest) => {
     const nextUser = await changeInitialPasswordRequest(input);
+    markTabAuthenticated();
     setUser(nextUser);
     setStatus('authenticated');
     return nextUser;
@@ -132,6 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const changePassword = useCallback(async (input: ChangePasswordRequest) => {
     const nextUser = await changePasswordRequest(input);
+    markTabAuthenticated();
     setUser(nextUser);
     setStatus('authenticated');
     return nextUser;
@@ -141,6 +193,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await logoutRequest();
     } finally {
+      clearTabAuthentication();
       setUser(null);
       setError(null);
       setStatus('unauthenticated');

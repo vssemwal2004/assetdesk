@@ -8,6 +8,7 @@ function response() {
       stats: {
         todayIssued: 4,
         totalIssues: 81,
+        permanentIssues: 5,
         pendingReturns: 12,
         overdueReturns: 3,
         dueToday: 2,

@@ -22,19 +22,16 @@ export function setSessionCookies(response: Response, bundle: SessionBundle): vo
     ...base,
     httpOnly: true,
     path: ACCESS_COOKIE_PATH,
-    maxAge: env.ACCESS_TOKEN_TTL_MINUTES * 60 * 1000,
   });
   response.cookie(REFRESH_COOKIE, bundle.refreshToken, {
     ...base,
     httpOnly: true,
     path: REFRESH_COOKIE_PATH,
-    expires: bundle.absoluteExpiresAt,
   });
   response.cookie(CSRF_COOKIE, bundle.csrfToken, {
     ...base,
     httpOnly: false,
     path: CSRF_COOKIE_PATH,
-    expires: bundle.absoluteExpiresAt,
   });
 }
 

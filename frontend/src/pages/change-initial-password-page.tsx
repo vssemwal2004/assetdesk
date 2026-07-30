@@ -16,21 +16,11 @@ export function ChangeInitialPasswordPage() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const normalizedPassword = newPassword.toLowerCase();
-  const emailName = auth.user?.email.split('@')[0]?.toLowerCase() ?? '';
-  const commonTerms = ['password', 'qwerty', 'letmein', 'welcome', 'admin123', 'assetdesk'];
-  const avoidsAccountTerms =
-    newPassword.length === 0
-      ? null
-      : !commonTerms.some((term) => normalizedPassword.includes(term)) &&
-        !normalizedPassword.includes(auth.user?.workerId.toLowerCase() ?? '') &&
-        !(emailName.length >= 4 && normalizedPassword.includes(emailName));
-
   const requirements = [
-    { label: '15 to 128 characters', met: newPassword.length >= 15 && newPassword.length <= 128 },
+    { label: '6 to 128 characters', met: newPassword.length >= 6 && newPassword.length <= 128 },
     {
-      label: 'Does not contain your Worker ID, email name, or common terms',
-      met: avoidsAccountTerms,
+      label: 'Contains at least 1 special character',
+      met: newPassword.length === 0 ? null : /[^A-Za-z0-9\s]/u.test(newPassword),
     },
     {
       label: 'Both password fields match',
@@ -43,8 +33,13 @@ export function ChangeInitialPasswordPage() {
     setError(null);
     setFieldError(null);
 
-    if (newPassword.length < 15 || newPassword.length > 128) {
-      setFieldError('Use a password between 15 and 128 characters.');
+    if (newPassword.length < 6 || newPassword.length > 128) {
+      setFieldError('Use a password between 6 and 128 characters.');
+      passwordRef.current?.focus();
+      return;
+    }
+    if (!/[^A-Za-z0-9\s]/u.test(newPassword)) {
+      setFieldError('Include at least one special character.');
       passwordRef.current?.focus();
       return;
     }

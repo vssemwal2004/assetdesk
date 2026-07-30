@@ -19,6 +19,7 @@ import type {
   ReturnPolicy,
   TrackingMode,
 } from '@assetdesk/contracts';
+import { AdjustQuantityRequestSchema } from '@assetdesk/contracts';
 
 import { useAuth } from '../../auth/auth-context';
 import { hasPermission } from '../../auth/permissions';
@@ -32,8 +33,10 @@ import {
   LoadingPanel,
   PageHeader,
   SearchForm,
+  TextField,
 } from '../../components/ui';
 import {
+  adjustMaterialQuantity,
   deleteMaterial,
   downloadInventoryCsv,
   getAssetDetails,
@@ -164,6 +167,7 @@ export function InventoryPage() {
   const [bulkStatus, setBulkStatus] = useState<MaterialStatus>('ACTIVE');
   const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
   const [viewMaterial, setViewMaterial] = useState<Material | null>(null);
+  const [quantityTarget, setQuantityTarget] = useState<Material | null>(null);
   const [downloading, setDownloading] = useState(false);
   const page = Math.max(1, Number(parameters.get('page')) || 1);
   const search = parameters.get('search') ?? '';
@@ -181,6 +185,7 @@ export function InventoryPage() {
   const canAddInventory = hasPermission(user, 'INVENTORY_ADD');
   const canEditInventory = hasPermission(user, 'INVENTORY_EDIT');
   const canDeleteInventory = hasPermission(user, 'INVENTORY_DELETE');
+  const canAdjustQuantity = hasPermission(user, 'INVENTORY_QUANTITY_ADJUST');
   const canManageInventory = canEditInventory || canDeleteInventory;
   const canExportInventory = hasPermission(user, 'INVENTORY_EXPORT');
 
@@ -651,21 +656,25 @@ export function InventoryPage() {
                 </div>
                 {group.materials.map((material) => (
                   <MaterialCard
+                    canAdjustQuantity={canAdjustQuantity}
                     canDelete={canDeleteInventory}
                     canEdit={canEditInventory}
                     key={material.materialCode}
                     material={material}
                     onDelete={confirmDelete}
+                    onAdjustQuantity={setQuantityTarget}
                   />
                 ))}
               </section>
             ))}
           </div>
           <MaterialTable
+            canAdjustQuantity={canAdjustQuantity}
             canDelete={canDeleteInventory}
             canEdit={canEditInventory}
             materials={materials}
             onDelete={confirmDelete}
+            onAdjustQuantity={setQuantityTarget}
             onSelectionChange={setSelectedCodes}
             onView={setViewMaterial}
             selectedCodes={selectedCodes}
@@ -738,6 +747,17 @@ export function InventoryPage() {
           }}
         />
       ) : null}
+      {quantityTarget ? (
+        <InventoryQuantityDialog
+          material={quantityTarget}
+          onCancel={() => setQuantityTarget(null)}
+          onSaved={async () => {
+            setQuantityTarget(null);
+            setActionNotice('Quantity updated and added to the permanent inventory log.');
+            await queryClient.invalidateQueries({ queryKey: ['inventory'] });
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -765,6 +785,85 @@ function Dialog({
     >
       {children}
     </dialog>
+  );
+}
+
+function InventoryQuantityDialog({
+  material,
+  onSaved,
+  onCancel,
+}: {
+  material: Material;
+  onSaved: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [delta, setDelta] = useState('');
+  const [reason, setReason] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: (input: { quantityDelta: number; reason: string }) =>
+      adjustMaterialQuantity(material.materialCode, input),
+    onSuccess: () => void onSaved(),
+    onError: (error) =>
+      setMessage(isApiError(error) ? error.message : 'The quantity could not be updated.'),
+  });
+
+  function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    const parsed = AdjustQuantityRequestSchema.safeParse({
+      quantityDelta: Number(delta),
+      reason,
+    });
+    if (!parsed.success) {
+      setMessage(parsed.error.issues[0]?.message ?? 'Check the quantity change.');
+      return;
+    }
+    mutation.mutate(parsed.data);
+  }
+
+  return (
+    <Dialog label={`Edit quantity for ${material.name}`} onClose={onCancel}>
+      <form className="p-5 sm:p-6" onSubmit={submit}>
+        <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+          Edit quantity
+        </h2>
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+          Current total: {material.totalQuantity} {material.unitLabel ?? 'units'}. Use a positive
+          number to add or a negative number to reduce available stock.
+        </p>
+        {message ? <div className="mt-4"><ErrorSummary message={message} /></div> : null}
+        <div className="mt-5 space-y-4">
+          <TextField
+            inputMode="numeric"
+            label="Quantity change"
+            onChange={(event) => setDelta(event.target.value)}
+            placeholder="Example: 10 or -3"
+            required
+            step="1"
+            type="number"
+            value={delta}
+          />
+          <TextField
+            label="Reason"
+            maxLength={500}
+            minLength={5}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Why is this quantity changing?"
+            required
+            value={reason}
+          />
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button disabled={mutation.isPending} onClick={onCancel} type="button" variant="secondary">
+            Cancel
+          </Button>
+          <Button loading={mutation.isPending} type="submit">
+            Save quantity
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -1025,11 +1124,15 @@ function MaterialActions({
   material,
   canEdit,
   canDelete,
+  canAdjustQuantity,
+  onAdjustQuantity,
   onDelete,
 }: {
   material: Material;
   canEdit: boolean;
   canDelete: boolean;
+  canAdjustQuantity: boolean;
+  onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
 }) {
   return (
@@ -1050,6 +1153,16 @@ function MaterialActions({
             <Pencil aria-hidden="true" size={17} />
             Change status
           </Link>
+        ) : null}
+        {canAdjustQuantity && material.trackingMode === 'QUANTITY' && material.status === 'ACTIVE' ? (
+          <button
+            className="menu-item w-full"
+            onClick={() => onAdjustQuantity(material)}
+            type="button"
+          >
+            <Pencil aria-hidden="true" size={17} />
+            Edit quantity
+          </button>
         ) : null}
         {canEdit ? (
           <Link className="menu-item" to={`/inventory/${material.materialCode}?edit=1`}>
@@ -1076,11 +1189,15 @@ function MaterialCard({
   material,
   canEdit,
   canDelete,
+  canAdjustQuantity,
+  onAdjustQuantity,
   onDelete,
 }: {
   material: Material;
   canEdit: boolean;
   canDelete: boolean;
+  canAdjustQuantity: boolean;
+  onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
 }) {
   return (
@@ -1095,10 +1212,12 @@ function MaterialCard({
             <div className="flex items-center gap-2">
               <CatalogBadge value={material.status} />
               <MaterialActions
+                canAdjustQuantity={canAdjustQuantity}
                 canDelete={canDelete}
                 canEdit={canEdit}
                 material={material}
                 onDelete={onDelete}
+                onAdjustQuantity={onAdjustQuantity}
               />
             </div>
           </div>
@@ -1124,6 +1243,8 @@ function MaterialTable({
   materials,
   canEdit,
   canDelete,
+  canAdjustQuantity,
+  onAdjustQuantity,
   onDelete,
   onView,
   selectedCodes,
@@ -1132,6 +1253,8 @@ function MaterialTable({
   materials: Material[];
   canEdit: boolean;
   canDelete: boolean;
+  canAdjustQuantity: boolean;
+  onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
   selectedCodes: string[];
@@ -1191,10 +1314,12 @@ function MaterialTable({
           {groups.map((group) => (
             <GroupedMaterialRows
               canDelete={canDelete}
+              canAdjustQuantity={canAdjustQuantity}
               canEdit={canEdit}
               group={group}
               key={group.category}
               onDelete={onDelete}
+              onAdjustQuantity={onAdjustQuantity}
               onView={onView}
               onSelectionChange={onSelectionChange}
               selectedCodes={selectedCodes}
@@ -1210,6 +1335,8 @@ function GroupedMaterialRows({
   group,
   canEdit,
   canDelete,
+  canAdjustQuantity,
+  onAdjustQuantity,
   onDelete,
   onView,
   selectedCodes,
@@ -1218,6 +1345,8 @@ function GroupedMaterialRows({
   group: MaterialGroup;
   canEdit: boolean;
   canDelete: boolean;
+  canAdjustQuantity: boolean;
+  onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
   selectedCodes: string[];
@@ -1283,10 +1412,12 @@ function GroupedMaterialRows({
           <td className="px-4 text-right">
             <div onClick={(event) => event.stopPropagation()}>
               <MaterialActions
+                canAdjustQuantity={canAdjustQuantity}
                 canDelete={canDelete}
                 canEdit={canEdit}
                 material={material}
                 onDelete={onDelete}
+                onAdjustQuantity={onAdjustQuantity}
               />
             </div>
           </td>

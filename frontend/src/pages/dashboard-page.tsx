@@ -178,12 +178,18 @@ function DashboardContent({
             <MetricCard {...metric} key={metric.label} />
           ))}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <SmallMetric
             icon={ClipboardList}
             label="Total Issues"
             to="/issues"
             value={stats.totalIssues}
+          />
+          <SmallMetric
+            icon={ListChecks}
+            label="Permanent issues"
+            to="/issues"
+            value={stats.permanentIssues}
           />
           <SmallMetric
             icon={CheckCircle2}

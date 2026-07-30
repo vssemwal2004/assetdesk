@@ -105,11 +105,13 @@ function problem(status = 401): Response {
 describe('AssetDesk application routes', () => {
   beforeEach(() => {
     resetApiClientState();
+    window.sessionStorage.setItem('assetdesk:authenticated-tab', '1');
     window.history.replaceState({}, '', '/dashboard');
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    window.sessionStorage.clear();
     document.cookie = 'ad_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
   });
 
@@ -126,6 +128,7 @@ describe('AssetDesk application routes', () => {
               stats: {
                 todayIssued: 4,
                 totalIssues: 81,
+                permanentIssues: 5,
                 pendingReturns: 12,
                 overdueReturns: 3,
                 dueToday: 2,

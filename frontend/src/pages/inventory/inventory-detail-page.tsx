@@ -123,6 +123,21 @@ export function InventoryDetailPage() {
       ),
     enabled: Boolean(materialCode),
   });
+  const quantityHistoryQuery = useQuery({
+    queryKey: ['inventory-quantity-history', materialCode],
+    queryFn: ({ signal }) =>
+      getAuditEvents(
+        {
+          page: 1,
+          from: dateDaysAgo(365),
+          to: dateDaysAgo(0),
+          search: materialCode,
+          action: 'MATERIAL_QUANTITY_ADJUSTED',
+        },
+        signal,
+      ),
+    enabled: Boolean(materialCode) && user?.role === 'ADMIN',
+  });
 
   async function updateCached(material: Material) {
     queryClient.setQueryData(['material', materialCode], material);
@@ -361,6 +376,14 @@ export function InventoryDetailPage() {
         onRetry={() => void activityQuery.refetch()}
         unavailable={activityQuery.isError}
       />
+      {material.trackingMode === 'QUANTITY' && user?.role === 'ADMIN' ? (
+        <QuantityHistoryPanel
+          events={quantityHistoryQuery.data?.data ?? []}
+          loading={quantityHistoryQuery.isPending}
+          onRetry={() => void quantityHistoryQuery.refetch()}
+          unavailable={quantityHistoryQuery.isError}
+        />
+      ) : null}
 
       {dialog === 'status' ? (
         <ConfirmStatusDialog
@@ -379,6 +402,12 @@ export function InventoryDetailPage() {
           onSaved={async (updated) => {
             await updateCached(updated);
             await queryClient.invalidateQueries({ queryKey: ['asset-units', materialCode] });
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ['inventory-activity', materialCode] }),
+              queryClient.invalidateQueries({
+                queryKey: ['inventory-quantity-history', materialCode],
+              }),
+            ]);
             setDialog(null);
           }}
         />
@@ -581,6 +610,108 @@ function actionLabel(value: string): string {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function metadataNumber(event: AuditEvent, key: string): number | null {
+  const value = event.metadata?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function metadataText(event: AuditEvent, key: string): string | null {
+  const value = event.metadata?.[key];
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function QuantityHistoryPanel({
+  events,
+  loading,
+  unavailable,
+  onRetry,
+}: {
+  events: AuditEvent[];
+  loading: boolean;
+  unavailable: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <AppCard>
+      <div className="flex items-center gap-3">
+        <span className="grid size-10 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+          <SlidersHorizontal aria-hidden="true" size={21} />
+        </span>
+        <div>
+          <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+            Quantity history
+          </h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Recent stock increases and decreases recorded for this material.
+          </p>
+        </div>
+      </div>
+      <div className="mt-5">
+        {loading ? (
+          <LoadingPanel label="Loading quantity history" />
+        ) : unavailable ? (
+          <ErrorState message="Quantity history could not be loaded." onRetry={onRetry} />
+        ) : events.length === 0 ? (
+          <EmptyState
+            message="Every future quantity increase or decrease will be recorded here."
+            title="No quantity changes recorded"
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-[12px] border border-[var(--color-border)]">
+            <table className="w-full min-w-[760px] border-collapse text-left">
+              <caption className="sr-only">Material quantity adjustment history</caption>
+              <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
+                <tr>
+                  <th className="h-10 px-3 font-bold">Date and time</th>
+                  <th className="h-10 px-3 font-bold">Change</th>
+                  <th className="h-10 px-3 font-bold">Previous</th>
+                  <th className="h-10 px-3 font-bold">New total</th>
+                  <th className="h-10 px-3 font-bold">Reason</th>
+                  <th className="h-10 px-3 font-bold">Changed by</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-border)] text-sm">
+                {events.map((event) => {
+                  const delta = metadataNumber(event, 'quantityDelta');
+                  const previous = metadataNumber(event, 'previousTotalQuantity');
+                  const total = metadataNumber(event, 'totalQuantity');
+                  return (
+                    <tr key={event.id}>
+                      <td className="px-3 py-3 text-xs text-[var(--color-text-muted)]">
+                        {formatIstDateTime(event.timestampUtc)}
+                      </td>
+                      <td
+                        className={`px-3 py-3 font-extrabold ${
+                          (delta ?? 0) >= 0
+                            ? 'text-[var(--color-success)]'
+                            : 'text-[var(--color-danger)]'
+                        }`}
+                      >
+                        {delta === null ? '—' : `${delta > 0 ? '+' : ''}${delta}`}
+                      </td>
+                      <td className="px-3 py-3 font-bold">{previous ?? '—'}</td>
+                      <td className="px-3 py-3 font-extrabold text-[var(--color-primary-strong)]">
+                        {total ?? '—'}
+                      </td>
+                      <td className="max-w-xs px-3 py-3 text-[var(--color-text-muted)]">
+                        {metadataText(event, 'reason') ?? 'No reason recorded'}
+                      </td>
+                      <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                        {event.actorWorkerId ?? 'System'}
+                        {event.actorRole ? ` · ${event.actorRole}` : ''}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </AppCard>
+  );
 }
 
 function InventoryActivityPanel({

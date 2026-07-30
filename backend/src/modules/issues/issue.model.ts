@@ -343,7 +343,7 @@ const ReturnEventSchema = new Schema<ReturnEventRecord>(
 const IssueSchema = new Schema<IssueRecord>(
   {
     issueId: { type: String, required: true, immutable: true, match: /^GEU-ISS-\d{4}-\d{6}$/ },
-    receiver: { type: ReceiverSnapshotSchema, required: true, immutable: true },
+    receiver: { type: ReceiverSnapshotSchema, required: true },
     issuedBy: { type: ActorSnapshotSchema, required: true, immutable: true },
     issuedAt: { type: Date, required: true, immutable: true },
     expectedReturnAt: { type: Date },
@@ -364,8 +364,8 @@ const IssueSchema = new Schema<IssueRecord>(
       required: true,
       default: 'ISSUED',
     },
-    purpose: { type: String, immutable: true, maxlength: 240 },
-    notes: { type: String, immutable: true, maxlength: 2_000 },
+    purpose: { type: String, maxlength: 240 },
+    notes: { type: String, maxlength: 2_000 },
     lines: {
       type: [IssueLineSchema],
       required: true,

@@ -13,9 +13,12 @@ function containsControlCharacter(value: string): boolean {
 
 export const PasswordSchema = z
   .string()
-  .min(15, 'Password must contain at least 15 characters')
+  .min(6, 'Password must contain at least 6 characters')
   .max(128, 'Password must contain at most 128 characters')
-  .refine((value) => /\S/u.test(value), 'Password must contain a non-whitespace character')
+  .refine(
+    (value) => /[^A-Za-z0-9\s]/u.test(value),
+    'Password must contain at least one special character',
+  )
   .refine(
     (value) => !containsControlCharacter(value),
     'Password must not contain control characters',

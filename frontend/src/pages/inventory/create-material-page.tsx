@@ -246,6 +246,32 @@ export function CreateMaterialPage() {
         {message ? <ErrorSummary message={message} /> : null}
 
         <form className="mt-5 space-y-5" noValidate onSubmit={submit}>
+          <div className="grid gap-4 md:grid-cols-2">
+            <SelectField
+              id="material-tracking-mode"
+              label="Type of material"
+              onChange={(value) => setTrackingMode(value as TrackingMode)}
+              value={form.trackingMode}
+            >
+              <option value="SERIALIZED">IT Assets</option>
+              <option value="QUANTITY">IT Consumables</option>
+            </SelectField>
+            <SelectField
+              disabled={form.trackingMode === 'SERIALIZED'}
+              {...(form.trackingMode === 'SERIALIZED'
+                ? { hint: 'IT Assets are always reusable.' }
+                : {})}
+              id="material-return-policy"
+              label="Return policy"
+              onChange={(value) =>
+                setForm((current) => ({ ...current, returnPolicy: value as ReturnPolicy }))
+              }
+              value={form.returnPolicy}
+            >
+              <option value="REUSABLE">Reusable</option>
+              <option value="CONSUMABLE">Consumable</option>
+            </SelectField>
+          </div>
           <div className="grid gap-4 md:grid-cols-3">
             <MaterialCategoryField
               id="material-category"
@@ -330,15 +356,6 @@ export function CreateMaterialPage() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <SelectField
-              id="material-tracking-mode"
-              label="Type of material"
-              onChange={(value) => setTrackingMode(value as TrackingMode)}
-              value={form.trackingMode}
-            >
-              <option value="SERIALIZED">IT Assets</option>
-              <option value="QUANTITY">IT Consumables</option>
-            </SelectField>
-            <SelectField
               id="material-status"
               label="Inventory status"
               onChange={(value) =>
@@ -353,21 +370,6 @@ export function CreateMaterialPage() {
               <option value="UNDER_MAINTENANCE">{inventoryStatusLabel('UNDER_MAINTENANCE')}</option>
               <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
               <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
-            </SelectField>
-            <SelectField
-              disabled={form.trackingMode === 'SERIALIZED'}
-              {...(form.trackingMode === 'SERIALIZED'
-                ? { hint: 'IT Assets are always reusable.' }
-                : {})}
-              id="material-return-policy"
-              label="Return policy"
-              onChange={(value) =>
-                setForm((current) => ({ ...current, returnPolicy: value as ReturnPolicy }))
-              }
-              value={form.returnPolicy}
-            >
-              <option value="REUSABLE">Reusable</option>
-              <option value="CONSUMABLE">Consumable</option>
             </SelectField>
           </div>
 
