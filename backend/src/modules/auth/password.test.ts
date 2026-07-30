@@ -33,10 +33,10 @@ describe('password security helpers', () => {
     await expect(verifyPassword('not-an-argon2-hash', password)).resolves.toBe(false);
   });
 
-  it('rejects common, account-related, whitespace-only, and control-character passwords', () => {
+  it('rejects short, special-character-free, whitespace-only, and control-character passwords', () => {
     const rejected = [
-      'welcome-to-assetdesk-2026',
-      'anita-safe-looking-passphrase',
+      'abc!',
+      '123456',
       ' '.repeat(20),
       'Valid-looking phrase\u0000suffix',
     ];
@@ -51,9 +51,9 @@ describe('password security helpers', () => {
     }
   });
 
-  it('accepts a long account-independent passphrase', () => {
+  it('accepts a six-character password with a special character', () => {
     expect(() =>
-      enforcePasswordPolicy('Cedar river orbit quartz 2026!', {
+      enforcePasswordPolicy('123456@', {
         workerId: 'GEU-WRK-A7K4',
         email: 'anita@example.edu',
       }),
