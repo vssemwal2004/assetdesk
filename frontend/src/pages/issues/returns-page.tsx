@@ -132,7 +132,7 @@ export function ReturnsPage() {
           {!lookup ? (
             <p className="text-sm text-[var(--color-text-muted)]">
               {exactLookupRequired
-                ? 'Workers must use a complete Issue ID or asset tag.'
+                ? 'Employees must use a complete Issue ID or asset tag.'
                 : 'Enter at least two characters to search active outstanding records.'}
             </p>
           ) : lookup.length < 2 ? (
@@ -571,7 +571,7 @@ function ReturnQuickViewDialog({
         </p>
         <dl className="mt-5 grid gap-3 sm:grid-cols-2">
           <DetailItem label="Returned by" value={event.performedBy.name} />
-          <DetailItem label="Worker ID" value={event.performedBy.workerId} />
+          <DetailItem label="Employee ID" value={event.performedBy.workerId} />
           <DetailItem label="Items returned" value={event.items.length} />
           <DetailItem label="Return event ID" value={event.returnEventId} />
         </dl>

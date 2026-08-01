@@ -97,7 +97,7 @@ export function WorkerImportPage() {
       setError(
         isApiError(requestError)
           ? requestError.message
-          : 'AssetDesk could not import these Workers.',
+          : 'AssetDesk could not import these Employees.',
       );
     } finally {
       setBusy(null);
@@ -120,7 +120,7 @@ export function WorkerImportPage() {
     const contents = result.created
       .map(
         ({ worker, credential }) =>
-          `${worker.name}\nWorker ID: ${credential.workerId}\nTemporary password: ${credential.temporaryPassword}`,
+          `${worker.name}\nEmployee ID: ${credential.workerId}\nTemporary password: ${credential.temporaryPassword}`,
       )
       .join('\n\n');
 
@@ -150,7 +150,7 @@ export function WorkerImportPage() {
       setError(
         isApiError(requestError)
           ? requestError.message
-          : 'Common access could not be applied to uploaded workers.',
+          : 'Common access could not be applied to uploaded employees.',
       );
     } finally {
       setAccessSaving(false);
@@ -164,7 +164,7 @@ export function WorkerImportPage() {
         <AppCard className="mx-auto max-w-3xl">
           <SuccessMark label="Import complete" />
           <h2 className="mt-4 text-xl font-extrabold text-[var(--color-primary-strong)]">
-            {result.created.length} {result.created.length === 1 ? 'Worker' : 'Workers'} created
+            {result.created.length} {result.created.length === 1 ? 'Employee' : 'Employees'} created
           </h2>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             {result.failed.length > 0
@@ -179,7 +179,7 @@ export function WorkerImportPage() {
                     Save these one-time credentials now
                   </p>
                   <p className="mt-1 text-xs leading-5 text-amber-900">
-                    They will not appear again after you leave this page. Each Worker must change
+                    They will not appear again after you leave this page. Each Employee must change
                     the temporary password at first sign-in.
                   </p>
                 </div>
@@ -208,7 +208,7 @@ export function WorkerImportPage() {
                         </p>
                         <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                           <div>
-                            <dt className="font-bold text-[var(--color-text-muted)]">Worker ID</dt>
+                            <dt className="font-bold text-[var(--color-text-muted)]">Employee ID</dt>
                             <dd className="mt-1 font-bold text-[var(--color-primary-strong)]">
                               {credential.workerId}
                             </dd>
@@ -227,7 +227,7 @@ export function WorkerImportPage() {
                         className="text-sm font-bold text-[var(--color-primary)]"
                         to={`/workers/${worker.workerId}`}
                       >
-                        View worker
+                        View employee
                       </Link>
                     </li>
                   ))}
@@ -254,7 +254,7 @@ export function WorkerImportPage() {
               </Button>
             ) : null}
             <Link className="button-primary" to="/workers">
-              View workers
+              View employees
             </Link>
             <Button
               onClick={() => {
@@ -284,7 +284,7 @@ export function WorkerImportPage() {
                 Manage common access
               </h2>
               <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
-                Apply one permission and data visibility profile to all uploaded workers.
+                Apply one permission and data visibility profile to all uploaded employees.
               </p>
               <div className="mt-5 space-y-3">
                 <PermissionMatrix onChange={setAccessPermissions} selected={accessPermissions} />
@@ -303,7 +303,7 @@ export function WorkerImportPage() {
                   loading={accessSaving}
                   onClick={() => void saveCommonAccess()}
                 >
-                  {accessSaving ? 'Saving access...' : 'Apply to uploaded workers'}
+                  {accessSaving ? 'Saving access...' : 'Apply to uploaded employees'}
                 </Button>
               </div>
             </div>
@@ -319,11 +319,11 @@ export function WorkerImportPage() {
         actions={
           <Link className="button-quiet" to="/workers">
             <ArrowLeft aria-hidden="true" size={18} />
-            Back to workers
+            Back to employees
           </Link>
         }
         description="Upload a CSV or Excel workbook, check every row, then confirm the import."
-        title="Import workers"
+        title="Import employees"
       />
       {error ? <ErrorSummary message={error} title="Import could not continue" /> : null}
 
@@ -376,7 +376,7 @@ export function WorkerImportPage() {
           <AppCard>
             <h2 className="font-extrabold text-[var(--color-primary-strong)]">File format</h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-              Use one row per Worker. Name and Email are required.
+              Use one row per Employee. Name and Email are required.
             </p>
             <ul className="mt-4 space-y-2 text-sm text-[var(--color-text-muted)]">
               {[
@@ -469,7 +469,7 @@ export function WorkerImportPage() {
           </div>
           <div className="mt-5 hidden overflow-auto rounded-[12px] border border-[var(--color-border)] min-[840px]:block">
             <table className="w-full text-left text-sm">
-              <caption className="sr-only">Worker import preview</caption>
+              <caption className="sr-only">Employee import preview</caption>
               <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
                 <tr>
                   <th className="h-11 px-3" scope="col">
@@ -533,8 +533,8 @@ export function WorkerImportPage() {
               onClick={() => void commit()}
             >
               {busy === 'commit'
-                ? 'Importing workers…'
-                : `Import ${preview.validRows} ${preview.validRows === 1 ? 'worker' : 'workers'}`}
+                ? 'Importing employees…'
+                : `Import ${preview.validRows} ${preview.validRows === 1 ? 'employee' : 'employees'}`}
             </Button>
           </div>
         </AppCard>

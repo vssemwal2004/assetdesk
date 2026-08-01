@@ -194,7 +194,7 @@ describe('AssetDesk application routes', () => {
     expect(
       await screen.findByRole('heading', { name: 'Sign in to AssetDesk' }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText('Worker ID or Admin email')).toHaveAttribute(
+    expect(screen.getByLabelText('Employee ID or Admin email')).toHaveAttribute(
       'autocomplete',
       'username',
     );
@@ -238,7 +238,7 @@ describe('AssetDesk application routes', () => {
 
     expect(await screen.findAllByText('Ravi Mehta')).not.toHaveLength(0);
     expect(
-      screen.getAllByRole('link', { name: /view worker details|view details/i }).length,
+      screen.getAllByRole('link', { name: /view employee details|view details/i }).length,
     ).toBeGreaterThan(0);
   });
 
@@ -250,7 +250,7 @@ describe('AssetDesk application routes', () => {
     const button = await screen.findByRole('button', { name: 'Sign in' });
     fireEvent.click(button);
     expect(
-      screen.getByText('Enter your Worker ID or Admin email and password.'),
+      screen.getByText('Enter your Employee ID or Admin email and password.'),
     ).toBeInTheDocument();
     expect(screen.getByLabelText('Password')).not.toHaveAttribute('onpaste');
   });

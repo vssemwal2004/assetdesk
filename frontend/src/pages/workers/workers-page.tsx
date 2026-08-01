@@ -82,7 +82,7 @@ export function WorkersPage() {
       await queryClient.invalidateQueries({ queryKey: ['workers'] });
     },
     onError: (error) =>
-      setActionError(isApiError(error) ? error.message : 'The Worker could not be deleted.'),
+      setActionError(isApiError(error) ? error.message : 'The Employee could not be deleted.'),
   });
 
   return (
@@ -96,12 +96,12 @@ export function WorkersPage() {
             </Link>
             <Link className="button-primary" to="/workers/new">
               <Plus aria-hidden="true" size={18} />
-              Add worker
+              Add employee
             </Link>
           </>
         }
-        description="Create and manage Admin-authorized Worker accounts."
-        title="Workers"
+        description="Create and manage Admin-authorized Employee accounts."
+        title="Employees"
       />
 
       <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)] sm:p-4">
@@ -109,9 +109,9 @@ export function WorkersPage() {
           <SearchForm
             id="worker-search"
             key={search}
-            label="Search workers"
+            label="Search employees"
             onSearch={(value) => updateParameters({ search: value })}
-            placeholder="Name, Worker ID, email or department"
+            placeholder="Name, Employee ID, email or department"
             value={search}
           />
           <div>
@@ -138,17 +138,17 @@ export function WorkersPage() {
         </div>
         {response ? (
           <p className="mt-3 text-xs font-semibold text-[var(--color-text-muted)]" role="status">
-            {response.meta.total} {response.meta.total === 1 ? 'worker' : 'workers'} found
+            {response.meta.total} {response.meta.total === 1 ? 'employee' : 'employees'} found
           </p>
         ) : null}
       </section>
       {actionError ? <ErrorSummary message={actionError} title="Action failed" /> : null}
 
       {query.isPending ? (
-        <LoadingPanel label="Loading workers" />
+        <LoadingPanel label="Loading employees" />
       ) : query.isError ? (
         <ErrorState
-          message="The Worker list could not be loaded."
+          message="The Employee list could not be loaded."
           onRetry={() => void query.refetch()}
         />
       ) : workers.length === 0 ? (
@@ -161,14 +161,14 @@ export function WorkersPage() {
             ) : (
               <Link className="button-primary" to="/workers/new">
                 <Plus aria-hidden="true" size={18} />
-                Add worker
+                Add employee
               </Link>
             )
           }
           message={
-            filtered ? 'Try a different search or status.' : 'Create the first Worker account.'
+            filtered ? 'Try a different search or status.' : 'Create the first Employee account.'
           }
-          title={filtered ? 'No workers match these filters' : 'No workers yet'}
+          title={filtered ? 'No employees match these filters' : 'No employees yet'}
         />
       ) : (
         <>
@@ -184,11 +184,11 @@ export function WorkersPage() {
           </div>
           <div className="hidden overflow-visible rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
             <table className="w-full border-collapse text-left">
-              <caption className="sr-only">Worker accounts</caption>
+              <caption className="sr-only">Employee accounts</caption>
               <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
                 <tr>
                   <th className="h-11 px-4 font-bold" scope="col">
-                    Worker
+                    Employee
                   </th>
                   <th className="h-11 px-4 font-bold" scope="col">
                     Department
@@ -252,7 +252,7 @@ export function WorkersPage() {
           </div>
 
           {response && response.meta.totalPages > 1 ? (
-            <nav aria-label="Worker list pages" className="flex items-center justify-between gap-3">
+            <nav aria-label="Employee list pages" className="flex items-center justify-between gap-3">
               <Button
                 disabled={page <= 1}
                 onClick={() => updateParameters({ page: String(page - 1) })}
@@ -300,13 +300,13 @@ export function WorkersPage() {
       ) : null}
       {deleteTarget ? (
         <ConfirmDialog
-          confirmLabel="Delete worker"
+          confirmLabel="Delete employee"
           danger
           description={`${deleteTarget.name} will be permanently removed. Existing issue and return history will stay in records.`}
           loading={deleteMutation.isPending}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => deleteMutation.mutate(deleteTarget)}
-          title="Delete this Worker?"
+          title="Delete this Employee?"
         />
       ) : null}
     </div>
@@ -386,7 +386,7 @@ function WorkerCard({
         </div>
       </div>
       <Link className="button-secondary mt-4 w-full" to={`/workers/${worker.workerId}`}>
-        View worker details
+        View employee details
       </Link>
       <div className="mt-3 flex justify-end">
         <WorkerActionsMenu

@@ -320,7 +320,7 @@ export function DataAccessMatrix({
           Data visibility
         </h3>
         <p className="mt-0.5 text-xs font-semibold text-[var(--color-text-muted)]">
-          Choose whether this worker sees only own records or whole platform records.
+          Choose whether this employee sees only own records or whole platform records.
         </p>
       </div>
       <div className="mt-3 grid gap-3 lg:grid-cols-2">

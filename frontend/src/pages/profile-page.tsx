@@ -10,11 +10,11 @@ export function ProfilePage() {
 
   const rows = [
     { label: 'Full name', value: user.name, icon: UserRound },
-    { label: 'Worker ID', value: user.workerId, icon: IdCard },
+    { label: 'Employee ID', value: user.workerId, icon: IdCard },
     { label: 'Email', value: user.email, icon: Mail },
     { label: 'Contact', value: user.contact ?? 'Not provided', icon: Phone },
     { label: 'Department', value: user.department ?? 'Not provided', icon: Building2 },
-    { label: 'Role', value: user.role === 'ADMIN' ? 'Admin' : 'Worker', icon: ShieldCheck },
+    { label: 'Role', value: user.role === 'ADMIN' ? 'Admin' : 'Employee', icon: ShieldCheck },
   ];
 
   return (

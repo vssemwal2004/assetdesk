@@ -205,7 +205,7 @@ function DashboardContent({
           />
           <SmallMetric
             icon={UsersRound}
-            label="Active workers"
+            label="Active employees"
             to="/workers?status=ACTIVE"
             value={stats.activeWorkers}
           />
@@ -229,8 +229,8 @@ function DashboardContent({
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <QuickAction icon={PackagePlus} label="Issue material" to="/issues/new" />
           <QuickAction icon={RotateCcw} label="Record Return" to="/returns" />
-          <QuickAction icon={UserPlus} label="Add worker" to="/workers/new" />
-          <QuickAction icon={FileUp} label="Import workers" to="/workers/import" />
+          <QuickAction icon={UserPlus} label="Add employee" to="/workers/new" />
+          <QuickAction icon={FileUp} label="Import employees" to="/workers/import" />
         </div>
       </section>
 

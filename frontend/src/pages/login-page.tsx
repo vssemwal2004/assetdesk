@@ -20,7 +20,7 @@ export function LoginPage() {
     event.preventDefault();
     setError(null);
     if (!identifier.trim() || !password) {
-      setError('Enter your Worker ID or Admin email and password.');
+      setError('Enter your Employee ID or Admin email and password.');
       identifierRef.current?.focus();
       return;
     }
@@ -57,7 +57,7 @@ export function LoginPage() {
             Issue and return records in one secure workspace.
           </h1>
           <div className="mt-8 grid gap-3">
-            <Feature icon={UserRoundCheck} text="Role-based access for Admins and Workers" />
+            <Feature icon={UserRoundCheck} text="Role-based access for Admins and Employees" />
             <Feature icon={ShieldCheck} text="Protected university account sessions" />
             <Feature icon={LockKeyhole} text="Mandatory password change for new accounts" />
           </div>
@@ -78,7 +78,7 @@ export function LoginPage() {
               Sign in to AssetDesk
             </h1>
             <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
-              Use your Worker ID or Admin email.
+              Use your Employee ID or Admin email.
             </p>
 
             <form className="mt-6 space-y-5" noValidate onSubmit={(event) => void submit(event)}>
@@ -88,9 +88,9 @@ export function LoginPage() {
                 autoComplete="username"
                 autoFocus
                 error={
-                  !identifier.trim() && error ? 'Enter your Worker ID or Admin email.' : undefined
+                  !identifier.trim() && error ? 'Enter your Employee ID or Admin email.' : undefined
                 }
-                label="Worker ID or Admin email"
+                label="Employee ID or Admin email"
                 onChange={(event) => setIdentifier(event.target.value)}
                 placeholder="GEU-CC-ANITASHARMA or admin@university.edu"
                 ref={identifierRef}
@@ -111,7 +111,7 @@ export function LoginPage() {
 
             <div className="mt-6 rounded-[12px] bg-[var(--color-surface-tint)] p-3.5">
               <p className="text-xs leading-5 text-[var(--color-text-muted)]">
-                New Worker accounts must create a permanent password after their first sign-in.
+                New Employee accounts must create a permanent password after their first sign-in.
               </p>
             </div>
           </div>

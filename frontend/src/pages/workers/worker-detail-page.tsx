@@ -77,7 +77,7 @@ export function WorkerDetailPage() {
       setConfirmAction(null);
     },
     onError: (error) =>
-      setActionError(isApiError(error) ? error.message : 'The Worker status could not be changed.'),
+      setActionError(isApiError(error) ? error.message : 'The Employee status could not be changed.'),
   });
 
   const credentialMutation = useMutation({
@@ -101,16 +101,16 @@ export function WorkerDetailPage() {
       navigate('/workers', { replace: true });
     },
     onError: (error) =>
-      setActionError(isApiError(error) ? error.message : 'The Worker could not be deleted.'),
+      setActionError(isApiError(error) ? error.message : 'The Employee could not be deleted.'),
   });
 
-  if (query.isPending) return <LoadingPanel label="Loading worker details" />;
+  if (query.isPending) return <LoadingPanel label="Loading employee details" />;
   if (query.isError || !query.data) {
     return (
       <ErrorState
-        message="This Worker could not be loaded."
+        message="This Employee could not be loaded."
         onRetry={() => void query.refetch()}
-        title="Worker not available"
+        title="Employee not available"
       />
     );
   }
@@ -128,7 +128,7 @@ export function WorkerDetailPage() {
         actions={
           <Link className="button-quiet" to="/workers">
             <ArrowLeft aria-hidden="true" size={18} />
-            Back to workers
+            Back to employees
           </Link>
         }
         description={`${worker.workerId} · ${worker.email}`}
@@ -145,7 +145,7 @@ export function WorkerDetailPage() {
               </span>
               <div>
                 <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-                  Worker information
+                  Employee information
                 </h2>
                 <WorkerStatusBadge status={worker.status} />
               </div>
@@ -168,7 +168,7 @@ export function WorkerDetailPage() {
             />
           ) : (
             <dl className="mt-5 divide-y divide-[var(--color-border)]">
-              <Detail icon={IdCard} label="Worker ID" value={worker.workerId} />
+              <Detail icon={IdCard} label="Employee ID" value={worker.workerId} />
               <Detail icon={Mail} label="Email" value={worker.email} />
               <Detail icon={Phone} label="Contact" value={worker.contact ?? 'Not provided'} />
               <Detail
@@ -226,7 +226,7 @@ export function WorkerDetailPage() {
               variant={worker.status === 'DISABLED' ? 'secondary' : 'danger'}
             >
               <ShieldCheck aria-hidden="true" size={18} />
-              {worker.status === 'DISABLED' ? 'Reactivate worker' : 'Disable worker'}
+              {worker.status === 'DISABLED' ? 'Reactivate employee' : 'Disable employee'}
             </Button>
             <Button
               className="w-full"
@@ -237,7 +237,7 @@ export function WorkerDetailPage() {
               variant="danger"
             >
               <Trash2 aria-hidden="true" size={18} />
-              Delete worker
+              Delete employee
             </Button>
           </div>
           {worker.temporaryPasswordExpiresAt ? (
@@ -267,17 +267,17 @@ export function WorkerDetailPage() {
 
       {confirmAction === 'status' ? (
         <ConfirmDialog
-          confirmLabel={worker.status === 'DISABLED' ? 'Reactivate worker' : 'Disable worker'}
+          confirmLabel={worker.status === 'DISABLED' ? 'Reactivate employee' : 'Disable employee'}
           danger={worker.status !== 'DISABLED'}
           description={
             worker.status === 'DISABLED'
-              ? 'The Worker will be able to sign in again. If the initial password is still pending, the account will return to Invited.'
-              : 'The Worker will be signed out and will not be able to access AssetDesk until reactivated.'
+              ? 'The Employee will be able to sign in again. If the initial password is still pending, the account will return to Invited.'
+              : 'The Employee will be signed out and will not be able to access AssetDesk until reactivated.'
           }
           loading={statusMutation.isPending}
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => statusMutation.mutate(worker)}
-          title={worker.status === 'DISABLED' ? 'Reactivate this Worker?' : 'Disable this Worker?'}
+          title={worker.status === 'DISABLED' ? 'Reactivate this Employee?' : 'Disable this Employee?'}
         />
       ) : null}
       {confirmAction === 'credential' ? (
@@ -292,13 +292,13 @@ export function WorkerDetailPage() {
       ) : null}
       {confirmAction === 'delete' ? (
         <ConfirmDialog
-          confirmLabel="Delete worker"
+          confirmLabel="Delete employee"
           danger
-          description="This permanently removes the Worker account and signs out any active sessions. Existing issue and return history will remain in records."
+          description="This permanently removes the Employee account and signs out any active sessions. Existing issue and return history will remain in records."
           loading={deleteMutation.isPending}
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => deleteMutation.mutate()}
-          title="Delete this Worker?"
+          title="Delete this Employee?"
         />
       ) : null}
       {credential ? (
@@ -370,7 +370,7 @@ function EditWorkerForm({
       if (isApiError(error)) {
         setMessage(error.message);
         setErrors(error.fields);
-      } else setMessage('The Worker details could not be saved.');
+      } else setMessage('The Employee details could not be saved.');
     } finally {
       setSaving(false);
     }
@@ -381,7 +381,7 @@ function EditWorkerForm({
       {message ? <ErrorSummary message={message} /> : null}
       <TextField
         error={errors.name}
-        label="Worker name"
+        label="Employee name"
         onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))}
         value={form.name}
       />
@@ -412,7 +412,7 @@ function EditWorkerForm({
         <div className="mb-3">
           <h3 className="font-extrabold text-[var(--color-primary-strong)]">Platform access</h3>
           <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
-            Select exactly what this worker can view or manage.
+            Select exactly what this employee can view or manage.
           </p>
         </div>
         <PermissionMatrix
@@ -509,7 +509,7 @@ function CredentialDialog({
   const [copied, setCopied] = useState(false);
   async function copy() {
     await navigator.clipboard.writeText(
-      `Worker ID: ${credential.workerId}\nTemporary password: ${credential.temporaryPassword}`,
+      `Employee ID: ${credential.workerId}\nTemporary password: ${credential.temporaryPassword}`,
     );
     setCopied(true);
   }
@@ -520,10 +520,10 @@ function CredentialDialog({
           New temporary credential
         </h2>
         <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-          This password is shown once. Share it securely; the Worker must change it at sign-in.
+          This password is shown once. Share it securely; the Employee must change it at sign-in.
         </p>
         <div className="mt-4 rounded-[12px] bg-[var(--color-surface-tint)] p-4">
-          <p className="text-xs font-bold text-[var(--color-text-muted)]">Worker ID</p>
+          <p className="text-xs font-bold text-[var(--color-text-muted)]">Employee ID</p>
           <p className="mt-1 font-bold text-[var(--color-primary-strong)]">{credential.workerId}</p>
           <p className="mt-4 text-xs font-bold text-[var(--color-text-muted)]">
             Temporary password

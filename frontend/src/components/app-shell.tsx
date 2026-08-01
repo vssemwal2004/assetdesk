@@ -49,7 +49,7 @@ const navigation: NavigationItem[] = [
   { label: 'Return', to: '/returns', icon: RotateCcw, permission: 'RETURNS_VIEW' },
   { label: 'Issue/Return Receipt', to: '/bills', icon: ReceiptText, permission: 'ISSUE_SLIPS_VIEW' },
   { label: 'Receivers', to: '/receivers', icon: ContactRound, permission: 'RECEIVERS_VIEW' },
-  { label: 'Workers', to: '/workers', icon: UsersRound, adminOnly: true },
+  { label: 'Employees', to: '/workers', icon: UsersRound, adminOnly: true },
   { label: 'Audit logs', to: '/audit', icon: FileClock, adminOnly: true },
   { label: 'Reports', to: '/reports', icon: FileBarChart, adminOnly: true },
   { label: 'Profile', to: '/profile', icon: UserRound },
@@ -100,10 +100,10 @@ function pageTitle(pathname: string): string {
   if (pathname === '/receivers/new') return 'Add receiver';
   if (pathname.startsWith('/receivers/')) return 'Receiver details';
   if (pathname === '/receivers') return 'Receivers';
-  if (pathname === '/workers/new') return 'Add worker';
-  if (pathname === '/workers/import') return 'Import workers';
-  if (pathname.startsWith('/workers/')) return 'Worker details';
-  if (pathname === '/workers') return 'Workers';
+  if (pathname === '/workers/new') return 'Add employee';
+  if (pathname === '/workers/import') return 'Import employees';
+  if (pathname.startsWith('/workers/')) return 'Employee details';
+  if (pathname === '/workers') return 'Employees';
   if (pathname === '/profile/change-password') return 'Change password';
   if (pathname === '/profile') return 'Profile';
   if (pathname === '/access-denied') return 'Access denied';
@@ -293,7 +293,7 @@ function ProfileMenu() {
             {auth.user?.name}
           </span>
           <span className="block text-xs font-semibold text-[var(--color-text-muted)]">
-            {auth.user?.role === 'ADMIN' ? 'Admin' : 'Worker'}
+            {auth.user?.role === 'ADMIN' ? 'Admin' : 'Employee'}
           </span>
         </span>
         <ChevronDown

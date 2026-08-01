@@ -427,6 +427,18 @@ export function InventoryPage() {
           >
             <div className="rounded-[8px] bg-[var(--color-surface-tint)] p-3">
               <div className="grid gap-3 sm:grid-cols-2">
+                <FilterField label="Material type">
+                  <FilterSelect
+                    id="inventory-mode-filter"
+                    label="Filter by material type"
+                    onChange={(value) => updateParameters({ trackingMode: value })}
+                    value={mode ?? ''}
+                  >
+                    <option value="">Any material type</option>
+                    <option value="SERIALIZED">IT Assets</option>
+                    <option value="QUANTITY">IT Consumables</option>
+                  </FilterSelect>
+                </FilterField>
                 <FilterField label="Asset type">
                   <FilterSelect
                     id="inventory-category-filter"
@@ -550,18 +562,6 @@ export function InventoryPage() {
                   <option value="OUT_OF_STOCK">Out of stock</option>
                   <option value="ISSUED">Issued stock</option>
                   <option value="FULLY_ISSUED">Fully issued</option>
-                </FilterSelect>
-              </FilterField>
-              <FilterField label="Material type">
-                <FilterSelect
-                  id="inventory-mode-filter"
-                  label="Filter by material type"
-                  onChange={(value) => updateParameters({ trackingMode: value })}
-                  value={mode ?? ''}
-                >
-                  <option value="">Any material type</option>
-                  <option value="SERIALIZED">IT Assets</option>
-                  <option value="QUANTITY">IT Consumables</option>
                 </FilterSelect>
               </FilterField>
               <FilterField label="Return policy">

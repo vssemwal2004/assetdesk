@@ -86,7 +86,7 @@ export function AuditPage() {
             key={search}
             label="Search audit logs"
             onSearch={(value) => update({ search: value })}
-            placeholder="Worker ID, target or request ID"
+            placeholder="Employee ID, target or request ID"
             value={search}
           />
           <Filter
@@ -107,7 +107,7 @@ export function AuditPage() {
             options={[
               ['', 'All roles'],
               ['ADMIN', 'Admin'],
-              ['WORKER', 'Worker'],
+              ['WORKER', 'Employee'],
             ]}
           />
           <label className="space-y-1 text-xs font-bold text-[var(--color-text-muted)]">

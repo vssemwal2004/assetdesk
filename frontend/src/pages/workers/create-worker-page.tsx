@@ -87,7 +87,7 @@ export function CreateWorkerPage() {
         setMessage(requestError.message);
         if (Object.keys(requestError.fields).length > 0) setReview(false);
       } else {
-        setMessage('AssetDesk could not create the Worker. Try again.');
+        setMessage('AssetDesk could not create the Employee. Try again.');
       }
     } finally {
       setSubmitting(false);
@@ -107,7 +107,7 @@ export function CreateWorkerPage() {
   async function copyCredential() {
     if (!result) return;
     await navigator.clipboard.writeText(
-      `Worker ID: ${result.credential.workerId}\nTemporary password: ${result.credential.temporaryPassword}`,
+      `Employee ID: ${result.credential.workerId}\nTemporary password: ${result.credential.temporaryPassword}`,
     );
     setCopied(true);
   }
@@ -115,18 +115,18 @@ export function CreateWorkerPage() {
   if (result) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Worker created" />
+        <PageHeader title="Employee created" />
         <AppCard className="mx-auto max-w-2xl">
-          <SuccessMark label="Worker created" />
+          <SuccessMark label="Employee created" />
           <h2 className="mt-4 text-xl font-extrabold text-[var(--color-primary-strong)]">
             {result.worker.name} can now sign in
           </h2>
           <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
             The invitation email is queued. Keep this one-time credential available until delivery
-            is confirmed. The Worker must change this password at first sign-in.
+            is confirmed. The Employee must change this password at first sign-in.
           </p>
           <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-            <Credential label="Worker ID" value={result.credential.workerId} />
+            <Credential label="Employee ID" value={result.credential.workerId} />
             <Credential
               label="Temporary password"
               value={result.credential.temporaryPassword}
@@ -158,7 +158,7 @@ export function CreateWorkerPage() {
               {copied ? 'Copied' : 'Copy credential'}
             </Button>
             <Link className="button-secondary" to={`/workers/${result.worker.workerId}`}>
-              View worker
+              View employee
             </Link>
             <Button onClick={startAnother}>Create another</Button>
           </div>
@@ -173,15 +173,15 @@ export function CreateWorkerPage() {
         actions={
           <Link className="button-quiet" to="/workers">
             <ArrowLeft aria-hidden="true" size={18} />
-            Back to workers
+            Back to employees
           </Link>
         }
         description={
           review
             ? 'Check these details before creating the account.'
-            : 'Enter the university Worker account details.'
+            : 'Enter the university Employee account details.'
         }
-        title={review ? 'Review worker' : 'Add worker'}
+        title={review ? 'Review employee' : 'Add employee'}
       />
 
       <AppCard className="max-w-6xl">
@@ -194,7 +194,7 @@ export function CreateWorkerPage() {
               Step {review ? '2' : '1'} of 2
             </p>
             <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-              {review ? 'Review details' : 'Worker details'}
+              {review ? 'Review details' : 'Employee details'}
             </h2>
           </div>
         </div>
@@ -238,7 +238,7 @@ export function CreateWorkerPage() {
                 Edit details
               </Button>
               <Button loading={submitting} onClick={() => void submit()}>
-                {submitting ? 'Creating worker…' : 'Create worker'}
+                {submitting ? 'Creating employee…' : 'Create employee'}
               </Button>
             </div>
           </div>
@@ -247,7 +247,7 @@ export function CreateWorkerPage() {
             <TextField
               autoComplete="name"
               error={errors.name}
-              label="Worker name"
+              label="Employee name"
               onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))}
               ref={firstFieldRef}
               value={form.name}
@@ -290,7 +290,7 @@ export function CreateWorkerPage() {
                   Platform access
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
-                  Admin controls exactly what this worker can view or manage.
+                  Admin controls exactly what this employee can view or manage.
                 </p>
               </div>
               <PermissionMatrix

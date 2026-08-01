@@ -335,7 +335,7 @@ export function InventoryDetailPage() {
               </div>
             ) : (
               <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-xs font-semibold text-[var(--color-text-muted)]">
-                Inventory records are read-only for Worker accounts.
+                Inventory records are read-only for Employee accounts.
               </p>
             )}
           </AppCard>

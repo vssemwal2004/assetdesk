@@ -216,7 +216,7 @@ export function ReceiverDetailPage() {
               </div>
             ) : (
               <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-xs font-semibold text-[var(--color-text-muted)]">
-                Receiver records are read-only for Worker accounts.
+                Receiver records are read-only for Employee accounts.
               </p>
             )}
           </AppCard>

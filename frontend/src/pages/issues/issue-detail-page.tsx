@@ -184,7 +184,7 @@ export function IssueDetailPage() {
       {response.accessScope === 'RETURN_ONLY' ? (
         <div className="rounded-[12px] border border-blue-200 bg-[var(--color-info-soft)] p-4 text-sm leading-6 text-[var(--color-info)]">
           This operational view contains the information needed to record a Return. Full Issue
-          Record history remains limited to the Admin and involved Workers.
+          Record history remains limited to the Admin and involved Employees.
         </div>
       ) : null}
 
@@ -270,7 +270,7 @@ export function IssueDetailPage() {
             </div>
             <p className="mt-3 font-bold text-[var(--color-text-strong)]">{issue.issuedBy.name}</p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              {issue.issuedBy.workerId} · {issue.issuedBy.role === 'ADMIN' ? 'Admin' : 'Worker'}
+              {issue.issuedBy.workerId} · {issue.issuedBy.role === 'ADMIN' ? 'Admin' : 'Employee'}
             </p>
           </AppCard>
           {full ? <NotificationStatusCard issueId={issue.issueId} /> : null}

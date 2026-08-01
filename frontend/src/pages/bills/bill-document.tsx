@@ -88,7 +88,7 @@ export function BillDocument({
           <h2>Issued By</h2>
           <dl className="bill-detail-list">
             <BillRow label="Name" value={issue.issuedBy.name} />
-            <BillRow label="Worker ID" value={issue.issuedBy.workerId} />
+            <BillRow label="Employee ID" value={issue.issuedBy.workerId} />
             <BillRow label="Role" value={issue.issuedBy.role} />
             <BillRow label="Purpose" value={issuePurpose(issue)} />
             <BillRow label="Notes" value={issueNotes(issue)} />
@@ -238,7 +238,7 @@ function ReturnBillDocument({
           <h2>Return Recorded By</h2>
           <dl className="bill-detail-list">
             <BillRow label="Name" value={returnEvent.performedBy.name} />
-            <BillRow label="Worker ID" value={returnEvent.performedBy.workerId} />
+            <BillRow label="Employee ID" value={returnEvent.performedBy.workerId} />
             <BillRow label="Role" value={returnEvent.performedBy.role} />
             <BillRow label="Notes" value={optional(returnEvent.notes)} />
           </dl>
