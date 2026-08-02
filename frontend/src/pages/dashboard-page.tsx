@@ -41,6 +41,7 @@ import {
 } from '../components/ui';
 import { formatIstDateTime } from '../lib/date-time';
 import { getAdminDashboard } from '../lib/dashboard-api';
+import { getCartridgeDashboard } from '../lib/cartridges-api';
 import { isApiError } from '../lib/api-client';
 
 export function DashboardPage() {
@@ -213,6 +214,7 @@ function DashboardContent({
       </section>
 
       <InventoryOverview inventory={inventory} />
+      <MainCartridgeOverview />
 
       <section aria-labelledby="quick-actions-heading" className="space-y-3">
         <div>
@@ -244,6 +246,57 @@ function DashboardContent({
         <IssuePanel issues={recentIssues} kind="recent" title="Recent Issues" viewAll="/issues" />
       </div>
     </>
+  );
+}
+
+function MainCartridgeOverview() {
+  const query = useQuery({ queryKey: ['cartridge-dashboard'], queryFn: getCartridgeDashboard });
+  if (query.isError) return null;
+  const counts = query.data?.data.counts ?? {};
+  const metrics: Array<[string, string]> = [
+    ['FILLED_AVAILABLE', 'Filled'],
+    ['ISSUED', 'Issued'],
+    ['EMPTY', 'Empty'],
+    ['DEFECTIVE', 'Defective'],
+    ['WITH_VENDOR', 'With vendor'],
+    ['QC_PENDING', 'QC pending'],
+  ];
+  return (
+    <section aria-labelledby="cartridge-overview-heading" className="space-y-3">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h2
+            className="text-lg font-extrabold text-[var(--color-primary-strong)]"
+            id="cartridge-overview-heading"
+          >
+            Cartridge overview
+          </h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Serialized cartridge stock and latest operational state.
+          </p>
+        </div>
+        <Link className="text-sm font-bold text-[var(--color-primary)]" to="/cartridges/dashboard">
+          View dashboard
+        </Link>
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        {metrics.map(([key, label]) => (
+          <SmallMetric
+            icon={Boxes}
+            key={key}
+            label={label}
+            to={`/cartridges?status=${key}`}
+            value={counts[key] ?? 0}
+          />
+        ))}
+        <SmallMetric
+          icon={Clock3}
+          label="Open Gate Passes"
+          to="/cartridges/gate-passes"
+          value={query.data?.data.openGatePasses ?? 0}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -323,10 +376,30 @@ function InventoryOverview({ inventory }: { inventory: DashboardInventory }) {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <SmallMetric icon={Boxes} label="Material records" to="/inventory" value={totals.materialCount} />
-        <SmallMetric icon={PackageOpen} label="Total quantity" to="/inventory" value={totals.totalQuantity} />
-        <SmallMetric icon={PackageCheck} label="Available quantity" to="/inventory?stockState=AVAILABLE" value={totals.availableQuantity} />
-        <SmallMetric icon={Clock3} label="Issued quantity" to="/inventory?stockState=ISSUED" value={totals.issuedQuantity} />
+        <SmallMetric
+          icon={Boxes}
+          label="Material records"
+          to="/inventory"
+          value={totals.materialCount}
+        />
+        <SmallMetric
+          icon={PackageOpen}
+          label="Total quantity"
+          to="/inventory"
+          value={totals.totalQuantity}
+        />
+        <SmallMetric
+          icon={PackageCheck}
+          label="Available quantity"
+          to="/inventory?stockState=AVAILABLE"
+          value={totals.availableQuantity}
+        />
+        <SmallMetric
+          icon={Clock3}
+          label="Issued quantity"
+          to="/inventory?stockState=ISSUED"
+          value={totals.issuedQuantity}
+        />
       </div>
     </section>
   );

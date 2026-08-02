@@ -17,7 +17,12 @@ const permissionFallbacks: Partial<Record<WorkerPermission, WorkerPermission[]>>
   ISSUE_SLIPS_VIEW: ['ISSUES_VIEW'],
   RETURN_DATES_EXTEND: ['ASSIGNMENTS_CREATE'],
   RETURNS_VIEW: ['RETURNS_RECORD'],
-  INVENTORY_MANAGE: ['INVENTORY_ADD', 'INVENTORY_EDIT', 'INVENTORY_DELETE', 'INVENTORY_QUANTITY_ADJUST'],
+  INVENTORY_MANAGE: [
+    'INVENTORY_ADD',
+    'INVENTORY_EDIT',
+    'INVENTORY_DELETE',
+    'INVENTORY_QUANTITY_ADJUST',
+  ],
   INVENTORY_ADD: ['INVENTORY_MANAGE'],
   INVENTORY_EDIT: ['INVENTORY_MANAGE'],
   INVENTORY_DELETE: ['INVENTORY_MANAGE'],
@@ -27,7 +32,12 @@ const permissionFallbacks: Partial<Record<WorkerPermission, WorkerPermission[]>>
   ASSET_TYPES_DELETE: ['ASSET_TYPES_MANAGE', 'INVENTORY_MANAGE'],
   INVENTORY_IMPORT: ['INVENTORY_MANAGE'],
   INVENTORY_EXPORT: ['INVENTORY_VIEW'],
-  ASSET_UNITS_MANAGE: ['ASSET_UNITS_ADD', 'ASSET_UNITS_EDIT', 'ASSET_UNITS_DELETE', 'INVENTORY_MANAGE'],
+  ASSET_UNITS_MANAGE: [
+    'ASSET_UNITS_ADD',
+    'ASSET_UNITS_EDIT',
+    'ASSET_UNITS_DELETE',
+    'INVENTORY_MANAGE',
+  ],
   ASSET_UNITS_ADD: ['ASSET_UNITS_MANAGE', 'INVENTORY_MANAGE'],
   ASSET_UNITS_EDIT: ['ASSET_UNITS_MANAGE', 'INVENTORY_MANAGE'],
   ASSET_UNITS_DELETE: ['ASSET_UNITS_MANAGE', 'INVENTORY_MANAGE'],
@@ -92,10 +102,11 @@ export const requireAuth: RequestHandler = async (request, _response, next) => {
       permissions: user.role === 'ADMIN' ? [] : (user.permissions ?? []),
       dataAccess:
         user.role === 'ADMIN'
-          ? { inventory: 'ALL', issues: 'ALL' }
+          ? { inventory: 'ALL', issues: 'ALL', cartridges: 'ALL' }
           : {
               inventory: user.dataAccess?.inventory ?? 'OWN',
               issues: user.dataAccess?.issues ?? 'OWN',
+              cartridges: user.dataAccess?.cartridges ?? 'OWN',
             },
       sid: session.sid,
       authVersion: user.authVersion,

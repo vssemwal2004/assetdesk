@@ -1,6 +1,7 @@
 export * from './api.js';
 export * from './audit.js';
 export * from './auth.js';
+export * from './cartridges.js';
 export * from './dashboard.js';
 export * from './domain.js';
 export * from './identifiers.js';

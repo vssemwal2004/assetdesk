@@ -11,6 +11,7 @@ import { requestIdMiddleware } from './middleware/request-id.js';
 import { createAuthRouter } from './modules/auth/auth.routes.js';
 import { createAuditRouter } from './modules/audit/audit.routes.js';
 import { createDashboardRouter } from './modules/dashboard/dashboard.routes.js';
+import { createCartridgeRouter } from './modules/cartridges/cartridge.routes.js';
 import { createInventoryRouter } from './modules/inventory/inventory.routes.js';
 import { createIssuesRouter } from './modules/issues/issue.routes.js';
 import { createNotificationRouter } from './modules/notifications/notification.routes.js';
@@ -52,6 +53,7 @@ export function createApp(): Express {
   app.use('/api/v1/auth', createAuthRouter());
   app.use('/api/v1/audit-events', createAuditRouter());
   app.use('/api/v1/dashboard', createDashboardRouter());
+  app.use('/api/v1/cartridges', createCartridgeRouter());
   app.use('/api/v1/inventory', createInventoryRouter());
   app.use('/api/v1/receivers', createReceiversRouter());
   app.use('/api/v1/reports', createReportRouter());

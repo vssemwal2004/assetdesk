@@ -166,6 +166,78 @@ export const permissionDefinitions: PermissionDefinition[] = [
     label: 'View reports',
     description: 'Open reports and export operational data.',
   },
+  {
+    permission: 'CARTRIDGES_VIEW',
+    group: 'Cartridges',
+    label: 'View cartridges',
+    description: 'Search cartridge stock, status, history, and dashboard.',
+  },
+  {
+    permission: 'CARTRIDGES_ADD',
+    group: 'Cartridges',
+    label: 'Add cartridges',
+    description: 'Register cartridge serial numbers in bulk.',
+  },
+  {
+    permission: 'CARTRIDGES_EDIT',
+    group: 'Cartridges',
+    label: 'Edit cartridges',
+    description: 'Edit cartridge master details and notes.',
+  },
+  {
+    permission: 'CARTRIDGES_ISSUE',
+    group: 'Cartridges',
+    label: 'Issue cartridges',
+    description: 'Issue a filled cartridge independently.',
+  },
+  {
+    permission: 'CARTRIDGES_RETURN',
+    group: 'Cartridges',
+    label: 'Return cartridges',
+    description: 'Record empty, unused, damaged, or defective returns.',
+  },
+  {
+    permission: 'CARTRIDGE_GATE_PASSES_VIEW',
+    group: 'Cartridges',
+    label: 'View Gate Passes',
+    description: 'Open the cartridge Gate Pass register and print documents.',
+  },
+  {
+    permission: 'CARTRIDGE_GATE_PASSES_CREATE',
+    group: 'Cartridges',
+    label: 'Create Gate Passes',
+    description: 'Prepare a returnable refilling Gate Pass.',
+  },
+  {
+    permission: 'CARTRIDGE_GATE_PASSES_VERIFY',
+    group: 'Cartridges',
+    label: 'Verify Gate Passes',
+    description: 'Verify a prepared Gate Pass before Gate Out.',
+  },
+  {
+    permission: 'CARTRIDGE_GATE_OUT',
+    group: 'Cartridges',
+    label: 'Confirm Gate Out',
+    description: 'Record serialized cartridges leaving the gate.',
+  },
+  {
+    permission: 'CARTRIDGE_GATE_IN',
+    group: 'Cartridges',
+    label: 'Confirm Gate In',
+    description: 'Record full or partial Gate In on the same pass.',
+  },
+  {
+    permission: 'CARTRIDGE_QC',
+    group: 'Cartridges',
+    label: 'Perform cartridge QC',
+    description: 'Verify refill results and failed cartridges.',
+  },
+  {
+    permission: 'CARTRIDGE_REPORTS_VIEW',
+    group: 'Cartridges',
+    label: 'View cartridge reports',
+    description: 'View and export cartridge activity reports.',
+  },
 ];
 
 export const permissionLabels = Object.fromEntries(
@@ -215,7 +287,11 @@ export function PermissionMatrix({
     <div className="space-y-3">
       {!readonly ? (
         <div className="flex flex-wrap justify-end gap-2">
-          <Button onClick={() => onChange?.([...selectablePermissions])} type="button" variant="secondary">
+          <Button
+            onClick={() => onChange?.([...selectablePermissions])}
+            type="button"
+            variant="secondary"
+          >
             Select all
           </Button>
           <Button onClick={() => onChange?.(['DASHBOARD'])} type="button" variant="secondary">
@@ -266,7 +342,9 @@ export function PermissionMatrix({
                         enabled
                           ? 'border-[var(--color-primary-border)] bg-[var(--color-primary-soft)]'
                           : 'border-[var(--color-border)] bg-white',
-                        readonly ? 'cursor-default' : 'cursor-pointer hover:border-[var(--color-primary)]',
+                        readonly
+                          ? 'cursor-default'
+                          : 'cursor-pointer hover:border-[var(--color-primary)]',
                       )}
                       key={definition.permission}
                     >
@@ -327,12 +405,15 @@ export function DataAccessMatrix({
         {[
           ['inventory', 'Inventory data', 'Controls inventory list, details, units, and exports.'],
           ['issues', 'Issue data', 'Controls issue list, details, receipts, and return search.'],
+          [
+            'cartridges',
+            'Cartridge data',
+            'Controls cartridge records, movements, Gate Passes, and counts.',
+          ],
         ].map(([area, label, description]) => (
           <div className="rounded-[8px] border border-[var(--color-border)] p-3" key={area}>
             <p className="text-sm font-bold text-[var(--color-text-strong)]">{label}</p>
-            <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
-              {description}
-            </p>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">{description}</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {[
                 ['OWN', 'Own data'],

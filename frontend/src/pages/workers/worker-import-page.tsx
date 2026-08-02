@@ -37,7 +37,11 @@ export function WorkerImportPage() {
   const [accessPermissions, setAccessPermissions] = useState<WorkerPermission[]>([
     ...DEFAULT_WORKER_PERMISSIONS,
   ]);
-  const [accessData, setAccessData] = useState<WorkerDataAccess>({ inventory: 'OWN', issues: 'OWN' });
+  const [accessData, setAccessData] = useState<WorkerDataAccess>({
+    inventory: 'OWN',
+    issues: 'OWN',
+    cartridges: 'OWN',
+  });
   const [accessSaving, setAccessSaving] = useState(false);
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
@@ -208,7 +212,9 @@ export function WorkerImportPage() {
                         </p>
                         <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                           <div>
-                            <dt className="font-bold text-[var(--color-text-muted)]">Employee ID</dt>
+                            <dt className="font-bold text-[var(--color-text-muted)]">
+                              Employee ID
+                            </dt>
                             <dd className="mt-1 font-bold text-[var(--color-primary-strong)]">
                               {credential.workerId}
                             </dd>

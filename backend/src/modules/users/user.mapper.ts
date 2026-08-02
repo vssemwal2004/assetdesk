@@ -20,10 +20,11 @@ export function toAuthUser(user: UserRecord): AuthUser {
     permissions: user.role === 'ADMIN' ? [] : (user.permissions ?? []),
     dataAccess:
       user.role === 'ADMIN'
-        ? { inventory: 'ALL', issues: 'ALL' }
+        ? { inventory: 'ALL', issues: 'ALL', cartridges: 'ALL' }
         : {
             inventory: user.dataAccess?.inventory ?? 'OWN',
             issues: user.dataAccess?.issues ?? 'OWN',
+            cartridges: user.dataAccess?.cartridges ?? 'OWN',
           },
   };
 }
@@ -43,6 +44,7 @@ export function toWorker(user: UserRecord): Worker {
     dataAccess: {
       inventory: user.dataAccess?.inventory ?? 'OWN',
       issues: user.dataAccess?.issues ?? 'OWN',
+      cartridges: user.dataAccess?.cartridges ?? 'OWN',
     },
     temporaryPasswordExpiresAt: isoOrNull(user.temporaryPasswordExpiresAt),
     lastLoginAt: isoOrNull(user.lastLoginAt),

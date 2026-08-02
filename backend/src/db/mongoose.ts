@@ -19,6 +19,9 @@ import { ReceiverModel } from '../modules/receivers/receiver.model.js';
 import { ReminderModel } from '../modules/reminders/reminder.model.js';
 import { UserModel } from '../modules/users/user.model.js';
 import { WorkerImportModel } from '../modules/workers/worker-import.model.js';
+import { CartridgeModel } from '../modules/cartridges/cartridge.model.js';
+import { CartridgeMovementModel } from '../modules/cartridges/cartridge-movement.model.js';
+import { GatePassModel } from '../modules/cartridges/gate-pass.model.js';
 
 const indexedModels: Array<{
   modelName: string;
@@ -41,6 +44,9 @@ const indexedModels: Array<{
   IssueSequenceModel,
   IssueModel,
   EmailJobModel,
+  CartridgeModel,
+  CartridgeMovementModel,
+  GatePassModel,
 ];
 
 export async function ensureDatabaseIndexes(): Promise<void> {

@@ -12,6 +12,8 @@ import {
   ReceiptText,
   Boxes,
   PackagePlus,
+  Printer,
+  Gauge,
   RotateCcw,
   UserRound,
   UsersRound,
@@ -47,7 +49,12 @@ interface NavigationGroup {
 const navigation: NavigationItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: Home, end: true },
   { label: 'Return', to: '/returns', icon: RotateCcw, permission: 'RETURNS_VIEW' },
-  { label: 'Issue/Return Receipt', to: '/bills', icon: ReceiptText, permission: 'ISSUE_SLIPS_VIEW' },
+  {
+    label: 'Issue/Return Receipt',
+    to: '/bills',
+    icon: ReceiptText,
+    permission: 'ISSUE_SLIPS_VIEW',
+  },
   { label: 'Receivers', to: '/receivers', icon: ContactRound, permission: 'RECEIVERS_VIEW' },
   { label: 'Employees', to: '/workers', icon: UsersRound, adminOnly: true },
   { label: 'Audit logs', to: '/audit', icon: FileClock, adminOnly: true },
@@ -56,21 +63,84 @@ const navigation: NavigationItem[] = [
 ];
 
 const inventoryNavigation: NavigationItem[] = [
-  { label: 'Inventory data', to: '/inventory', icon: Boxes, end: true, ariaLabel: 'Inventory', permission: 'INVENTORY_VIEW' },
+  {
+    label: 'Inventory data',
+    to: '/inventory',
+    icon: Boxes,
+    end: true,
+    ariaLabel: 'Inventory',
+    permission: 'INVENTORY_VIEW',
+  },
   { label: 'Add material', to: '/inventory/new', icon: PackagePlus, permission: 'INVENTORY_ADD' },
-  { label: 'Add asset details', to: '/inventory/asset-types', icon: Boxes, permission: 'ASSET_TYPES_MANAGE' },
+  {
+    label: 'Add asset details',
+    to: '/inventory/asset-types',
+    icon: Boxes,
+    permission: 'ASSET_TYPES_MANAGE',
+  },
 ];
 
 const issueNavigation: NavigationItem[] = [
-  { label: 'Issue material', to: '/issues/new', icon: PackagePlus, permission: 'ASSIGNMENTS_CREATE' },
+  {
+    label: 'Issue material',
+    to: '/issues/new',
+    icon: PackagePlus,
+    permission: 'ASSIGNMENTS_CREATE',
+  },
   { label: 'Issues data', to: '/issues', icon: ListChecks, end: true, permission: 'ISSUES_VIEW' },
   { label: 'Overdue assets', to: '/overdue', icon: FileClock, adminOnly: true },
+];
+const cartridgeNavigation: NavigationItem[] = [
+  { label: 'Dashboard', to: '/cartridges/dashboard', icon: Gauge, permission: 'CARTRIDGES_VIEW' },
+  {
+    label: 'All cartridges',
+    to: '/cartridges',
+    icon: Printer,
+    end: true,
+    permission: 'CARTRIDGES_VIEW',
+  },
+  {
+    label: 'Add cartridges',
+    to: '/cartridges/new',
+    icon: PackagePlus,
+    permission: 'CARTRIDGES_ADD',
+  },
+  {
+    label: 'Issue cartridge',
+    to: '/cartridges/issues/new',
+    icon: PackagePlus,
+    permission: 'CARTRIDGES_ISSUE',
+  },
+  {
+    label: 'Return cartridge',
+    to: '/cartridges/returns/new',
+    icon: RotateCcw,
+    permission: 'CARTRIDGES_RETURN',
+  },
+  {
+    label: 'Gate Passes',
+    to: '/cartridges/gate-passes',
+    icon: ReceiptText,
+    permission: 'CARTRIDGE_GATE_PASSES_VIEW',
+  },
+  {
+    label: 'Gate In & QC',
+    to: '/cartridges/gate-in',
+    icon: ListChecks,
+    permission: 'CARTRIDGE_QC',
+  },
 ];
 
 const mobileNavigation: NavigationItem[] = [
   { label: 'Home', to: '/dashboard', icon: Home, end: true },
   { label: 'Issues', to: '/issues', icon: ClipboardList, end: true, permission: 'ISSUES_VIEW' },
-  { label: 'Issue', to: '/issues/new', icon: PackagePlus, emphasized: true, permission: 'ASSIGNMENTS_CREATE' },
+  {
+    label: 'Issue',
+    to: '/issues/new',
+    icon: PackagePlus,
+    emphasized: true,
+    permission: 'ASSIGNMENTS_CREATE',
+  },
   { label: 'Return', to: '/returns', icon: RotateCcw, permission: 'RETURNS_VIEW' },
   { label: 'Receipt', to: '/bills', icon: ReceiptText, permission: 'ISSUE_SLIPS_VIEW' },
   { label: 'Profile', to: '/profile', icon: UserRound },
@@ -82,6 +152,16 @@ const adminMobileNavigation: NavigationItem[] = [
 ];
 
 function pageTitle(pathname: string): string {
+  if (pathname === '/cartridges/dashboard') return 'Cartridge Dashboard';
+  if (pathname === '/cartridges/new') return 'Add Cartridges';
+  if (pathname === '/cartridges/issues/new') return 'Issue Cartridge';
+  if (pathname === '/cartridges/returns/new') return 'Return Cartridge';
+  if (pathname === '/cartridges/gate-passes/new') return 'Create Gate Pass';
+  if (pathname === '/cartridges/gate-in') return 'Gate In & QC';
+  if (pathname.includes('/cartridges/gate-passes/')) return 'Gate Pass';
+  if (pathname === '/cartridges/gate-passes') return 'Gate Passes';
+  if (pathname.startsWith('/cartridges/')) return 'Cartridge Details';
+  if (pathname === '/cartridges') return 'Cartridges';
   if (pathname === '/overdue') return 'Overdue assets';
   if (pathname === '/issues/new') return 'Issue material';
   if (pathname.endsWith('/return') && pathname.startsWith('/issues/')) return 'Record Return';
@@ -110,10 +190,7 @@ function pageTitle(pathname: string): string {
   return 'Dashboard';
 }
 
-function canShowItem(
-  user: ReturnType<typeof useAuth>['user'],
-  item: NavigationItem,
-): boolean {
+function canShowItem(user: ReturnType<typeof useAuth>['user'], item: NavigationItem): boolean {
   if (item.adminOnly && user?.role !== 'ADMIN') return false;
   return !item.permission || hasPermission(user, item.permission);
 }
@@ -198,11 +275,20 @@ function NavigationGroupMenu({
         <span className={compact ? 'sidebar-label min-w-0 flex-1 truncate' : 'min-w-0 flex-1'}>
           {group.label}
         </span>
-        <ChevronDown aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-180" size={16} />
+        <ChevronDown
+          aria-hidden="true"
+          className="shrink-0 transition-transform group-open:rotate-180"
+          size={16}
+        />
       </summary>
       <div className={cn('mt-1 space-y-1', compact ? 'pl-0' : 'pl-4')}>
         {children.map((item) => (
-          <NavigationLink compact={compact} item={item} key={item.to} {...(onClick ? { onClick } : {})} />
+          <NavigationLink
+            compact={compact}
+            item={item}
+            key={item.to}
+            {...(onClick ? { onClick } : {})}
+          />
         ))}
       </div>
     </details>
@@ -347,9 +433,9 @@ export function AppShell() {
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const items = navigation.filter((item) => canShowItem(auth.user, item));
-  const mobileItems = (auth.user?.role === 'ADMIN' ? adminMobileNavigation : mobileNavigation).filter((item) =>
-    canShowItem(auth.user, item),
-  );
+  const mobileItems = (
+    auth.user?.role === 'ADMIN' ? adminMobileNavigation : mobileNavigation
+  ).filter((item) => canShowItem(auth.user, item));
 
   return (
     <div className="min-h-dvh bg-[var(--color-background)] text-[var(--color-text)]">
@@ -379,6 +465,15 @@ export function AppShell() {
               icon: Boxes,
               items: inventoryNavigation,
               activePath: (pathname) => pathname.startsWith('/inventory'),
+            }}
+          />
+          <NavigationGroupMenu
+            compact
+            group={{
+              label: 'Cartridges',
+              icon: Printer,
+              items: cartridgeNavigation,
+              activePath: (pathname) => pathname.startsWith('/cartridges'),
             }}
           />
           {items.slice(1).map((item) => (
@@ -445,6 +540,15 @@ export function AppShell() {
                   icon: Boxes,
                   items: inventoryNavigation,
                   activePath: (pathname) => pathname.startsWith('/inventory'),
+                }}
+                onClick={() => setDrawerOpen(false)}
+              />
+              <NavigationGroupMenu
+                group={{
+                  label: 'Cartridges',
+                  icon: Printer,
+                  items: cartridgeNavigation,
+                  activePath: (pathname) => pathname.startsWith('/cartridges'),
                 }}
                 onClick={() => setDrawerOpen(false)}
               />

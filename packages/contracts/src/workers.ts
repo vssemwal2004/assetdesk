@@ -34,6 +34,18 @@ export const WorkerPermissionSchema = z.enum([
   'RECEIVERS_EDIT',
   'RECEIVERS_DELETE',
   'REPORTS_VIEW',
+  'CARTRIDGES_VIEW',
+  'CARTRIDGES_ADD',
+  'CARTRIDGES_EDIT',
+  'CARTRIDGES_ISSUE',
+  'CARTRIDGES_RETURN',
+  'CARTRIDGE_GATE_PASSES_VIEW',
+  'CARTRIDGE_GATE_PASSES_CREATE',
+  'CARTRIDGE_GATE_PASSES_VERIFY',
+  'CARTRIDGE_GATE_OUT',
+  'CARTRIDGE_GATE_IN',
+  'CARTRIDGE_QC',
+  'CARTRIDGE_REPORTS_VIEW',
 ]);
 
 export const WorkerPermissionsSchema = z.array(WorkerPermissionSchema).min(1);
@@ -52,6 +64,7 @@ export const WorkerDataScopeSchema = z.enum(['OWN', 'ALL']);
 export const WorkerDataAccessSchema = z.object({
   inventory: WorkerDataScopeSchema.default('OWN'),
   issues: WorkerDataScopeSchema.default('OWN'),
+  cartridges: WorkerDataScopeSchema.default('OWN'),
 });
 
 const OptionalTrimmedTextSchema = z
@@ -67,7 +80,11 @@ export const CreateWorkerRequestSchema = z.object({
   contact: OptionalTrimmedTextSchema,
   department: OptionalTrimmedTextSchema,
   permissions: WorkerPermissionsSchema,
-  dataAccess: WorkerDataAccessSchema.default({ inventory: 'OWN', issues: 'OWN' }),
+  dataAccess: WorkerDataAccessSchema.default({
+    inventory: 'OWN',
+    issues: 'OWN',
+    cartridges: 'OWN',
+  }),
 });
 
 export const UpdateWorkerRequestSchema = CreateWorkerRequestSchema.partial().refine(

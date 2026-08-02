@@ -18,6 +18,21 @@ import { ChangePasswordPage } from '../pages/change-password-page';
 import { DashboardPage } from '../pages/dashboard-page';
 import { LoginPage } from '../pages/login-page';
 import { ProfilePage } from '../pages/profile-page';
+import { CartridgeDashboardPage } from '../pages/cartridges/cartridge-dashboard-page';
+import { CartridgesPage } from '../pages/cartridges/cartridges-page';
+import { AddCartridgesPage } from '../pages/cartridges/add-cartridges-page';
+import {
+  IssueCartridgePage,
+  ReturnCartridgePage,
+} from '../pages/cartridges/cartridge-operation-page';
+import {
+  CreateGatePassPage,
+  GatePassDetailPage,
+  GatePassesPage,
+  GatePassPrintPage,
+} from '../pages/cartridges/gate-passes-page';
+import { CartridgeDetailPage } from '../pages/cartridges/cartridge-detail-page';
+import { CartridgeQcPage } from '../pages/cartridges/cartridge-qc-page';
 
 const WorkersPage = lazy(() =>
   import('../pages/workers/workers-page').then((module) => ({ default: module.WorkersPage })),
@@ -157,6 +172,37 @@ export function App() {
             <Route element={<ProtectedRoute />}>
               <Route element={<AppShell />}>
                 <Route element={<DashboardPage />} path="/dashboard" />
+                <Route element={<PermissionRoute permission="CARTRIDGES_VIEW" />}>
+                  <Route element={<CartridgeDashboardPage />} path="/cartridges/dashboard" />
+                  <Route element={<CartridgesPage />} path="/cartridges" />
+                  <Route element={<GatePassesPage />} path="/cartridges/gate-passes" />
+                  <Route
+                    element={<GatePassDetailPage />}
+                    path="/cartridges/gate-passes/:gatePassId"
+                  />
+                  <Route
+                    element={<GatePassPrintPage />}
+                    path="/cartridges/gate-passes/:gatePassId/print"
+                  />
+                </Route>
+                <Route element={<PermissionRoute permission="CARTRIDGES_ADD" />}>
+                  <Route element={<AddCartridgesPage />} path="/cartridges/new" />
+                </Route>
+                <Route element={<PermissionRoute permission="CARTRIDGES_ISSUE" />}>
+                  <Route element={<IssueCartridgePage />} path="/cartridges/issues/new" />
+                </Route>
+                <Route element={<PermissionRoute permission="CARTRIDGES_RETURN" />}>
+                  <Route element={<ReturnCartridgePage />} path="/cartridges/returns/new" />
+                </Route>
+                <Route element={<PermissionRoute permission="CARTRIDGE_QC" />}>
+                  <Route element={<CartridgeQcPage />} path="/cartridges/gate-in" />
+                </Route>
+                <Route element={<PermissionRoute permission="CARTRIDGE_GATE_PASSES_CREATE" />}>
+                  <Route element={<CreateGatePassPage />} path="/cartridges/gate-passes/new" />
+                </Route>
+                <Route element={<PermissionRoute permission="CARTRIDGES_VIEW" />}>
+                  <Route element={<CartridgeDetailPage />} path="/cartridges/:serialNumber" />
+                </Route>
                 <Route element={<ProfilePage />} path="/profile" />
                 <Route element={<ChangePasswordPage />} path="/profile/change-password" />
                 <Route element={<AccessDeniedPage />} path="/access-denied" />

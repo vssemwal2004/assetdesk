@@ -37,7 +37,7 @@ const emptyForm: WorkerFormState = {
   contact: '',
   department: '',
   permissions: [...DEFAULT_WORKER_PERMISSIONS],
-  dataAccess: { inventory: 'OWN', issues: 'OWN' },
+  dataAccess: { inventory: 'OWN', issues: 'OWN', cartridges: 'OWN' },
 };
 
 export function CreateWorkerPage() {
