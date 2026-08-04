@@ -825,14 +825,16 @@ function InventoryQuantityDialog({
   return (
     <Dialog label={`Edit quantity for ${material.name}`} onClose={onCancel}>
       <form className="p-5 sm:p-6" onSubmit={submit}>
-        <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-          Edit quantity
-        </h2>
+        <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">Edit quantity</h2>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">
           Current total: {material.totalQuantity} {material.unitLabel ?? 'units'}. Use a positive
           number to add or a negative number to reduce available stock.
         </p>
-        {message ? <div className="mt-4"><ErrorSummary message={message} /></div> : null}
+        {message ? (
+          <div className="mt-4">
+            <ErrorSummary message={message} />
+          </div>
+        ) : null}
         <div className="mt-5 space-y-4">
           <TextField
             inputMode="numeric"
@@ -855,7 +857,12 @@ function InventoryQuantityDialog({
           />
         </div>
         <div className="mt-6 flex justify-end gap-2">
-          <Button disabled={mutation.isPending} onClick={onCancel} type="button" variant="secondary">
+          <Button
+            disabled={mutation.isPending}
+            onClick={onCancel}
+            type="button"
+            variant="secondary"
+          >
             Cancel
           </Button>
           <Button loading={mutation.isPending} type="submit">
@@ -896,12 +903,14 @@ function DeleteMaterialDialog({
           </div>
         </div>
         <dl className="mt-5 grid gap-2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 text-sm">
-          <div className="flex justify-between gap-3">
-            <dt className="font-bold text-[var(--color-text-muted)]">Inventory code</dt>
-            <dd className="font-extrabold text-[var(--color-text-strong)]">
-              {material.materialCode}
-            </dd>
-          </div>
+          {material.trackingMode === 'SERIALIZED' ? (
+            <div className="flex justify-between gap-3">
+              <dt className="font-bold text-[var(--color-text-muted)]">Inventory code</dt>
+              <dd className="font-extrabold text-[var(--color-text-strong)]">
+                {material.materialCode}
+              </dd>
+            </div>
+          ) : null}
           <div className="flex justify-between gap-3">
             <dt className="font-bold text-[var(--color-text-muted)]">Total stock</dt>
             <dd className="font-extrabold text-[var(--color-text-strong)]">
@@ -965,7 +974,9 @@ function MaterialQuickViewDialog({
               {material.name}
             </h2>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              {material.materialCode} · {material.category}
+              {material.trackingMode === 'SERIALIZED'
+                ? `${material.materialCode} · ${material.category}`
+                : material.category}
             </p>
           </div>
           <CatalogBadge value={material.status} />
@@ -1154,7 +1165,9 @@ function MaterialActions({
             Change status
           </Link>
         ) : null}
-        {canAdjustQuantity && material.trackingMode === 'QUANTITY' && material.status === 'ACTIVE' ? (
+        {canAdjustQuantity &&
+        material.trackingMode === 'QUANTITY' &&
+        material.status === 'ACTIVE' ? (
           <button
             className="menu-item w-full"
             onClick={() => onAdjustQuantity(material)}
@@ -1221,9 +1234,11 @@ function MaterialCard({
               />
             </div>
           </div>
-          <p className="mt-1 text-xs font-bold text-[var(--color-primary)]">
-            {material.materialCode}
-          </p>
+          {material.trackingMode === 'SERIALIZED' ? (
+            <p className="mt-1 text-xs font-bold text-[var(--color-primary)]">
+              {material.materialCode}
+            </p>
+          ) : null}
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             {material.category} · {humanizeCatalogValue(material.trackingMode)}
           </p>
@@ -1399,7 +1414,9 @@ function GroupedMaterialRows({
           <td className="px-4">
             <p className="text-sm font-bold text-[var(--color-text-strong)]">{material.name}</p>
             <p className="text-xs text-[var(--color-text-muted)]">
-              {material.materialCode} · {material.typeModelName ?? material.name}
+              {material.trackingMode === 'SERIALIZED'
+                ? `${material.materialCode} · ${material.typeModelName ?? material.name}`
+                : (material.typeModelName ?? material.name)}
             </p>
           </td>
           <td className="px-4">

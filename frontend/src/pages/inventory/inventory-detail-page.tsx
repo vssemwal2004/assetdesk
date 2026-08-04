@@ -206,7 +206,11 @@ export function InventoryDetailPage() {
             Back to Inventory
           </Link>
         }
-        description={`${material.materialCode} · ${material.category}`}
+        description={
+          material.trackingMode === 'SERIALIZED'
+            ? `${material.materialCode} · ${material.category}`
+            : material.category
+        }
         title={material.name}
       />
       {notice ? (
@@ -251,7 +255,9 @@ export function InventoryDetailPage() {
             />
           ) : (
             <dl className="mt-5 divide-y divide-[var(--color-border)]">
-              <DetailRow label="Inventory code" value={material.materialCode} />
+              {material.trackingMode === 'SERIALIZED' ? (
+                <DetailRow label="Inventory code" value={material.materialCode} />
+              ) : null}
               <DetailRow label="Asset type" value={material.category} />
               <DetailRow label="Type/model name" value={material.typeModelName ?? material.name} />
               {material.trackingMode === 'SERIALIZED' ? (
@@ -1316,12 +1322,14 @@ function DeleteMaterialDialog({
         there is no issue history and no stock is currently issued.
       </p>
       <dl className="mt-5 grid gap-2 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 text-sm">
-        <div className="flex justify-between gap-3">
-          <dt className="font-bold text-[var(--color-text-muted)]">Material code</dt>
-          <dd className="font-extrabold text-[var(--color-text-strong)]">
-            {material.materialCode}
-          </dd>
-        </div>
+        {material.trackingMode === 'SERIALIZED' ? (
+          <div className="flex justify-between gap-3">
+            <dt className="font-bold text-[var(--color-text-muted)]">Material code</dt>
+            <dd className="font-extrabold text-[var(--color-text-strong)]">
+              {material.materialCode}
+            </dd>
+          </div>
+        ) : null}
         <div className="flex justify-between gap-3">
           <dt className="font-bold text-[var(--color-text-muted)]">Total stock</dt>
           <dd className="font-extrabold text-[var(--color-text-strong)]">

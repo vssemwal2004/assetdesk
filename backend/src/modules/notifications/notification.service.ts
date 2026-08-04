@@ -47,14 +47,16 @@ function materialIssueLines(issue: IssueDocument): string[] {
           .join(', ')
       : `${line.issuedQuantity} ${line.material.unitLabel ?? 'units'}`;
     const type = line.material.trackingMode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable';
-    return `${type}: ${line.material.name} (${line.material.materialCode}) — ${units}`;
+    const code =
+      line.material.trackingMode === 'SERIALIZED' ? ` (${line.material.materialCode})` : '';
+    return `${type}: ${line.material.name}${code} — ${units}`;
   });
 }
 
 function returnLines(event: ReturnEventRecord): string[] {
   return (event.items ?? []).map((item) =>
     item.trackingMode === 'QUANTITY'
-      ? `IT Consumable: ${item.materialName} (${item.materialCode}) — ${item.quantity} returned — ${item.disposition}; ${item.condition}`
+      ? `IT Consumable: ${item.materialName} — ${item.quantity} returned — ${item.disposition}; ${item.condition}`
       : `IT Asset: ${item.materialName} (${item.materialCode}) — Serial ${item.serialNumber ?? 'not recorded'} (Asset tag ${item.assetTag}) — ${item.disposition}; ${item.condition}`,
   );
 }
@@ -73,7 +75,7 @@ function outstandingLines(issue: IssueDocument): string[] {
           .join(', ');
         return `IT Asset: ${line.material.name} (${line.material.materialCode}) — ${assets}`;
       }
-      return `IT Consumable: ${line.material.name} (${line.material.materialCode}) — ${line.outstandingQuantity} ${line.material.unitLabel ?? 'units'} outstanding`;
+      return `IT Consumable: ${line.material.name} — ${line.outstandingQuantity} ${line.material.unitLabel ?? 'units'} outstanding`;
     });
 }
 

@@ -668,7 +668,7 @@ export async function exportMaterialsCsv(input: MaterialExportInput): Promise<st
     'Updated At',
   ];
   const rows = records.map((material) => [
-    material.materialCode,
+    material.trackingMode === 'SERIALIZED' ? material.materialCode : '',
     material.name,
     material.category,
     material.typeModelName ?? material.name,

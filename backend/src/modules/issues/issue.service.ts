@@ -172,10 +172,9 @@ async function createIssueLine(
     const quantity = input.quantity;
     const returnableQuantity =
       material.returnPolicy === 'REUSABLE' || assignmentType === 'SHORT_TERM';
-    const update =
-      returnableQuantity
-        ? { $inc: { availableQuantity: -quantity, issuedQuantity: quantity } }
-        : { $inc: { availableQuantity: -quantity, totalQuantity: -quantity } };
+    const update = returnableQuantity
+      ? { $inc: { availableQuantity: -quantity, issuedQuantity: quantity } }
+      : { $inc: { availableQuantity: -quantity, totalQuantity: -quantity } };
     const updated = await MaterialModel.findOneAndUpdate(
       {
         _id: material._id,
@@ -367,14 +366,24 @@ export async function createIssue(
     }
     const hasReturnable = claimedLines.some((line) => line.outstandingQuantity > 0);
     if (input.assignmentType === 'SHORT_TERM' && hasReturnable && !input.due) {
-      throw new AppError(400, 'RETURN_DUE_REQUIRED', 'Choose a return due date because this Issue contains returnable material.', {
-        due: 'Choose a return preset or custom date.',
-      });
+      throw new AppError(
+        400,
+        'RETURN_DUE_REQUIRED',
+        'Choose a return due date because this Issue contains returnable material.',
+        {
+          due: 'Choose a return preset or custom date.',
+        },
+      );
     }
     if (input.assignmentType === 'LONG_TERM' && input.due) {
-      throw new AppError(400, 'RETURN_DUE_NOT_APPLICABLE', 'Permanent issues do not have a fixed return date.', {
-        due: 'Remove the return due selection.',
-      });
+      throw new AppError(
+        400,
+        'RETURN_DUE_NOT_APPLICABLE',
+        'Permanent issues do not have a fixed return date.',
+        {
+          due: 'Remove the return due selection.',
+        },
+      );
     }
 
     const expectedReturnAt =

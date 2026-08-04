@@ -116,7 +116,9 @@ export function BillDocument({
                 <tr key={line.lineId}>
                   <td>{index + 1}</td>
                   <td>{line.material.name}</td>
-                  <td>{line.material.materialCode}</td>
+                  <td>
+                    {line.material.trackingMode === 'SERIALIZED' ? line.material.materialCode : '—'}
+                  </td>
                   <td>{line.material.category}</td>
                   <td>
                     {line.material.trackingMode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable'}
@@ -265,7 +267,7 @@ function ReturnBillDocument({
                 <tr key={`${returnEvent.returnEventId}-${index}`}>
                   <td>{index + 1}</td>
                   <td>{item.materialName}</td>
-                  <td>{item.materialCode}</td>
+                  <td>{item.trackingMode === 'SERIALIZED' ? item.materialCode : '—'}</td>
                   <td>{item.trackingMode === 'QUANTITY' ? item.quantity : 1}</td>
                   <td>
                     {item.trackingMode === 'SERIALIZED'

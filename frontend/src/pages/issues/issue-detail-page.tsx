@@ -53,8 +53,7 @@ function receiptTarget(issue: Issue): string {
   const latestReturnEvent = issue.returnEvents
     ?.slice()
     .sort(
-      (left, right) =>
-        new Date(right.returnedAt).getTime() - new Date(left.returnedAt).getTime(),
+      (left, right) => new Date(right.returnedAt).getTime() - new Date(left.returnedAt).getTime(),
     )[0];
   if (latestReturnEvent && issue.status !== 'ISSUED') {
     return `/bills/${issue.issueId}?type=return&returnEventId=${latestReturnEvent.returnEventId}`;
@@ -148,7 +147,10 @@ export function IssueDetailPage() {
               <ArrowLeft aria-hidden="true" size={18} />
               Back to Issues
             </Link>
-            <Link className="button-secondary" to={full ? receiptTarget(full) : `/bills/${issue.issueId}`}>
+            <Link
+              className="button-secondary"
+              to={full ? receiptTarget(full) : `/bills/${issue.issueId}`}
+            >
               <Printer aria-hidden="true" size={18} />
               Generate receipt
             </Link>
@@ -632,7 +634,9 @@ function IssueLineCard({ line }: { line: IssueLine }) {
         <div>
           <h3 className="font-extrabold text-[var(--color-text-strong)]">{line.material.name}</h3>
           <p className="mt-1 text-xs font-bold text-[var(--color-primary)]">
-            {line.material.materialCode} · {line.material.category}
+            {line.material.trackingMode === 'SERIALIZED'
+              ? `${line.material.materialCode} · ${line.material.category}`
+              : line.material.category}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
