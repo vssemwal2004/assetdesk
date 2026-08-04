@@ -183,14 +183,18 @@ async function createIssueLine(
         trackingMode: 'QUANTITY',
         returnPolicy: material.returnPolicy,
         availableQuantity: { $gte: quantity },
-        ...(material.returnPolicy === 'CONSUMABLE' && assignmentType === 'LONG_TERM'
-          ? { issuedQuantity: 0 }
-          : {}),
       },
       update,
       { returnDocument: 'after', ...(session ? { session } : {}) },
     );
-    if (!updated) throw inventoryUnavailable(input.materialCode);
+    if (!updated) {
+      throw new AppError(
+        409,
+        'ISSUE_INVENTORY_UNAVAILABLE',
+        `The requested quantity for ${material.name} is no longer available.`,
+        { lines: 'Review current inventory availability and try again.' },
+      );
+    }
     return {
       lineId: randomUUID(),
       material: materialSnapshot(material),

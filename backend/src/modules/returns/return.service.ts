@@ -224,6 +224,17 @@ export function applyMaterialReturn(
   material.availableQuantity = nextAvailable;
 }
 
+export function applyQuantityMaterialReturn(
+  material: MaterialDocument,
+  quantity: number,
+  becomesAvailable: boolean,
+): void {
+  applyMaterialReturn(material, quantity, becomesAvailable ? quantity : 0);
+  // Quantity-tracked stock has no per-unit status record. Stock that cannot
+  // become available must leave the on-hand total to keep its balance valid.
+  if (!becomesAvailable) material.totalQuantity -= quantity;
+}
+
 export function assertQuantityWithinOutstanding(
   line: Pick<IssueLineRecord, 'outstandingQuantity'>,
   quantity: number,
@@ -293,7 +304,7 @@ async function applyQuantityItem(
   material: MaterialDocument,
 ): Promise<ReturnEventItemRecord> {
   assertQuantityWithinOutstanding(line, item.quantity);
-  applyMaterialReturn(material, item.quantity, item.disposition === 'AVAILABLE' ? item.quantity : 0);
+  applyQuantityMaterialReturn(material, item.quantity, item.disposition === 'AVAILABLE');
   line.outstandingQuantity -= item.quantity;
   return {
     trackingMode: 'QUANTITY',

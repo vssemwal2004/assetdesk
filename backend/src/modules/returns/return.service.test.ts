@@ -6,6 +6,7 @@ import type { MaterialDocument } from '../inventory/material.model.js';
 import type { IssueAssetRecord, IssueDocument, IssueLineRecord } from '../issues/issue.model.js';
 import {
   applyMaterialReturn,
+  applyQuantityMaterialReturn,
   assertIssueOutstandingInvariant,
   assertLineKind,
   assertQuantityWithinOutstanding,
@@ -111,6 +112,23 @@ describe('Return inventory and Issue invariants', () => {
       availableQuantity: 7,
       issuedQuantity: 3,
     });
+  });
+
+  it('keeps quantity stock balanced when returned stock is not available', () => {
+    const material = {
+      totalQuantity: 10,
+      availableQuantity: 4,
+      issuedQuantity: 6,
+    } as MaterialDocument;
+
+    applyQuantityMaterialReturn(material, 3, false);
+
+    expect(material).toMatchObject({
+      totalQuantity: 7,
+      availableQuantity: 4,
+      issuedQuantity: 3,
+    });
+    expect(material.availableQuantity + material.issuedQuantity).toBe(material.totalQuantity);
   });
 
   it('removes damaged serialized stock from issued without making it available', () => {
