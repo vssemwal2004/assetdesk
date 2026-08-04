@@ -463,14 +463,10 @@ export const IssueSchema = IssueBaseSchema.superRefine((issue, context) => {
   const hasReturnableQuantity = issue.lines.some((line) => line.outstandingQuantity > 0);
   const hasExpectedReturn = issue.expectedReturnAt !== null;
   const hasDuePreset = issue.duePreset !== null;
-  const requiresExpectedReturn =
-    hasReturnableQuantity && issue.assignmentType === 'SHORT_TERM';
+  const requiresExpectedReturn = hasReturnableQuantity && issue.assignmentType === 'SHORT_TERM';
   const hasForbiddenReturnDate =
     issue.assignmentType === 'LONG_TERM' && (hasExpectedReturn || hasDuePreset);
-  if (
-    (requiresExpectedReturn && (!hasExpectedReturn || !hasDuePreset)) ||
-    hasForbiddenReturnDate
-  ) {
+  if ((requiresExpectedReturn && (!hasExpectedReturn || !hasDuePreset)) || hasForbiddenReturnDate) {
     context.addIssue({
       code: 'custom',
       path: ['expectedReturnAt'],
@@ -487,10 +483,7 @@ export const IssueSummarySchema = IssueBaseSchema.omit({ lines: true, returnEven
 });
 
 export const IssuePeriodSchema = z.enum(['TODAY']);
-export const IssueReturnStateSchema = z.enum([
-  'PENDING',
-  'DUE_TODAY',
-]);
+export const IssueReturnStateSchema = z.enum(['PENDING', 'DUE_TODAY']);
 
 export const ReturnableIssueSchema = z
   .object({

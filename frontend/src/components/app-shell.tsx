@@ -20,7 +20,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import type { WorkerPermission } from '@assetdesk/contracts';
 
@@ -428,6 +428,27 @@ function ProfileMenu() {
   );
 }
 
+function CartridgeNavigationGroup({
+  compact = false,
+  onClick,
+}: {
+  compact?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <NavigationGroupMenu
+      compact={compact}
+      group={{
+        label: 'Cartridges',
+        icon: Printer,
+        items: cartridgeNavigation,
+        activePath: (pathname) => pathname.startsWith('/cartridges'),
+      }}
+      {...(onClick ? { onClick } : {})}
+    />
+  );
+}
+
 export function AppShell() {
   const auth = useAuth();
   const location = useLocation();
@@ -467,18 +488,15 @@ export function AppShell() {
               activePath: (pathname) => pathname.startsWith('/inventory'),
             }}
           />
-          <NavigationGroupMenu
-            compact
-            group={{
-              label: 'Cartridges',
-              icon: Printer,
-              items: cartridgeNavigation,
-              activePath: (pathname) => pathname.startsWith('/cartridges'),
-            }}
-          />
           {items.slice(1).map((item) => (
-            <NavigationLink compact item={item} key={item.to} />
+            <Fragment key={item.to}>
+              <NavigationLink compact item={item} />
+              {item.label === 'Employees' ? <CartridgeNavigationGroup compact /> : null}
+            </Fragment>
           ))}
+          {!items.some((item) => item.label === 'Employees') ? (
+            <CartridgeNavigationGroup compact />
+          ) : null}
         </nav>
         <div className="sidebar-user mt-auto rounded-[10px] bg-[var(--color-surface-tint)] p-2.5">
           <p className="sidebar-label text-[10px] font-extrabold uppercase tracking-[0.02em] text-[var(--color-primary-strong)]">
@@ -543,18 +561,17 @@ export function AppShell() {
                 }}
                 onClick={() => setDrawerOpen(false)}
               />
-              <NavigationGroupMenu
-                group={{
-                  label: 'Cartridges',
-                  icon: Printer,
-                  items: cartridgeNavigation,
-                  activePath: (pathname) => pathname.startsWith('/cartridges'),
-                }}
-                onClick={() => setDrawerOpen(false)}
-              />
               {items.slice(1).map((item) => (
-                <NavigationLink item={item} key={item.to} onClick={() => setDrawerOpen(false)} />
+                <Fragment key={item.to}>
+                  <NavigationLink item={item} onClick={() => setDrawerOpen(false)} />
+                  {item.label === 'Employees' ? (
+                    <CartridgeNavigationGroup onClick={() => setDrawerOpen(false)} />
+                  ) : null}
+                </Fragment>
               ))}
+              {!items.some((item) => item.label === 'Employees') ? (
+                <CartridgeNavigationGroup onClick={() => setDrawerOpen(false)} />
+              ) : null}
             </nav>
           </aside>
         </div>

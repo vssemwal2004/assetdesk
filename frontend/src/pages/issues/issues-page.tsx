@@ -139,10 +139,12 @@ export function IssuesPage() {
     <div className="space-y-6">
       <PageHeader
         actions={
-          canCreateIssue ? <Link className="button-primary" to="/issues/new">
-            <PackagePlus aria-hidden="true" size={18} />
-            Issue material
-          </Link> : null
+          canCreateIssue ? (
+            <Link className="button-primary" to="/issues/new">
+              <PackagePlus aria-hidden="true" size={18} />
+              Issue material
+            </Link>
+          ) : null
         }
         description={
           user?.role === 'ADMIN'
@@ -358,8 +360,28 @@ function canExtendReturnDate(issue: IssueSummary): boolean {
 }
 
 function displayIssueStatus(issue: IssueSummary): string {
-  if (issue.status === 'ISSUED' && issue.totalOutstandingQuantity === 0) return 'CONSUMED';
-  return issue.status;
+  if (
+    issue.expectedReturnAt !== null &&
+    issue.totalOutstandingQuantity > 0 &&
+    new Date(issue.expectedReturnAt) < new Date()
+  ) {
+    return 'OVERDUE';
+  }
+  switch (issue.status) {
+    case 'PARTIALLY_RETURNED':
+      return 'PARTIALLY RETURNED';
+    case 'RETURNED':
+      return 'RETURNED';
+    case 'DAMAGED':
+      return 'DAMAGED';
+    case 'LOST':
+      return 'LOST';
+    case 'CANCELLED':
+      return 'CANCELLED';
+    default:
+      if (issue.expectedReturnAt === null) return 'PERMANENT ISSUE';
+      return issue.totalOutstandingQuantity === 0 ? 'RETURNED' : 'ISSUED';
+  }
 }
 
 function returnStateText(issue: IssueSummary): string {
@@ -681,6 +703,7 @@ function IssueQuickViewDialog({
         <dl className="mt-5 grid gap-3 sm:grid-cols-2">
           <DetailItem label="Receiver" value={issue.receiver.fullName} />
           <DetailItem label="Material" value={materialSummary(issue)} />
+          <DetailItem label="Assignment state" value={displayIssueStatus(issue)} />
           <DetailItem label="Expected return" value={formatIstDateTime(issue.expectedReturnAt)} />
           <DetailItem label="Return status" value={returnStateText(issue)} />
         </dl>
@@ -704,12 +727,16 @@ function IssueQuickViewDialog({
           <Link className="button-secondary" to={`/issues/${issue.issueId}`}>
             Full record
           </Link>
-          {canEditIssue ? <Link className="button-secondary" to={`/issues/${issue.issueId}?edit=1`}>
-            Edit
-          </Link> : null}
-          {canOpenSlip ? <Link className="button-secondary" to={receiptTarget(issue)}>
-            Generate receipt
-          </Link> : null}
+          {canEditIssue ? (
+            <Link className="button-secondary" to={`/issues/${issue.issueId}?edit=1`}>
+              Edit
+            </Link>
+          ) : null}
+          {canOpenSlip ? (
+            <Link className="button-secondary" to={receiptTarget(issue)}>
+              Generate receipt
+            </Link>
+          ) : null}
           {canReturn && canRecordReturn(issue) ? (
             <Link className="button-primary" to={`/issues/${issue.issueId}/return`}>
               Record Return
@@ -733,16 +760,18 @@ function IssueQuickViewDialog({
                   Extend date
                 </Button>
               ) : null}
-              {canDelete ? <Button
-                onClick={() => {
-                  onClose();
-                  onDelete(issue);
-                }}
-                variant="danger"
-              >
-                <Trash2 aria-hidden="true" size={18} />
-                Delete
-              </Button> : null}
+              {canDelete ? (
+                <Button
+                  onClick={() => {
+                    onClose();
+                    onDelete(issue);
+                  }}
+                  variant="danger"
+                >
+                  <Trash2 aria-hidden="true" size={18} />
+                  Delete
+                </Button>
+              ) : null}
             </>
           ) : null}
         </div>
