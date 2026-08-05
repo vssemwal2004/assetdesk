@@ -3,7 +3,15 @@ import { ArrowLeft, CheckCircle2, Search, Upload, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 
-import { AppCard, Button, EmptyState, ErrorState, ErrorSummary, LoadingPanel, PageHeader } from '../../components/ui';
+import {
+  AppCard,
+  Button,
+  EmptyState,
+  ErrorState,
+  ErrorSummary,
+  LoadingPanel,
+  PageHeader,
+} from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
 import {
   commitInventoryImport,
@@ -27,6 +35,7 @@ export function InventoryImportReviewPage() {
   const initialPreview = statePreview(location.state);
   const [filter, setFilter] = useState<ReviewFilter>('ALL');
   const [search, setSearch] = useState('');
+  const [searchDraft, setSearchDraft] = useState('');
   const [result, setResult] = useState<InventoryImportResult | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -129,8 +138,17 @@ export function InventoryImportReviewPage() {
               </FilterButton>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <label className="relative block min-w-[280px]">
-                <span className="sr-only">Search review rows</span>
+              <form
+                className="relative block min-w-[280px]"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setSearch(searchDraft.trim());
+                }}
+                role="search"
+              >
+                <label className="sr-only" htmlFor="inventory-import-review-search">
+                  Search review rows
+                </label>
                 <Search
                   aria-hidden="true"
                   className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
@@ -138,11 +156,12 @@ export function InventoryImportReviewPage() {
                 />
                 <input
                   className="field-input pl-9"
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search rows or reasons"
-                  value={search}
+                  id="inventory-import-review-search"
+                  onChange={(event) => setSearchDraft(event.target.value)}
+                  placeholder="Type and press Enter"
+                  value={searchDraft}
                 />
-              </label>
+              </form>
               <Button
                 disabled={preview.validRows === 0}
                 loading={commitMutation.isPending}
@@ -205,7 +224,11 @@ function FilterButton({
   onClick: () => void;
 }) {
   return (
-    <button className={active ? 'button-primary' : 'button-secondary'} onClick={onClick} type="button">
+    <button
+      className={active ? 'button-primary' : 'button-secondary'}
+      onClick={onClick}
+      type="button"
+    >
       {children}
     </button>
   );
@@ -227,9 +250,7 @@ function ReviewTable({
             <th className="w-28 p-3 font-bold">Status</th>
             <th className="w-64 p-3 font-bold">Reason</th>
             <th className="w-56 p-3 font-bold">Type/model name</th>
-            {mode === 'SERIALIZED' ? (
-              <th className="w-56 p-3 font-bold">Configuration</th>
-            ) : null}
+            {mode === 'SERIALIZED' ? <th className="w-56 p-3 font-bold">Configuration</th> : null}
             <th className="w-44 p-3 font-bold">
               {mode === 'SERIALIZED' ? 'Asset type' : 'Consumable type'}
             </th>
@@ -237,7 +258,9 @@ function ReviewTable({
             <th className="w-36 p-3 font-bold">Location</th>
             <th className="w-36 p-3 font-bold">Block</th>
             <th className="w-40 p-3 font-bold">Vendor</th>
-            <th className="w-44 p-3 font-bold">{mode === 'SERIALIZED' ? 'Serial number' : 'Quantity'}</th>
+            <th className="w-44 p-3 font-bold">
+              {mode === 'SERIALIZED' ? 'Serial number' : 'Quantity'}
+            </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-[var(--color-border)]">
@@ -252,7 +275,11 @@ function ReviewTable({
                       : 'bg-[var(--color-danger-soft)] text-[var(--color-danger)]'
                   }`}
                 >
-                  {row.valid ? <CheckCircle2 aria-hidden="true" size={14} /> : <XCircle aria-hidden="true" size={14} />}
+                  {row.valid ? (
+                    <CheckCircle2 aria-hidden="true" size={14} />
+                  ) : (
+                    <XCircle aria-hidden="true" size={14} />
+                  )}
                   {row.valid ? 'Ready' : 'Failed'}
                 </span>
               </td>
@@ -303,7 +330,9 @@ function UploadResult({ result }: { result: InventoryImportResult }) {
                 <tr key={`${row.rowNumber}-${row.name}`}>
                   <td className="p-3 font-bold text-[var(--color-text-muted)]">{row.rowNumber}</td>
                   <td className="break-words p-3 font-bold">{row.name || 'Missing'}</td>
-                  <td className="break-words p-3 font-bold text-[var(--color-danger)]">{row.reason}</td>
+                  <td className="break-words p-3 font-bold text-[var(--color-danger)]">
+                    {row.reason}
+                  </td>
                 </tr>
               ))}
             </tbody>

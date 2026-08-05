@@ -156,7 +156,6 @@ export function IssuesPage() {
       <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)] sm:p-4">
         <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
           <SearchForm
-            debounceMs={300}
             id="issue-list-search"
             key={search}
             label="Search Issue Records"

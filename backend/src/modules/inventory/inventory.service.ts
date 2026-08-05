@@ -345,11 +345,13 @@ function materialIdentity(
   trackingMode: TrackingMode,
   name: string,
   category: string,
+  location: string,
+  block: string,
   configuration?: string,
 ): string {
-  const base = `${trackingMode}|${name.trim().toLocaleUpperCase('en-US')}|${category
-    .trim()
-    .toLocaleUpperCase('en-US')}`;
+  const normalizePart = (value: string) =>
+    value.normalize('NFKC').trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
+  const base = `${trackingMode}|${normalizePart(name)}|${normalizePart(category)}|${normalizePart(location)}|${normalizePart(block)}`;
   return trackingMode === 'SERIALIZED'
     ? `${base}|${normalizeConfiguration(configuration ?? '')}`
     : base;
@@ -426,9 +428,20 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
     };
   }
   if (input.search) {
-    const normalized = input.search.trim().toUpperCase();
-    if (MaterialCodeSchema.safeParse(normalized).success) filter.materialCode = normalized;
-    else filter.$text = { $search: input.search.trim() };
+    const search = new RegExp(escapeSearchRegex(input.search.trim()), 'i');
+    filter.$or = [
+      { materialCode: search },
+      { name: search },
+      { category: search },
+      { typeModelName: search },
+      { configuration: search },
+      { location: search },
+      { block: search },
+      { locationBlock: search },
+      { department: search },
+      { vendorName: search },
+      { description: search },
+    ];
   }
   return filter;
 }
@@ -532,6 +545,8 @@ export async function createMaterial(
     trackingMode: input.trackingMode,
     name: exactCaseInsensitive(input.name),
     category: exactCaseInsensitive(category),
+    location: exactCaseInsensitive(location),
+    block: exactCaseInsensitive(block),
     ...(input.trackingMode === 'SERIALIZED'
       ? { configuration: exactCaseInsensitive(input.configuration) }
       : {}),
@@ -562,6 +577,8 @@ export async function createMaterial(
           input.trackingMode,
           input.name,
           category,
+          location,
+          block,
           input.trackingMode === 'SERIALIZED' ? input.configuration : undefined,
         ),
         ...(input.description ? { description: input.description } : {}),
@@ -770,13 +787,17 @@ export async function updateMaterial(
     if (
       input.name !== undefined ||
       input.category !== undefined ||
-      input.configuration !== undefined
+      input.configuration !== undefined ||
+      input.location !== undefined ||
+      input.block !== undefined
     ) {
       const duplicate = await MaterialModel.exists({
         _id: { $ne: material._id },
         trackingMode: material.trackingMode,
         name: exactCaseInsensitive(material.name),
         category: exactCaseInsensitive(material.category),
+        location: exactCaseInsensitive(material.location ?? ''),
+        block: exactCaseInsensitive(material.block ?? ''),
         ...(material.trackingMode === 'SERIALIZED' && material.configuration
           ? { configuration: exactCaseInsensitive(material.configuration) }
           : {}),
@@ -786,6 +807,8 @@ export async function updateMaterial(
         material.trackingMode,
         material.name,
         material.category,
+        material.location ?? '',
+        material.block ?? '',
         material.configuration,
       );
       if (input.category !== undefined)

@@ -30,15 +30,9 @@ import type {
 } from '@assetdesk/contracts';
 
 import { useAuth } from '../auth/auth-context';
+import { hasPermission } from '../auth/permissions';
 import { CatalogBadge } from '../components/catalog-ui';
-import {
-  AppCard,
-  Button,
-  EmptyState,
-  ErrorState,
-  LoadingPanel,
-  PageHeader,
-} from '../components/ui';
+import { AppCard, Button, EmptyState, ErrorState, LoadingPanel } from '../components/ui';
 import { formatIstDateTime } from '../lib/date-time';
 import { getAdminDashboard } from '../lib/dashboard-api';
 import { getCartridgeDashboard } from '../lib/cartridges-api';
@@ -62,11 +56,25 @@ function AdminDashboard({ adminName }: { adminName: string }) {
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        actions={
+    <div className="space-y-5">
+      <section className="relative overflow-hidden rounded-[18px] border border-[var(--color-primary-border)] bg-[linear-gradient(120deg,var(--color-primary-strong),var(--color-primary))] px-5 py-6 text-white shadow-[0_18px_45px_rgba(59,37,84,.16)] sm:px-7 sm:py-7">
+        <div className="absolute -right-12 -top-16 size-52 rounded-full border-[32px] border-white/5" />
+        <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-white/65">
+              Operations command center
+            </p>
+            <h1 className="mt-2 text-2xl font-extrabold tracking-[-0.03em] sm:text-3xl">
+              Good to see you, {adminName}
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/75">
+              Track issue movement, returns, inventory health, employees and cartridge operations
+              from one live workspace.
+            </p>
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button
+              className="border-white/20 bg-white/10 text-white hover:bg-white/20"
               disabled={query.isFetching}
               onClick={() => void query.refetch()}
               variant="secondary"
@@ -78,15 +86,16 @@ function AdminDashboard({ adminName }: { adminName: string }) {
               />
               Refresh
             </Button>
-            <Link className="button-primary" to="/issues/new">
+            <Link
+              className="button-primary border-white bg-white text-[var(--color-primary-strong)] hover:bg-white/90"
+              to="/issues/new"
+            >
               <PackagePlus aria-hidden="true" size={18} />
               Issue material
             </Link>
           </div>
-        }
-        description="Live assignment, return, and asset quantity overview. All dates use IST."
-        title={`Good to see you, ${adminName}`}
-      />
+        </div>
+      </section>
 
       {query.isPending ? (
         <LoadingPanel label="Loading Admin dashboard" />
@@ -159,10 +168,13 @@ function DashboardContent({
   ];
 
   return (
-    <>
-      <section aria-labelledby="overview-heading" className="space-y-3">
+    <div className="space-y-5">
+      <section
+        aria-labelledby="overview-heading"
+        className="overflow-hidden rounded-[16px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)]"
+      >
         <div className="flex items-end justify-between gap-3">
-          <div>
+          <div className="px-5 pt-5">
             <h2
               className="text-lg font-extrabold text-[var(--color-primary-strong)]"
               id="overview-heading"
@@ -174,12 +186,12 @@ function DashboardContent({
             </p>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="mt-4 grid grid-cols-2 border-y border-[var(--color-border)] lg:grid-cols-4 lg:divide-x lg:divide-[var(--color-border)]">
           {primaryMetrics.map((metric) => (
             <MetricCard {...metric} key={metric.label} />
           ))}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border)] sm:grid-cols-3 xl:grid-cols-5">
           <SmallMetric
             icon={ClipboardList}
             label="Total Issues"
@@ -213,26 +225,33 @@ function DashboardContent({
         </div>
       </section>
 
-      <InventoryOverview inventory={inventory} />
-      <MainCartridgeOverview />
+      <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+        <InventoryOverview inventory={inventory} />
+        <MainCartridgeOverview />
+      </div>
 
-      <section aria-labelledby="quick-actions-heading" className="space-y-3">
-        <div>
-          <h2
-            className="text-lg font-extrabold text-[var(--color-primary-strong)]"
-            id="quick-actions-heading"
-          >
-            Quick actions
-          </h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            Common server-room tasks, ready in one tap.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <QuickAction icon={PackagePlus} label="Issue material" to="/issues/new" />
-          <QuickAction icon={RotateCcw} label="Record Return" to="/returns" />
-          <QuickAction icon={UserPlus} label="Add employee" to="/workers/new" />
-          <QuickAction icon={FileUp} label="Import employees" to="/workers/import" />
+      <section
+        aria-labelledby="quick-actions-heading"
+        className="rounded-[16px] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-card)]"
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2
+              className="text-lg font-extrabold text-[var(--color-primary-strong)]"
+              id="quick-actions-heading"
+            >
+              Quick actions
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Common server-room tasks, ready in one tap.
+            </p>
+          </div>
+          <div className="grid flex-1 grid-cols-2 gap-2 lg:max-w-3xl lg:grid-cols-4">
+            <QuickAction icon={PackagePlus} label="Issue material" to="/issues/new" />
+            <QuickAction icon={RotateCcw} label="Record Return" to="/returns" />
+            <QuickAction icon={UserPlus} label="Add employee" to="/workers/new" />
+            <QuickAction icon={FileUp} label="Import employees" to="/workers/import" />
+          </div>
         </div>
       </section>
 
@@ -245,7 +264,7 @@ function DashboardContent({
         />
         <IssuePanel issues={recentIssues} kind="recent" title="Recent Issues" viewAll="/issues" />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -262,8 +281,11 @@ function MainCartridgeOverview() {
     ['QC_PENDING', 'QC pending'],
   ];
   return (
-    <section aria-labelledby="cartridge-overview-heading" className="space-y-3">
-      <div className="flex items-end justify-between gap-3">
+    <section
+      aria-labelledby="cartridge-overview-heading"
+      className="overflow-hidden rounded-[16px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)]"
+    >
+      <div className="flex items-end justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4">
         <div>
           <h2
             className="text-lg font-extrabold text-[var(--color-primary-strong)]"
@@ -279,7 +301,7 @@ function MainCartridgeOverview() {
           View dashboard
         </Link>
       </div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+      <div className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border)]">
         {metrics.map(([key, label]) => (
           <SmallMetric
             icon={Boxes}
@@ -331,10 +353,16 @@ function InventoryOverview({ inventory }: { inventory: DashboardInventory }) {
         ),
     [inventory.breakdown, status, trackingMode],
   );
+  const availablePercent = totals.totalQuantity
+    ? Math.round((totals.availableQuantity / totals.totalQuantity) * 100)
+    : 0;
 
   return (
-    <section aria-labelledby="inventory-overview-heading" className="space-y-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <section
+      aria-labelledby="inventory-overview-heading"
+      className="overflow-hidden rounded-[16px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)]"
+    >
+      <div className="flex flex-col gap-3 border-b border-[var(--color-border)] px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2
             className="text-lg font-extrabold text-[var(--color-primary-strong)]"
@@ -375,7 +403,29 @@ function InventoryOverview({ inventory }: { inventory: DashboardInventory }) {
           </label>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="px-5 py-5">
+        <div className="mb-5 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+              Stock availability
+            </p>
+            <p className="mt-1 text-3xl font-extrabold tracking-[-0.04em] text-[var(--color-primary-strong)]">
+              {availablePercent}%
+            </p>
+          </div>
+          <p className="text-right text-xs font-semibold text-[var(--color-text-muted)]">
+            {totals.availableQuantity.toLocaleString('en-IN')} of{' '}
+            {totals.totalQuantity.toLocaleString('en-IN')} available
+          </p>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-[var(--color-surface-tint)]">
+          <div
+            className="h-full rounded-full bg-[var(--color-primary)] transition-all"
+            style={{ width: `${availablePercent}%` }}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border)] border-t border-[var(--color-border)] xl:grid-cols-4">
         <SmallMetric
           icon={Boxes}
           label="Material records"
@@ -445,7 +495,7 @@ function MetricCard({
   return (
     <Link
       aria-label={`${label}: ${value}`}
-      className={`group min-w-0 rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)] transition sm:p-4 ${classes.border}`}
+      className={`group min-w-0 p-4 transition hover:bg-[var(--color-surface-tint)] sm:p-5 ${classes.border}`}
       to={to}
     >
       <div className="flex items-start justify-between gap-2">
@@ -484,7 +534,7 @@ function SmallMetric({
 }) {
   return (
     <Link
-      className="group flex min-h-16 min-w-0 items-center gap-3 overflow-hidden rounded-[12px] border border-[var(--color-border)] bg-white px-3 py-3 shadow-[var(--shadow-card)] transition hover:border-[var(--color-primary-border)] sm:px-4"
+      className="group flex min-h-[76px] min-w-0 items-center gap-3 overflow-hidden px-3 py-3 transition hover:bg-[var(--color-surface-tint)] sm:px-4"
       to={to}
     >
       <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
@@ -518,7 +568,7 @@ function QuickAction({
 }) {
   return (
     <Link
-      className="group flex min-h-[76px] flex-col justify-between rounded-[12px] border border-[var(--color-border)] bg-white p-3.5 shadow-[var(--shadow-card)] transition hover:border-[var(--color-primary-border)] hover:bg-[var(--color-surface-tint)] sm:min-h-[84px] sm:p-4"
+      className="group flex min-h-[76px] flex-col justify-between rounded-[12px] bg-[var(--color-surface-tint)] p-3.5 transition hover:bg-[var(--color-primary-soft)] sm:min-h-[84px] sm:p-4"
       to={to}
     >
       <Icon aria-hidden="true" className="text-[var(--color-primary)]" size={21} />
@@ -652,21 +702,111 @@ function materialSummary(issue: IssueSummary): string {
 }
 
 function WorkerDashboard({ workerName }: { workerName: string }) {
+  const { user } = useAuth();
+  const actions = [
+    hasPermission(user, 'ASSIGNMENTS_CREATE')
+      ? {
+          icon: PackagePlus,
+          label: 'Issue material',
+          to: '/issues/new',
+          helper: 'Create a new material issue',
+        }
+      : null,
+    hasPermission(user, 'RETURNS_RECORD')
+      ? {
+          icon: RotateCcw,
+          label: 'Record a Return',
+          to: '/returns',
+          helper: 'Receive issued material',
+        }
+      : null,
+    hasPermission(user, 'ISSUES_VIEW')
+      ? {
+          icon: ClipboardList,
+          label: 'Issue Records',
+          to: '/issues',
+          helper: 'Search and review issues',
+        }
+      : null,
+    hasPermission(user, 'RETURNS_VIEW')
+      ? {
+          icon: ListChecks,
+          label: 'Return activity',
+          to: '/returns',
+          helper: 'Review return history',
+        }
+      : null,
+    hasPermission(user, 'INVENTORY_VIEW')
+      ? { icon: Boxes, label: 'Inventory', to: '/inventory', helper: 'Check current availability' }
+      : null,
+  ].filter(Boolean) as Array<{
+    icon: typeof PackagePlus;
+    label: string;
+    to: string;
+    helper: string;
+  }>;
+
   return (
-    <div className="space-y-6">
-      <PageHeader
-        description="Issue material, record Returns, and review the work available to your account."
-        title={`Welcome, ${workerName}`}
-      />
-      <AppCard>
-        <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">Start a task</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <QuickAction icon={PackagePlus} label="Issue material" to="/issues/new" />
-          <QuickAction icon={RotateCcw} label="Record a Return" to="/returns" />
-          <QuickAction icon={ClipboardList} label="My Issue Records" to="/issues" />
-          <QuickAction icon={ListChecks} label="Return activity" to="/returns" />
+    <div className="space-y-5">
+      <section className="relative overflow-hidden rounded-[18px] border border-[var(--color-primary-border)] bg-[linear-gradient(120deg,var(--color-primary-strong),var(--color-primary))] px-5 py-7 text-white shadow-[0_18px_45px_rgba(59,37,84,.16)] sm:px-7">
+        <div className="absolute -right-10 -top-14 size-44 rounded-full border-[28px] border-white/5" />
+        <div className="relative max-w-2xl">
+          <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-white/65">
+            My workspace
+          </p>
+          <h1 className="mt-2 text-2xl font-extrabold tracking-[-0.03em] sm:text-3xl">
+            Welcome, {workerName}
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-white/75">
+            Your available operational tools are organized below according to the access assigned by
+            Admin.
+          </p>
         </div>
-      </AppCard>
+      </section>
+      <section className="overflow-hidden rounded-[16px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)]">
+        <div className="border-b border-[var(--color-border)] px-5 py-4">
+          <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+            Daily operations
+          </p>
+          <h2 className="mt-1 text-xl font-extrabold tracking-[-0.02em] text-[var(--color-primary-strong)]">
+            What would you like to do?
+          </h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Choose a task to continue. Only permitted actions are shown.
+          </p>
+        </div>
+        <div className="grid sm:grid-cols-2 xl:grid-cols-3">
+          {actions.map(({ icon: Icon, label, to, helper }) => (
+            <Link
+              className="group flex min-h-28 items-center gap-4 border-b border-r border-[var(--color-border)] p-5 transition hover:bg-[var(--color-surface-tint)]"
+              key={to}
+              to={to}
+            >
+              <span className="grid size-11 shrink-0 place-items-center rounded-[11px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+                <Icon aria-hidden="true" size={21} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-extrabold text-[var(--color-text-strong)]">
+                  {label}
+                </span>
+                <span className="mt-1 block text-xs text-[var(--color-text-muted)]">{helper}</span>
+              </span>
+              <ArrowRight
+                className="text-[var(--color-text-muted)] transition-transform group-hover:translate-x-1"
+                size={18}
+              />
+            </Link>
+          ))}
+          {actions.length === 0 ? (
+            <div className="p-5 sm:col-span-2 xl:col-span-3">
+              <EmptyState
+                message="Ask Admin to enable the operational access required for your role."
+                title="No tasks assigned"
+              />
+            </div>
+          ) : null}
+        </div>
+      </section>
     </div>
   );
 }

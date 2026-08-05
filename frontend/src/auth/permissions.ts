@@ -1,32 +1,11 @@
 import type { AuthUser, WorkerPermission } from '@assetdesk/contracts';
 
-const permissionFallbacks: Partial<Record<WorkerPermission, WorkerPermission[]>> = {
-  ISSUES_EDIT: ['ASSIGNMENTS_CREATE'],
-  ISSUES_DELETE: ['ASSIGNMENTS_CREATE'],
-  ISSUE_SLIPS_VIEW: ['ISSUES_VIEW'],
-  RETURN_DATES_EXTEND: ['ASSIGNMENTS_CREATE'],
-  RETURNS_VIEW: ['RETURNS_RECORD'],
-  INVENTORY_MANAGE: ['INVENTORY_ADD', 'INVENTORY_EDIT', 'INVENTORY_DELETE', 'INVENTORY_QUANTITY_ADJUST'],
-  INVENTORY_ADD: ['INVENTORY_MANAGE'],
-  INVENTORY_EDIT: ['INVENTORY_MANAGE'],
-  INVENTORY_DELETE: ['INVENTORY_MANAGE'],
-  INVENTORY_QUANTITY_ADJUST: ['INVENTORY_MANAGE'],
-  ASSET_TYPES_MANAGE: ['ASSET_TYPES_ADD', 'ASSET_TYPES_DELETE', 'INVENTORY_MANAGE'],
-  ASSET_TYPES_ADD: ['ASSET_TYPES_MANAGE', 'INVENTORY_MANAGE'],
-  ASSET_TYPES_DELETE: ['ASSET_TYPES_MANAGE', 'INVENTORY_MANAGE'],
-  INVENTORY_IMPORT: ['INVENTORY_MANAGE'],
-  INVENTORY_EXPORT: ['INVENTORY_VIEW'],
-  ASSET_UNITS_MANAGE: ['ASSET_UNITS_ADD', 'ASSET_UNITS_EDIT', 'ASSET_UNITS_DELETE', 'INVENTORY_MANAGE'],
-  ASSET_UNITS_ADD: ['ASSET_UNITS_MANAGE', 'INVENTORY_MANAGE'],
-  ASSET_UNITS_EDIT: ['ASSET_UNITS_MANAGE', 'INVENTORY_MANAGE'],
-  ASSET_UNITS_DELETE: ['ASSET_UNITS_MANAGE', 'INVENTORY_MANAGE'],
-  RECEIVERS_MANAGE: ['RECEIVERS_ADD', 'RECEIVERS_EDIT', 'RECEIVERS_DELETE'],
-  RECEIVERS_ADD: ['RECEIVERS_MANAGE'],
-  RECEIVERS_EDIT: ['RECEIVERS_MANAGE'],
-  RECEIVERS_DELETE: ['RECEIVERS_MANAGE'],
-};
+const permissionFallbacks: Partial<Record<WorkerPermission, WorkerPermission[]>> = {};
 
-export function hasPermission(user: AuthUser | null | undefined, permission: WorkerPermission): boolean {
+export function hasPermission(
+  user: AuthUser | null | undefined,
+  permission: WorkerPermission,
+): boolean {
   if (!user) return false;
   if (user.role === 'ADMIN') return true;
   const accepted = [permission, ...(permissionFallbacks[permission] ?? [])];

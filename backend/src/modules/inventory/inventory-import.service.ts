@@ -19,7 +19,12 @@ import {
   type InventoryImportInput,
   type InventoryImportPreviewRow,
 } from './inventory-import.model.js';
-import { createAssetType, createMaterial } from './inventory.service.js';
+import {
+  adjustQuantity,
+  createAssetType,
+  createAssetUnit,
+  createMaterial,
+} from './inventory.service.js';
 import { MaterialModel } from './material.model.js';
 
 const MAX_ROWS = 1_000;
@@ -258,9 +263,13 @@ function identity(
   mode: TrackingMode,
   name: string,
   category: string,
+  location: string,
+  block: string,
   configuration?: string,
 ): string {
-  const base = `${mode}|${name.trim().toUpperCase()}|${category.trim().toUpperCase()}`;
+  const normalizePart = (value: string) =>
+    value.normalize('NFKC').trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
+  const base = `${mode}|${normalizePart(name)}|${normalizePart(category)}|${normalizePart(location)}|${normalizePart(block)}`;
   return mode === 'SERIALIZED'
     ? `${base}|${normalizeImportConfiguration(configuration ?? '')}`
     : base;
@@ -272,6 +281,10 @@ function normalizedAssetType(value: string): string {
 
 function normalizedLookup(value: string): string {
   return value.normalize('NFKC').trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
+}
+
+function exactText(value: string): RegExp {
+  return new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 }
 
 export function normalizeImportConfiguration(value: string): string {
@@ -384,7 +397,7 @@ export async function previewInventoryImport(
       const itemName = row.values.typeModelName || row.values.name;
       const configuration =
         mode === 'SERIALIZED' ? `\0${normalizeImportConfiguration(row.values.configuration)}` : '';
-      const key = `${itemName.trim().toUpperCase()}\0${row.values.category.trim().toUpperCase()}${configuration}`;
+      const key = `${itemName.trim().toUpperCase()}\0${row.values.category.trim().toUpperCase()}\0${normalizedLookup(row.values.location)}\0${normalizedLookup(row.values.block)}${configuration}`;
       (result[key] ??= []).push(row);
       return result;
     }, {}),
@@ -438,22 +451,6 @@ export async function previewInventoryImport(
   const categories = new Map(categoryEntries);
   const locations = new Map(locationEntries);
   const blocks = new Map(blockEntries);
-  const candidateIdentities = groups.flatMap((group) => {
-    const first = group[0];
-    if (!first) return [];
-    const itemName = first.values.typeModelName || first.values.name;
-    const category = categories.get(normalizedLookup(first.values.category));
-    return category
-      ? [identity(mode, materialName(category, itemName), category, first.values.configuration)]
-      : [];
-  });
-  const existingMaterials = await MaterialModel.find({
-    identityKey: { $in: candidateIdentities },
-  })
-    .select('identityKey')
-    .lean();
-  const existingIdentities = new Set(existingMaterials.map((material) => material.identityKey));
-
   for (const group of groups) {
     const first = group[0];
     if (!first) continue;
@@ -479,9 +476,6 @@ export async function previewInventoryImport(
       if (!block) throw missingDropdownValue('BLOCK', values.block);
       const displayName = materialName(category, itemName);
       const locationBlock = `${location} / ${block}`;
-      const materialIdentity = identity(mode, displayName, category, values.configuration);
-      if (existingIdentities.has(materialIdentity))
-        throw new Error('This material already exists in Inventory.');
       let draft: CreateMaterialRequest;
       if (mode === 'SERIALIZED') {
         const serialNumbers = group.map((row) => row.values.serialNumber);
@@ -668,7 +662,49 @@ export async function commitInventoryImport(
       if (parsed.trackingMode === 'QUANTITY') {
         await createAssetType(parsed.category, createdByUserId);
       }
-      const material = await createMaterial(parsed, createdByUserId);
+      const exactIdentity = identity(
+        parsed.trackingMode,
+        parsed.name,
+        parsed.category,
+        parsed.location,
+        parsed.block,
+        parsed.trackingMode === 'SERIALIZED' ? parsed.configuration : undefined,
+      );
+      const existing = await MaterialModel.findOne({
+        $or: [
+          { identityKey: exactIdentity },
+          {
+            trackingMode: parsed.trackingMode,
+            name: exactText(parsed.name),
+            category: exactText(parsed.category),
+            location: exactText(parsed.location),
+            block: exactText(parsed.block),
+            ...(parsed.trackingMode === 'SERIALIZED'
+              ? { configuration: exactText(parsed.configuration) }
+              : {}),
+          },
+        ],
+      });
+      let material;
+      if (existing && parsed.trackingMode === 'SERIALIZED') {
+        for (const serialNumber of parsed.serialNumbers) {
+          const result = await createAssetUnit(
+            existing.materialCode,
+            { serialNumber, condition: 'Good' },
+            createdByUserId,
+          );
+          material = result.material;
+        }
+      } else if (existing && parsed.trackingMode === 'QUANTITY') {
+        const result = await adjustQuantity(existing.materialCode, {
+          quantityDelta: parsed.totalQuantity,
+          reason: `Bulk inventory upload ${record.fileName}`,
+        });
+        material = result.material;
+      } else {
+        material = await createMaterial(parsed, createdByUserId);
+      }
+      if (!material) throw new Error('No stock was added.');
       created.push({
         materialCode: material.materialCode,
         name: material.name,

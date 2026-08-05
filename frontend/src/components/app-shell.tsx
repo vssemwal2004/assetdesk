@@ -467,7 +467,14 @@ export function AppShell() {
         Skip to content
       </a>
 
-      <aside className="app-sidebar fixed inset-y-0 left-0 z-40 hidden border-r border-[var(--color-border)] bg-white/98 px-3 py-4 shadow-[6px_0_24px_rgba(44,37,52,.06)] backdrop-blur min-[600px]:flex min-[600px]:flex-col">
+      <aside
+        className="app-sidebar fixed inset-y-0 left-0 z-40 hidden border-r border-[var(--color-border)] bg-white/98 px-3 py-4 shadow-[6px_0_24px_rgba(44,37,52,.06)] backdrop-blur min-[600px]:flex min-[600px]:flex-col"
+        onMouseLeave={(event) => {
+          const focused = document.activeElement;
+          if (focused instanceof HTMLElement && event.currentTarget.contains(focused))
+            focused.blur();
+        }}
+      >
         <div className="sidebar-brand px-1">
           <Brand />
         </div>

@@ -13,6 +13,7 @@ import {
   forwardRef,
   useEffect,
   useId,
+  useRef,
   useState,
   type ButtonHTMLAttributes,
   type FormEvent,
@@ -292,8 +293,29 @@ export function FilterPopover({
   onClear: () => void;
   panelClassName?: string;
 }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    function closeOnOutsideInteraction(event: MouseEvent | PointerEvent) {
+      const details = detailsRef.current;
+      if (details?.open && !details.contains(event.target as Node)) details.open = false;
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && detailsRef.current?.open) {
+        detailsRef.current.open = false;
+        detailsRef.current.querySelector<HTMLElement>('summary')?.focus();
+      }
+    }
+    document.addEventListener('pointerdown', closeOnOutsideInteraction);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideInteraction);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
   return (
-    <details className="relative">
+    <details className="relative" ref={detailsRef}>
       <summary className="button-secondary flex min-h-11 cursor-pointer list-none items-center justify-center gap-2">
         <SlidersHorizontal aria-hidden="true" size={18} />
         Filters

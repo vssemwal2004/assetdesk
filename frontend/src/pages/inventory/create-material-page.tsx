@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, FileSpreadsheet, PackagePlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import {
   CreateMaterialRequestSchema,
@@ -108,8 +108,19 @@ function materialFormMessage(form: MaterialForm): string | null {
 
 export function CreateMaterialPage() {
   const navigate = useNavigate();
+  const [parameters] = useSearchParams();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState<MaterialForm>(() => {
+    const requestedMode = parameters.get('trackingMode');
+    const trackingMode: TrackingMode = requestedMode === 'QUANTITY' ? 'QUANTITY' : 'SERIALIZED';
+    return {
+      ...initialForm,
+      category: parameters.get('category')?.trim() ?? '',
+      typeModelName: parameters.get('typeModelName')?.trim() ?? '',
+      trackingMode,
+      returnPolicy: trackingMode === 'QUANTITY' ? 'CONSUMABLE' : 'REUSABLE',
+    };
+  });
   const [message, setMessage] = useState<string | null>(null);
   const detailsQuery = useQuery({
     queryKey: ['asset-details'],

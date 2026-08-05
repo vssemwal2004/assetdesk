@@ -1,14 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Download,
+  ChevronDown,
   Eye,
   MoreVertical,
   PackagePlus,
   PackageSearch,
   Pencil,
   Trash2,
+  X,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import type {
@@ -41,7 +43,7 @@ import {
   downloadInventoryCsv,
   getAssetDetails,
   getInventory,
-  setBulkMaterialStatus,
+  getAssetUnits,
 } from '../../lib/inventory-api';
 import { isApiError } from '../../lib/api-client';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
@@ -119,7 +121,28 @@ function groupMaterials(materials: Material[]): MaterialGroup[] {
     group.issuedQuantity += material.issuedQuantity;
     groups.set(category, group);
   }
-  return [...groups.values()].sort((left, right) => left.category.localeCompare(right.category));
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      materials: group.materials.sort((left, right) =>
+        [
+          left.typeModelName ?? left.name,
+          left.configuration ?? '',
+          left.location ?? '',
+          left.block ?? '',
+        ]
+          .join('|')
+          .localeCompare(
+            [
+              right.typeModelName ?? right.name,
+              right.configuration ?? '',
+              right.location ?? '',
+              right.block ?? '',
+            ].join('|'),
+          ),
+      ),
+    }))
+    .sort((left, right) => left.category.localeCompare(right.category));
 }
 
 function materialStatsLabel(material: Material): string {
@@ -163,13 +186,10 @@ export function InventoryPage() {
   const [parameters, setParameters] = useSearchParams();
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
-  const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
-  const [bulkStatus, setBulkStatus] = useState<MaterialStatus>('ACTIVE');
   const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
   const [viewMaterial, setViewMaterial] = useState<Material | null>(null);
   const [quantityTarget, setQuantityTarget] = useState<Material | null>(null);
   const [downloading, setDownloading] = useState(false);
-  const page = Math.max(1, Number(parameters.get('page')) || 1);
   const search = parameters.get('search') ?? '';
   const category = parameters.get('category') ?? '';
   const location = parameters.get('location') ?? '';
@@ -186,26 +206,7 @@ export function InventoryPage() {
   const canEditInventory = hasPermission(user, 'INVENTORY_EDIT');
   const canDeleteInventory = hasPermission(user, 'INVENTORY_DELETE');
   const canAdjustQuantity = hasPermission(user, 'INVENTORY_QUANTITY_ADJUST');
-  const canManageInventory = canEditInventory || canDeleteInventory;
   const canExportInventory = hasPermission(user, 'INVENTORY_EXPORT');
-
-  const bulkStatusMutation = useMutation({
-    mutationFn: () => setBulkMaterialStatus(selectedCodes, bulkStatus),
-    onSuccess: async (result) => {
-      setActionError(
-        result.failed.length
-          ? `${result.failed.length} record${result.failed.length === 1 ? '' : 's'} could not be changed. ${result.failed[0]?.reason ?? ''}`
-          : null,
-      );
-      setActionNotice(
-        `${result.updated.length} inventory record${result.updated.length === 1 ? '' : 's'} changed to ${inventoryStatusLabel(bulkStatus)}.`,
-      );
-      setSelectedCodes([]);
-      await queryClient.invalidateQueries({ queryKey: ['inventory'] });
-    },
-    onError: (error) =>
-      setActionError(isApiError(error) ? error.message : 'Bulk status update failed.'),
-  });
 
   const detailQuery = useQuery({
     queryKey: ['asset-details'],
@@ -216,7 +217,6 @@ export function InventoryPage() {
     queryKey: [
       'inventory',
       {
-        page,
         search,
         category,
         location,
@@ -231,25 +231,33 @@ export function InventoryPage() {
         stock,
       },
     ],
-    queryFn: ({ signal }) =>
-      getInventory(
-        {
-          page,
-          ...(search ? { search } : {}),
-          ...(category ? { category } : {}),
-          ...(location ? { location } : {}),
-          ...(block ? { block } : {}),
-          ...(department ? { department } : {}),
-          ...(vendorName ? { vendorName } : {}),
-          ...(createdFrom ? { createdFrom } : {}),
-          ...(createdTo ? { createdTo } : {}),
-          ...(status ? { status } : {}),
-          ...(mode ? { trackingMode: mode } : {}),
-          ...(policy ? { returnPolicy: policy } : {}),
-          ...(stock ? { stockState: stock } : {}),
-        },
-        signal,
-      ),
+    queryFn: async ({ signal }) => {
+      const filters = {
+        ...(search ? { search } : {}),
+        ...(category ? { category } : {}),
+        ...(location ? { location } : {}),
+        ...(block ? { block } : {}),
+        ...(department ? { department } : {}),
+        ...(vendorName ? { vendorName } : {}),
+        ...(createdFrom ? { createdFrom } : {}),
+        ...(createdTo ? { createdTo } : {}),
+        ...(status ? { status } : {}),
+        ...(mode ? { trackingMode: mode } : {}),
+        ...(policy ? { returnPolicy: policy } : {}),
+        ...(stock ? { stockState: stock } : {}),
+      };
+      const first = await getInventory({ page: 1, pageSize: 100, ...filters }, signal);
+      if (first.meta.totalPages <= 1) return first;
+      const remaining = await Promise.all(
+        Array.from({ length: first.meta.totalPages - 1 }, (_, index) =>
+          getInventory({ page: index + 2, pageSize: 100, ...filters }, signal),
+        ),
+      );
+      return {
+        data: [first, ...remaining].flatMap((response) => response.data),
+        meta: { ...first.meta, page: 1, pageSize: first.meta.total, totalPages: 1 },
+      };
+    },
     placeholderData: (previous) => previous,
   });
 
@@ -259,7 +267,7 @@ export function InventoryPage() {
       if (value) next.set(key, value);
       else next.delete(key);
     }
-    if (!Object.hasOwn(updates, 'page')) next.set('page', '1');
+    next.delete('page');
     setParameters(next);
   }
 
@@ -345,7 +353,7 @@ export function InventoryPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         actions={
           <div className="flex flex-wrap gap-2">
@@ -372,19 +380,13 @@ export function InventoryPage() {
             ) : null}
           </div>
         }
-        description={
-          canAddInventory || canManageInventory
-            ? 'Track IT Assets, IT Consumables, availability, and stock health.'
-            : 'Search current university material availability.'
-        }
         title="Inventory"
       />
       {actionError ? <ErrorSummary message={actionError} title="Action failed" /> : null}
 
-      <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)] sm:p-4">
+      <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)]">
         <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
           <SearchForm
-            debounceMs={300}
             id="inventory-search"
             key={search}
             label="Search Inventory"
@@ -501,7 +503,6 @@ export function InventoryPage() {
                 </FilterField>
                 <FilterField label="Vendor">
                   <SearchForm
-                    debounceMs={300}
                     id="inventory-vendor-filter"
                     label="Filter by vendor"
                     onSearch={(value) => updateParameters({ vendorName: value })}
@@ -530,7 +531,7 @@ export function InventoryPage() {
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {canAddInventory ? (
+              {user?.role === 'ADMIN' ? (
                 <FilterField label="Status">
                   <FilterSelect
                     id="inventory-status-filter"
@@ -617,7 +618,7 @@ export function InventoryPage() {
         <EmptyState
           action={
             filtered ? (
-              <Button onClick={() => setParameters({ page: '1' })} variant="secondary">
+              <Button onClick={() => setParameters({})} variant="secondary">
                 Clear filters
               </Button>
             ) : canAddInventory ? (
@@ -638,22 +639,28 @@ export function InventoryPage() {
         <>
           <div className="space-y-3 min-[840px]:hidden">
             {materialGroups.map((group) => (
-              <section className="space-y-2" key={group.category}>
-                <div className="rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3">
+              <details className="group space-y-2" key={group.category}>
+                <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
                   <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-                        {group.category}
-                      </h2>
-                      <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                        {group.materials.length} model{group.materials.length === 1 ? '' : 's'}
-                      </p>
+                    <div className="flex items-center gap-2">
+                      <ChevronDown
+                        className="text-[var(--color-primary)] transition-transform group-open:rotate-180"
+                        size={18}
+                      />
+                      <div>
+                        <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+                          {group.category}
+                        </h2>
+                        <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                          {group.materials.length} model{group.materials.length === 1 ? '' : 's'}
+                        </p>
+                      </div>
                     </div>
                     <p className="text-right text-xs font-bold text-[var(--color-text-muted)]">
                       {group.availableQuantity} / {group.totalQuantity} available
                     </p>
                   </div>
-                </div>
+                </summary>
                 {group.materials.map((material) => (
                   <MaterialCard
                     canAdjustQuantity={canAdjustQuantity}
@@ -665,66 +672,19 @@ export function InventoryPage() {
                     onAdjustQuantity={setQuantityTarget}
                   />
                 ))}
-              </section>
+              </details>
             ))}
           </div>
           <MaterialTable
+            canAdd={canAddInventory}
             canAdjustQuantity={canAdjustQuantity}
             canDelete={canDeleteInventory}
             canEdit={canEditInventory}
             materials={materials}
             onDelete={confirmDelete}
             onAdjustQuantity={setQuantityTarget}
-            onSelectionChange={setSelectedCodes}
             onView={setViewMaterial}
-            selectedCodes={selectedCodes}
           />
-          {canEditInventory ? (
-            <div className="flex flex-wrap items-end gap-3 rounded-[12px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]">
-              <div className="min-w-[220px] flex-1">
-                <p className="field-label">Bulk inventory status</p>
-                <select
-                  className="field-input mt-1.5"
-                  onChange={(event) => setBulkStatus(event.target.value as MaterialStatus)}
-                  value={bulkStatus}
-                >
-                  <option value="ACTIVE">Active / in use</option>
-                  <option value="UNDER_MAINTENANCE">Under maintenance</option>
-                  <option value="SCRAP">Faulty (scrap)</option>
-                  <option value="NOT_IN_USE">Outdated (not in use)</option>
-                  <option value="ARCHIVED">Archived</option>
-                </select>
-              </div>
-              <Button
-                disabled={selectedCodes.length === 0}
-                loading={bulkStatusMutation.isPending}
-                onClick={() => bulkStatusMutation.mutate()}
-              >
-                Update {selectedCodes.length} selected
-              </Button>
-            </div>
-          ) : null}
-          {query.data && query.data.meta.totalPages > 1 ? (
-            <nav aria-label="Inventory pages" className="flex items-center justify-between gap-3">
-              <Button
-                disabled={page <= 1}
-                onClick={() => updateParameters({ page: String(page - 1) })}
-                variant="secondary"
-              >
-                Previous
-              </Button>
-              <p className="text-sm font-semibold text-[var(--color-text-muted)]">
-                Page {page} of {query.data.meta.totalPages}
-              </p>
-              <Button
-                disabled={page >= query.data.meta.totalPages}
-                onClick={() => updateParameters({ page: String(page + 1) })}
-                variant="secondary"
-              >
-                Next
-              </Button>
-            </nav>
-          ) : null}
         </>
       )}
       {deleteTarget ? (
@@ -778,11 +738,19 @@ function Dialog({
   return (
     <dialog
       aria-label={label}
-      className="w-[min(92vw,520px)] rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
+      className="relative m-auto max-h-[88vh] w-[min(92vw,720px)] overflow-hidden rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/45"
       onCancel={onClose}
       onClose={onClose}
       ref={reference}
     >
+      <button
+        aria-label="Close"
+        className="absolute right-4 top-4 z-20 grid size-9 place-items-center rounded-full border border-[var(--color-border)] bg-white text-[var(--color-text-muted)] shadow-sm transition hover:border-[var(--color-primary-border)] hover:text-[var(--color-primary)]"
+        onClick={onClose}
+        type="button"
+      >
+        <X aria-hidden="true" size={18} />
+      </button>
       {children}
     </dialog>
   );
@@ -967,7 +935,7 @@ function MaterialQuickViewDialog({
 }) {
   return (
     <Dialog label={`${material.name} details`} onClose={onClose}>
-      <div className="max-h-[86vh] overflow-y-auto p-5 sm:p-6">
+      <div className="max-h-[88vh] overflow-y-auto p-5 pr-14 sm:p-6 sm:pr-16">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-extrabold text-[var(--color-primary-strong)]">
@@ -1146,8 +1114,25 @@ function MaterialActions({
   onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
 }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      if (detailsRef.current?.open && !detailsRef.current.contains(event.target as Node)) {
+        detailsRef.current.open = false;
+      }
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && detailsRef.current?.open) detailsRef.current.open = false;
+    };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('keydown', escape);
+    };
+  }, []);
   return (
-    <details className="relative inline-block text-left">
+    <details className="relative inline-block text-left" ref={detailsRef}>
       <summary
         aria-label={`Actions for ${material.name}`}
         className="icon-button list-none marker:hidden"
@@ -1174,7 +1159,7 @@ function MaterialActions({
             type="button"
           >
             <Pencil aria-hidden="true" size={17} />
-            Edit quantity
+            Add or adjust quantity
           </button>
         ) : null}
         {canEdit ? (
@@ -1256,24 +1241,22 @@ function MaterialCard({
 
 function MaterialTable({
   materials,
+  canAdd,
   canEdit,
   canDelete,
   canAdjustQuantity,
   onAdjustQuantity,
   onDelete,
   onView,
-  selectedCodes,
-  onSelectionChange,
 }: {
   materials: Material[];
+  canAdd: boolean;
   canEdit: boolean;
   canDelete: boolean;
   canAdjustQuantity: boolean;
   onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
-  selectedCodes: string[];
-  onSelectionChange: (codes: string[]) => void;
 }) {
   const groups = groupMaterials(materials);
   return (
@@ -1282,32 +1265,6 @@ function MaterialTable({
         <caption className="sr-only">Inventory materials</caption>
         <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
           <tr>
-            {canEdit ? (
-              <th className="h-11 w-12 px-4" scope="col">
-                <input
-                  aria-label="Select all inventory records on this page"
-                  checked={
-                    materials.length > 0 &&
-                    materials.every((material) => selectedCodes.includes(material.materialCode))
-                  }
-                  onChange={(event) =>
-                    onSelectionChange(
-                      event.target.checked
-                        ? [
-                            ...new Set([
-                              ...selectedCodes,
-                              ...materials.map((material) => material.materialCode),
-                            ]),
-                          ]
-                        : selectedCodes.filter(
-                            (code) => !materials.some((material) => material.materialCode === code),
-                          ),
-                    )
-                  }
-                  type="checkbox"
-                />
-              </th>
-            ) : null}
             <th className="h-11 px-4 font-bold" scope="col">
               IT asset
             </th>
@@ -1328,6 +1285,7 @@ function MaterialTable({
         <tbody>
           {groups.map((group) => (
             <GroupedMaterialRows
+              canAdd={canAdd}
               canDelete={canDelete}
               canAdjustQuantity={canAdjustQuantity}
               canEdit={canEdit}
@@ -1336,8 +1294,6 @@ function MaterialTable({
               onDelete={onDelete}
               onAdjustQuantity={onAdjustQuantity}
               onView={onView}
-              onSelectionChange={onSelectionChange}
-              selectedCodes={selectedCodes}
             />
           ))}
         </tbody>
@@ -1348,98 +1304,294 @@ function MaterialTable({
 
 function GroupedMaterialRows({
   group,
+  canAdd,
   canEdit,
   canDelete,
   canAdjustQuantity,
   onAdjustQuantity,
   onDelete,
   onView,
-  selectedCodes,
-  onSelectionChange,
 }: {
   group: MaterialGroup;
+  canAdd: boolean;
   canEdit: boolean;
   canDelete: boolean;
   canAdjustQuantity: boolean;
   onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
-  selectedCodes: string[];
-  onSelectionChange: (codes: string[]) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [openModels, setOpenModels] = useState<string[]>([]);
+  const modelGroups = Object.values(
+    group.materials.reduce<
+      Record<
+        string,
+        { key: string; label: string; materials: Material[]; total: number; available: number }
+      >
+    >((result, material) => {
+      const label = material.typeModelName ?? material.name;
+      const key = label.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
+      const model = result[key] ?? { key, label, materials: [], total: 0, available: 0 };
+      model.materials.push(material);
+      model.total += material.totalQuantity;
+      model.available += material.availableQuantity;
+      result[key] = model;
+      return result;
+    }, {}),
+  );
+
   return (
     <>
-      <tr className="border-t border-[var(--color-border)] bg-[var(--color-primary-soft)]">
-        <td className="px-4 py-3" colSpan={canEdit ? 6 : 5}>
+      <tr
+        className="cursor-pointer border-t border-[var(--color-border)] bg-[var(--color-primary-soft)] transition hover:bg-[#e9e3ff]"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <td className="px-4 py-3" colSpan={5}>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
-                {group.category}
-              </p>
-              <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                {group.materials.length} model{group.materials.length === 1 ? '' : 's'} registered
-              </p>
+            <div className="flex items-center gap-3">
+              <span className="grid size-8 place-items-center rounded-[9px] bg-white text-[var(--color-primary)] shadow-sm">
+                <ChevronDown
+                  aria-hidden="true"
+                  className={`transition-transform ${open ? 'rotate-180' : ''}`}
+                  size={18}
+                />
+              </span>
+              <div>
+                <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
+                  {group.category}
+                </p>
+                <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                  {modelGroups.length} model{modelGroups.length === 1 ? '' : 's'} ·{' '}
+                  {group.materials.length} stock variant{group.materials.length === 1 ? '' : 's'}
+                </p>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2 text-xs font-bold text-[var(--color-text-muted)]">
+            <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-[var(--color-text-muted)]">
               <span>Total: {group.totalQuantity}</span>
               <span>Available: {group.availableQuantity}</span>
               <span>Issued: {group.issuedQuantity}</span>
+              {canAdd ? (
+                <details className="relative" onClick={(event) => event.stopPropagation()}>
+                  <summary
+                    aria-label={`Actions for ${group.category}`}
+                    className="icon-button list-none marker:hidden"
+                  >
+                    <MoreVertical aria-hidden="true" size={17} />
+                  </summary>
+                  <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-[12px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
+                    <Link
+                      className="menu-item"
+                      to={`/inventory/new?category=${encodeURIComponent(group.category)}&trackingMode=${group.materials[0]?.trackingMode ?? 'SERIALIZED'}`}
+                    >
+                      <PackagePlus aria-hidden="true" size={17} />
+                      Add more
+                    </Link>
+                  </div>
+                </details>
+              ) : null}
             </div>
           </div>
         </td>
       </tr>
-      {group.materials.map((material) => (
-        <tr
-          className="h-[64px] cursor-pointer border-t border-[var(--color-border)] hover:bg-[var(--color-surface-tint)]"
-          key={material.materialCode}
-          onClick={() => onView(material)}
-          tabIndex={0}
-        >
-          {canEdit ? (
-            <td className="px-4" onClick={(event) => event.stopPropagation()}>
-              <input
-                aria-label={`Select ${material.name}`}
-                checked={selectedCodes.includes(material.materialCode)}
-                onChange={(event) =>
-                  onSelectionChange(
-                    event.target.checked
-                      ? [...selectedCodes, material.materialCode]
-                      : selectedCodes.filter((code) => code !== material.materialCode),
-                  )
-                }
-                type="checkbox"
-              />
-            </td>
-          ) : null}
-          <td className="px-4">
-            <p className="text-sm font-bold text-[var(--color-text-strong)]">{material.name}</p>
-            <p className="text-xs text-[var(--color-text-muted)]">
-              {material.trackingMode === 'SERIALIZED'
-                ? `${material.materialCode} · ${material.typeModelName ?? material.name}`
-                : (material.typeModelName ?? material.name)}
-            </p>
-          </td>
-          <td className="px-4">
-            <CatalogBadge value={material.trackingMode} />
-          </td>
-          <td className="px-4 text-sm text-[var(--color-text-muted)]">{quantityLabel(material)}</td>
-          <td className="px-4">
-            <CatalogBadge value={material.status} />
-          </td>
-          <td className="px-4 text-right">
-            <div onClick={(event) => event.stopPropagation()}>
-              <MaterialActions
-                canAdjustQuantity={canAdjustQuantity}
-                canDelete={canDelete}
-                canEdit={canEdit}
-                material={material}
-                onDelete={onDelete}
-                onAdjustQuantity={onAdjustQuantity}
-              />
+      {open
+        ? modelGroups.map((model) => {
+            const modelOpen = openModels.includes(model.key);
+            return (
+              <Fragment key={model.key}>
+                <tr
+                  className="cursor-pointer border-t border-[var(--color-border)] bg-[var(--color-surface-tint)] hover:bg-white"
+                  onClick={() =>
+                    setOpenModels((current) =>
+                      current.includes(model.key)
+                        ? current.filter((key) => key !== model.key)
+                        : [...current, model.key],
+                    )
+                  }
+                >
+                  <td className="px-4 py-3" colSpan={5}>
+                    <div className="flex items-center justify-between gap-4 pl-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <ChevronDown
+                          aria-hidden="true"
+                          className={`shrink-0 text-[var(--color-primary)] transition-transform ${modelOpen ? 'rotate-180' : ''}`}
+                          size={17}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-extrabold text-[var(--color-text-strong)]">
+                            {model.label}
+                          </p>
+                          <p className="text-xs text-[var(--color-text-muted)]">
+                            {model.materials.length} configuration/location variant
+                            {model.materials.length === 1 ? '' : 's'}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="shrink-0 text-xs font-bold text-[var(--color-text-muted)]">
+                        {model.available} / {model.total} available
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+                {modelOpen
+                  ? model.materials.map((material) => (
+                      <MaterialVariantRows
+                        canAdjustQuantity={canAdjustQuantity}
+                        canDelete={canDelete}
+                        canEdit={canEdit}
+                        key={material.materialCode}
+                        material={material}
+                        onAdjustQuantity={onAdjustQuantity}
+                        onDelete={onDelete}
+                        onView={onView}
+                      />
+                    ))
+                  : null}
+              </Fragment>
+            );
+          })
+        : null}
+    </>
+  );
+}
+
+function MaterialVariantRows({
+  material,
+  canEdit,
+  canDelete,
+  canAdjustQuantity,
+  onAdjustQuantity,
+  onDelete,
+  onView,
+}: {
+  material: Material;
+  canEdit: boolean;
+  canDelete: boolean;
+  canAdjustQuantity: boolean;
+  onAdjustQuantity: (material: Material) => void;
+  onDelete: (material: Material) => void;
+  onView: (material: Material) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const unitsQuery = useQuery({
+    queryKey: ['inventory-units-inline', material.materialCode],
+    queryFn: ({ signal }) => getAssetUnits(material.materialCode, 1, { pageSize: 100 }, signal),
+    enabled: open && material.trackingMode === 'SERIALIZED',
+  });
+  const columnCount = 5;
+
+  return (
+    <>
+      <tr className="h-[72px] border-t border-[var(--color-border)] bg-white hover:bg-[var(--color-surface-tint)]">
+        <td className="px-4">
+          <button
+            className="flex w-full items-center gap-3 text-left"
+            onClick={() => setOpen((value) => !value)}
+            type="button"
+          >
+            <ChevronDown
+              aria-hidden="true"
+              className={`shrink-0 text-[var(--color-text-muted)] transition-transform ${open ? 'rotate-180' : ''}`}
+              size={16}
+            />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-bold text-[var(--color-text-strong)]">
+                {material.configuration || 'Standard configuration'}
+              </span>
+              <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
+                {material.materialCode} ·{' '}
+                {[material.location, material.block].filter(Boolean).join(' · ')}
+              </span>
+            </span>
+          </button>
+        </td>
+        <td className="px-4">
+          <CatalogBadge value={material.trackingMode} />
+        </td>
+        <td className="px-4 text-sm text-[var(--color-text-muted)]">{quantityLabel(material)}</td>
+        <td className="px-4">
+          <CatalogBadge value={material.status} />
+        </td>
+        <td className="px-4 text-right">
+          <div onClick={(event) => event.stopPropagation()}>
+            <MaterialActions
+              canAdjustQuantity={canAdjustQuantity}
+              canDelete={canDelete}
+              canEdit={canEdit}
+              material={material}
+              onDelete={onDelete}
+              onAdjustQuantity={onAdjustQuantity}
+            />
+          </div>
+        </td>
+      </tr>
+      {open ? (
+        <tr className="border-t border-[var(--color-border)] bg-[#fbfaff]">
+          <td colSpan={columnCount} className="px-5 py-4">
+            <div className="ml-8 rounded-[12px] border border-[var(--color-border)] bg-white p-4">
+              {material.trackingMode === 'QUANTITY' ? (
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <InlineStat label="Total quantity" value={material.totalQuantity} />
+                  <InlineStat label="Available" value={material.availableQuantity} />
+                  <InlineStat label="Issued" value={material.issuedQuantity} />
+                  <InlineStat label="Unit" value={material.unitLabel ?? 'units'} />
+                </div>
+              ) : unitsQuery.isPending ? (
+                <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+                  Loading serial IDs…
+                </p>
+              ) : unitsQuery.isError ? (
+                <p className="text-sm font-semibold text-[var(--color-danger)]">
+                  Serial IDs could not be loaded.
+                </p>
+              ) : (
+                <div>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
+                      Serial and Asset IDs
+                    </p>
+                    <button className="button-quiet" onClick={() => onView(material)} type="button">
+                      Open full details
+                    </button>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {(unitsQuery.data?.data ?? []).map((unit) => (
+                      <div
+                        className="rounded-[9px] bg-[var(--color-surface-tint)] px-3 py-2"
+                        key={unit.assetTag}
+                      >
+                        <p className="text-xs font-extrabold text-[var(--color-text-strong)]">
+                          {unit.serialNumber ?? 'No serial number'}
+                        </p>
+                        <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                          {unit.assetTag} · {unit.condition} · {unit.status}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  {(unitsQuery.data?.meta.total ?? 0) > 100 ? (
+                    <p className="mt-3 text-xs font-semibold text-[var(--color-text-muted)]">
+                      Showing first 100 of {unitsQuery.data?.meta.total}. Open full details to view
+                      all.
+                    </p>
+                  ) : null}
+                </div>
+              )}
             </div>
           </td>
         </tr>
-      ))}
+      ) : null}
     </>
+  );
+}
+
+function InlineStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div>
+      <p className="text-xs font-bold text-[var(--color-text-muted)]">{label}</p>
+      <p className="mt-1 text-lg font-extrabold text-[var(--color-primary-strong)]">
+        {typeof value === 'number' ? value.toLocaleString('en-IN') : value}
+      </p>
+    </div>
   );
 }

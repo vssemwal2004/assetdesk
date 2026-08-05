@@ -34,7 +34,52 @@ describe('inventory access filters', () => {
     });
 
     expect(filter.status).toBe('ACTIVE');
-    expect(filter.$text).toEqual({ $search: 'switch.*' });
+    expect(filter.$or).toHaveLength(11);
+    expect(filter.$or).toEqual(
+      expect.arrayContaining([
+        { typeModelName: /switch\.\*/i },
+        { configuration: /switch\.\*/i },
+        { location: /switch\.\*/i },
+        { block: /switch\.\*/i },
+        { vendorName: /switch\.\*/i },
+      ]),
+    );
+  });
+
+  it('combines all exact inventory filters without dropping search or date criteria', () => {
+    const createdFrom = new Date('2026-08-01T00:00:00.000Z');
+    const createdTo = new Date('2026-08-05T23:59:59.999Z');
+    const filter = buildMaterialListFilter({
+      page: 1,
+      pageSize: 100,
+      role: 'ADMIN',
+      search: 'civil lab',
+      trackingMode: 'SERIALIZED',
+      returnPolicy: 'REUSABLE',
+      stockState: 'AVAILABLE',
+      status: 'ACTIVE',
+      category: 'CPU',
+      location: 'Civil Lab',
+      block: 'Civil Block',
+      department: 'CSIT',
+      vendorName: 'HP',
+      createdFrom,
+      createdTo,
+    });
+
+    expect(filter).toMatchObject({
+      status: 'ACTIVE',
+      trackingMode: 'SERIALIZED',
+      returnPolicy: 'REUSABLE',
+      availableQuantity: { $gt: 0 },
+      createdAt: { $gte: createdFrom, $lte: createdTo },
+    });
+    expect(filter.$or).toHaveLength(11);
+    expect(filter.category).toEqual(/^CPU$/i);
+    expect(filter.location).toEqual(/^Civil Lab$/i);
+    expect(filter.block).toEqual(/^Civil Block$/i);
+    expect(filter.department).toEqual(/^CSIT$/i);
+    expect(filter.vendorName).toEqual(/^HP$/i);
   });
 
   it('lets the issue picker include active and outdated inventory only', () => {
