@@ -95,6 +95,12 @@ export const permissionDefinitions: PermissionDefinition[] = [
     description: 'Increase or reduce quantity-tracked consumable stock.',
   },
   {
+    permission: 'INVENTORY_MODELS_ADD',
+    group: 'Inventory',
+    label: 'Add inventory models',
+    description: 'View category models and register official model names in Model Master.',
+  },
+  {
     permission: 'ASSET_TYPES_ADD',
     group: 'Inventory',
     label: 'Add asset types',

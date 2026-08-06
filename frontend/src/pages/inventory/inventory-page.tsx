@@ -278,8 +278,17 @@ export function InventoryPage() {
     placeholderData: (previous) => previous,
   });
   const mergeModelsQuery = useQuery({
-    queryKey: ['inventory-models', mergeCategory?.category],
-    queryFn: ({ signal }) => getInventoryModels(mergeCategory?.category, undefined, signal),
+    queryKey: [
+      'inventory-models',
+      mergeCategory?.category,
+      mergeCategory?.materials[0]?.trackingMode,
+    ],
+    queryFn: ({ signal }) =>
+      getInventoryModels(
+        mergeCategory?.category,
+        mergeCategory?.materials[0]?.trackingMode,
+        signal,
+      ),
     enabled: Boolean(mergeCategory),
   });
   const mergeModelsMutation = useMutation({
@@ -916,7 +925,9 @@ export function InventoryPage() {
                   ) : mergeModelsQuery.isError ? (
                     <div className="p-5 text-center">
                       <p className="text-sm font-bold text-[var(--color-danger)]">
-                        Models could not be loaded.
+                        {isApiError(mergeModelsQuery.error)
+                          ? mergeModelsQuery.error.message
+                          : 'Models could not be loaded. Check the server connection and try again.'}
                       </p>
                       <Button
                         className="mt-3"

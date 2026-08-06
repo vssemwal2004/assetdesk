@@ -311,7 +311,7 @@ export function createInventoryRouter(): Router {
 
   router.post(
     '/models',
-    requirePermission('ASSET_TYPES_ADD'),
+    requirePermission('INVENTORY_MODELS_ADD'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {

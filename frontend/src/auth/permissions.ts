@@ -1,6 +1,8 @@
 import type { AuthUser, WorkerPermission } from '@assetdesk/contracts';
 
-const permissionFallbacks: Partial<Record<WorkerPermission, WorkerPermission[]>> = {};
+const permissionFallbacks: Partial<Record<WorkerPermission, WorkerPermission[]>> = {
+  ASSET_TYPES_MANAGE: ['ASSET_TYPES_ADD', 'ASSET_TYPES_DELETE', 'INVENTORY_MODELS_ADD'],
+};
 
 export function hasPermission(
   user: AuthUser | null | undefined,

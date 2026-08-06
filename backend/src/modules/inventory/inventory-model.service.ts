@@ -107,14 +107,20 @@ async function updatePendingImports(
   }
 }
 
-async function syncExistingModels(): Promise<void> {
+async function syncExistingModels(category?: string, trackingMode?: TrackingMode): Promise<void> {
   const rows = await MaterialModel.aggregate<{
     category: string;
     name: string;
     trackingMode: TrackingMode;
     createdBy: Types.ObjectId;
   }>([
-    { $match: { typeModelName: { $type: 'string', $ne: '' } } },
+    {
+      $match: {
+        typeModelName: { $type: 'string', $ne: '' },
+        ...(category ? { category: exactCaseInsensitive(category) } : {}),
+        ...(trackingMode ? { trackingMode } : {}),
+      },
+    },
     {
       $group: {
         _id: { category: '$category', name: '$typeModelName', trackingMode: '$trackingMode' },
@@ -131,27 +137,39 @@ async function syncExistingModels(): Promise<void> {
       },
     },
   ]);
-  for (const row of rows) {
-    try {
-      await InventoryModelModel.updateOne(
-        {
-          categoryNormalized: normalized(row.category),
-          nameNormalized: normalized(row.name),
-          trackingMode: row.trackingMode,
-        },
-        {
-          $setOnInsert: {
-            category: row.category,
-            name: row.name,
-            aliases: [],
-            createdBy: row.createdBy,
+  const uniqueRows = new Map(
+    rows.map((row) => [
+      `${normalized(row.category)}|${normalized(row.name)}|${row.trackingMode}`,
+      row,
+    ]),
+  );
+  if (uniqueRows.size === 0) return;
+  try {
+    await InventoryModelModel.bulkWrite(
+      [...uniqueRows.values()].map((row) => ({
+        updateOne: {
+          filter: {
+            categoryNormalized: normalized(row.category),
+            nameNormalized: normalized(row.name),
+            trackingMode: row.trackingMode,
           },
+          update: {
+            $setOnInsert: {
+              category: row.category,
+              name: row.name,
+              aliases: [],
+              createdBy: row.createdBy,
+            },
+          },
+          upsert: true,
         },
-        { upsert: true },
-      );
-    } catch (error) {
-      if ((error as { code?: number }).code !== 11000) throw error;
-    }
+      })),
+      { ordered: false },
+    );
+  } catch (error) {
+    // Concurrent requests can discover and insert the same legacy model. The unique
+    // model-master index makes that race harmless.
+    if ((error as { code?: number }).code !== 11000) throw error;
   }
 }
 
@@ -159,7 +177,7 @@ export async function listInventoryModels(
   category?: string,
   trackingMode?: TrackingMode,
 ): Promise<InventoryModel[]> {
-  await syncExistingModels();
+  await syncExistingModels(category, trackingMode);
   const records = await InventoryModelModel.find({
     ...(category ? { categoryNormalized: normalized(category) } : {}),
     ...(trackingMode ? { trackingMode } : {}),

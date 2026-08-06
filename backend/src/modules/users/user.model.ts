@@ -82,6 +82,7 @@ const UserSchema = new Schema<UserRecord>(
         'INVENTORY_EDIT',
         'INVENTORY_DELETE',
         'INVENTORY_QUANTITY_ADJUST',
+        'INVENTORY_MODELS_ADD',
         'ASSET_TYPES_MANAGE',
         'ASSET_TYPES_ADD',
         'ASSET_TYPES_DELETE',

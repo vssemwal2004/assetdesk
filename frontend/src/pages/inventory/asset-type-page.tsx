@@ -109,6 +109,7 @@ export function AssetTypePage() {
     'SERIALIZED',
   );
   const canAddAssetTypes = hasPermission(user, 'ASSET_TYPES_ADD');
+  const canAddModels = hasPermission(user, 'INVENTORY_MODELS_ADD');
   const canDeleteAssetTypes = hasPermission(user, 'ASSET_TYPES_DELETE');
 
   const query = useQuery({
@@ -300,7 +301,7 @@ export function AssetTypePage() {
         title="Inventory setup"
       />
 
-      {canAddAssetTypes ? (
+      {canAddModels ? (
         <AppCard>
           <div className="mb-4">
             <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
@@ -314,7 +315,7 @@ export function AssetTypePage() {
               can only use registered models.
             </p>
           </div>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+          <div className="grid gap-4 lg:grid-cols-[180px_minmax(220px,1fr)_minmax(220px,1fr)] lg:items-end">
             <div className="lg:w-48">
               <label className="field-label" htmlFor="model-material-type">
                 Model type
@@ -356,9 +357,35 @@ export function AssetTypePage() {
                   ))}
               </select>
             </div>
-            <div className="min-w-0 flex-[1.4]">
+            <div className="min-w-0">
+              <label className="field-label" htmlFor="registered-models">
+                Registered models
+              </label>
+              <select
+                className="field-input mt-1.5"
+                disabled={!modelCategory || modelsQuery.isPending || modelsQuery.isError}
+                id="registered-models"
+                value=""
+                onChange={() => undefined}
+              >
+                <option value="">
+                  {!modelCategory
+                    ? 'Choose category first'
+                    : modelsQuery.isPending
+                      ? 'Loading models...'
+                      : `${modelsQuery.data?.length ?? 0} models in this category`}
+                </option>
+                {(modelsQuery.data ?? []).map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-0 lg:col-span-2">
               <TextField
-                label="Add model"
+                autoComplete="off"
+                label="New model name"
                 maxLength={120}
                 onChange={(event) => setModelName(event.target.value)}
                 placeholder="Enter official model name"
@@ -366,6 +393,7 @@ export function AssetTypePage() {
               />
             </div>
             <Button
+              className="lg:col-start-3 lg:justify-self-end"
               disabled={!modelCategory || modelName.trim().length < 2}
               loading={modelMutation.isPending}
               onClick={() => modelMutation.mutate()}
@@ -375,10 +403,23 @@ export function AssetTypePage() {
             </Button>
           </div>
           {modelCategory ? (
-            <p className="mt-3 text-xs font-semibold text-[var(--color-text-muted)]">
-              {modelsQuery.data?.length ?? 0} registered models in {modelCategory}. Duplicate names
-              are blocked automatically.
-            </p>
+            modelsQuery.isError ? (
+              <div className="mt-3 flex items-center gap-3 text-sm font-bold text-[var(--color-danger)]">
+                <span>
+                  {isApiError(modelsQuery.error)
+                    ? modelsQuery.error.message
+                    : 'Models could not be loaded.'}
+                </span>
+                <Button onClick={() => modelsQuery.refetch()} type="button" variant="secondary">
+                  Try again
+                </Button>
+              </div>
+            ) : (
+              <p className="mt-3 text-xs font-semibold text-[var(--color-text-muted)]">
+                {modelsQuery.data?.length ?? 0} registered models in {modelCategory}. Duplicate
+                names are blocked automatically.
+              </p>
+            )
           ) : null}
         </AppCard>
       ) : null}

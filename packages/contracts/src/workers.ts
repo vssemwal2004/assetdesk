@@ -19,6 +19,7 @@ export const WorkerPermissionSchema = z.enum([
   'INVENTORY_EDIT',
   'INVENTORY_DELETE',
   'INVENTORY_QUANTITY_ADJUST',
+  'INVENTORY_MODELS_ADD',
   'ASSET_TYPES_MANAGE',
   'ASSET_TYPES_ADD',
   'ASSET_TYPES_DELETE',
@@ -54,6 +55,7 @@ const LEGACY_BROAD_PERMISSIONS = [
   'ASSET_TYPES_MANAGE',
   'ASSET_UNITS_MANAGE',
   'RECEIVERS_MANAGE',
+  'INVENTORY_MODELS_ADD',
 ] satisfies string[];
 
 export const DEFAULT_WORKER_PERMISSIONS = WorkerPermissionSchema.options.filter(
