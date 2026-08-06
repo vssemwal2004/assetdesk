@@ -401,6 +401,14 @@ function materialIdentity(
     : base;
 }
 
+function materialDisplayName(category: string, typeModelName: string): string {
+  const cleanCategory = category.trim().replace(/\s+/g, ' ');
+  const cleanModel = typeModelName.trim().replace(/\s+/g, ' ');
+  return cleanModel.toLocaleLowerCase('en-US').startsWith(cleanCategory.toLocaleLowerCase('en-US'))
+    ? cleanModel
+    : `${cleanCategory} ${cleanModel}`;
+}
+
 function materialConflict(): AppError {
   return new AppError(
     409,
@@ -699,6 +707,31 @@ export async function createMaterial(
   );
 }
 
+async function requireRegisteredInventoryModel(
+  category: string,
+  name: string,
+  trackingMode: TrackingMode,
+): Promise<string> {
+  const nameNormalized = normalizeAssetType(name);
+  const models = await InventoryModelModel.find({
+    categoryNormalized: normalizeAssetType(category),
+    trackingMode,
+  }).lean();
+  const registered = models.find(
+    (model) =>
+      model.nameNormalized === nameNormalized ||
+      model.aliases.some((alias) => normalizeAssetType(alias) === nameNormalized),
+  );
+  if (!registered) {
+    throw new AppError(
+      400,
+      'INVENTORY_MODEL_NOT_REGISTERED',
+      `Model "${name}" is not present in the database under ${category}. Add this model in Add asset details → Add Models first.`,
+    );
+  }
+  return registered.name;
+}
+
 export async function listMaterials(input: MaterialListInput): Promise<MaterialListResult> {
   const filter = buildMaterialListFilter(input);
 
@@ -824,7 +857,15 @@ export async function updateMaterial(
         input.category,
       );
     }
-    if (input.typeModelName !== undefined) material.typeModelName = input.typeModelName;
+    if (input.typeModelName !== undefined || input.category !== undefined) {
+      const requestedModel = input.typeModelName ?? material.typeModelName ?? material.name;
+      material.typeModelName = await requireRegisteredInventoryModel(
+        material.category,
+        requestedModel,
+        material.trackingMode,
+      );
+      material.name = materialDisplayName(material.category, material.typeModelName);
+    }
     if (input.configuration !== undefined) material.configuration = input.configuration;
     if (input.location !== undefined)
       material.location = await requireSavedDetail('LOCATION', input.location);

@@ -457,11 +457,13 @@ export async function previewInventoryImport(
       const category = categories.get(key);
       return [
         key,
-        new Set(
+        new Map(
           category
-            ? (await listInventoryModels(category, mode))
-                .flatMap((model) => [model.name, ...model.aliases])
-                .map(normalizedLookup)
+            ? (await listInventoryModels(category, mode)).flatMap((model) =>
+                [model.name, ...model.aliases].map(
+                  (name) => [normalizedLookup(name), model.name] as const,
+                ),
+              )
             : [],
         ),
       ] as const;
@@ -489,16 +491,17 @@ export async function previewInventoryImport(
       const location = locations.get(normalizedLookup(values.location));
       const block = blocks.get(normalizedLookup(values.block));
       if (!category) throw missingDropdownValue(categoryDetailKind, values.category);
-      if (
-        !registeredModels.get(normalizedLookup(values.category))?.has(normalizedLookup(itemName))
-      ) {
+      const registeredModel = registeredModels
+        .get(normalizedLookup(values.category))
+        ?.get(normalizedLookup(itemName));
+      if (!registeredModel) {
         throw new Error(
-          `Model "${itemName}" is not registered under ${category}. Add it in Add asset details → Add Models first.`,
+          `Model "${itemName}" is not present in the database under ${category}. Add this model in Add asset details → Add Models, then upload the file again.`,
         );
       }
       if (!location) throw missingDropdownValue('LOCATION', values.location);
       if (!block) throw missingDropdownValue('BLOCK', values.block);
-      const displayName = materialName(category, itemName);
+      const displayName = materialName(category, registeredModel);
       const locationBlock = `${location} / ${block}`;
       let draft: CreateMaterialRequest;
       if (mode === 'SERIALIZED') {
@@ -518,7 +521,7 @@ export async function previewInventoryImport(
         draft = CreateMaterialRequestSchema.parse({
           name: displayName,
           category,
-          typeModelName: itemName,
+          typeModelName: registeredModel,
           location,
           block,
           locationBlock,
@@ -563,7 +566,7 @@ export async function previewInventoryImport(
         draft = CreateMaterialRequestSchema.parse({
           name: displayName,
           category,
-          typeModelName: itemName,
+          typeModelName: registeredModel,
           location,
           block,
           locationBlock,

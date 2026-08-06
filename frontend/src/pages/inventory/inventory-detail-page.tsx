@@ -55,6 +55,7 @@ import {
   deleteMaterial,
   getAssetDetails,
   getAssetUnits,
+  getInventoryModels,
   getMaterial,
   setMaterialStatus,
   updateAssetUnit,
@@ -854,6 +855,11 @@ function EditMaterialForm({
   const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
   const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
   const departments = detailsQuery.data?.filter((detail) => detail.kind === 'DEPARTMENT') ?? [];
+  const modelsQuery = useQuery({
+    queryKey: ['inventory-models', form.category, material.trackingMode],
+    queryFn: ({ signal }) => getInventoryModels(form.category, material.trackingMode, signal),
+    enabled: Boolean(form.category),
+  });
   const mutation = useMutation({
     mutationFn: (input: UpdateMaterialRequest) => updateMaterial(material.materialCode, input),
     onSuccess: onSaved,
@@ -889,20 +895,29 @@ function EditMaterialForm({
     <form className="mt-5 space-y-5" noValidate onSubmit={submit}>
       {message ? <ErrorSummary message={message} /> : null}
       <div className="grid gap-5 sm:grid-cols-2">
-        <TextField
+        <SelectField
+          disabled={!form.category || modelsQuery.isPending}
+          id="edit-material-model"
           label="Type/model name"
-          onChange={(event) =>
-            setForm((value) => ({
-              ...value,
-              name: event.target.value,
-              typeModelName: event.target.value,
-            }))
+          onChange={(typeModelName) =>
+            setForm((value) => ({ ...value, name: typeModelName, typeModelName }))
           }
           value={form.typeModelName}
-        />
+        >
+          <option value="">
+            {form.category ? 'Choose registered model' : 'Choose category first'}
+          </option>
+          {(modelsQuery.data ?? []).map((model) => (
+            <option key={model.id} value={model.name}>
+              {model.name}
+            </option>
+          ))}
+        </SelectField>
         <MaterialCategoryField
           id="edit-material-category"
-          onChange={(category) => setForm((value) => ({ ...value, category }))}
+          onChange={(category) =>
+            setForm((value) => ({ ...value, category, name: '', typeModelName: '' }))
+          }
           trackingMode={material.trackingMode}
           value={form.category}
         />

@@ -4,6 +4,7 @@ import type { InventoryModel, TrackingMode } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
 import { InventoryModelModel, type InventoryModelRecord } from './inventory-model.model.js';
+import { InventoryImportModel } from './inventory-import.model.js';
 import { MaterialModel } from './material.model.js';
 
 function normalized(value: string): string {
@@ -66,6 +67,44 @@ async function publicModel(record: InventoryModelRecord): Promise<InventoryModel
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   };
+}
+
+async function updatePendingImports(
+  category: string,
+  trackingMode: TrackingMode,
+  previousNames: string[],
+  canonical: string,
+): Promise<void> {
+  const importRecords = await InventoryImportModel.find({
+    status: 'PREVIEWED',
+    mode: trackingMode,
+  });
+  const categoryKey = normalized(category);
+  const previousKeys = new Set(previousNames.map(normalized));
+  for (const importRecord of importRecords) {
+    let changed = false;
+    for (const row of importRecord.rows) {
+      const rowModel = row.typeModelName ?? row.name;
+      if (normalized(row.category) === categoryKey && previousKeys.has(normalized(rowModel))) {
+        row.name = canonical;
+        row.typeModelName = canonical;
+        changed = true;
+      }
+    }
+    for (const input of importRecord.inputs) {
+      const inputModel = input.typeModelName ?? input.name;
+      if (normalized(input.category) === categoryKey && previousKeys.has(normalized(inputModel))) {
+        input.typeModelName = canonical;
+        input.name = canonical
+          .toLocaleLowerCase('en-US')
+          .startsWith(category.toLocaleLowerCase('en-US'))
+          ? canonical
+          : `${category} ${canonical}`;
+        changed = true;
+      }
+    }
+    if (changed) await importRecord.save();
+  }
 }
 
 async function syncExistingModels(): Promise<void> {
@@ -295,6 +334,7 @@ export async function mergeInventoryModels(
     },
     { $set: { typeModelName: canonical, name: materialName } },
   );
+  await updatePendingImports(first.category, first.trackingMode, names, canonical);
   await InventoryModelModel.deleteMany({ _id: { $in: records.map((record) => record._id) } });
   const model = await createInventoryModel(
     first.category,
@@ -370,6 +410,7 @@ export async function updateInventoryModel(modelId: string, name: string): Promi
     },
     { $set: { typeModelName: canonical, name: materialName } },
   );
+  await updatePendingImports(record.category, record.trackingMode, previousNames, canonical);
   if (normalized(record.name) !== nameNormalized)
     record.aliases = [...new Set([...record.aliases, record.name])];
   record.name = canonical;
