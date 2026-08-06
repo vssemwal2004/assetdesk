@@ -37,6 +37,7 @@ const CreateMaterialBaseSchema = z.object({
   typeModelName: NameSchema,
   location: LocationSchema,
   block: BlockSchema,
+  department: DepartmentSchema.optional(),
   vendorName: VendorNameSchema.optional(),
   locationBlock: LocationBlockSchema.optional(),
   description: DescriptionSchema.optional(),
@@ -255,6 +256,36 @@ export const AssetTypeSchema = z.object({
 
 export const AssetTypesResponseSchema = z.object({ data: z.array(AssetTypeSchema) });
 export const CreateAssetTypeRequestSchema = z.object({ name: AssetTypeNameSchema }).strict();
+export const InventoryModelSchema = z.object({
+  id: z.string().min(1),
+  category: CategorySchema,
+  name: NameSchema,
+  trackingMode: TrackingModeSchema,
+  aliases: z.array(z.string()),
+  materialCount: z.number().int().nonnegative(),
+  totalQuantity: z.number().int().nonnegative(),
+  availableQuantity: z.number().int().nonnegative(),
+  issuedQuantity: z.number().int().nonnegative(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+export const InventoryModelsResponseSchema = z.object({ data: z.array(InventoryModelSchema) });
+export const InventoryModelResponseSchema = z.object({
+  data: z.object({ model: InventoryModelSchema }),
+});
+export const CreateInventoryModelRequestSchema = z
+  .object({ category: CategorySchema, name: NameSchema, trackingMode: TrackingModeSchema })
+  .strict();
+export const MergeInventoryModelsRequestSchema = z
+  .object({ modelIds: z.array(z.string().min(1)).min(2).max(200), canonicalName: NameSchema })
+  .strict();
+export const UpdateInventoryModelRequestSchema = z.object({ name: NameSchema }).strict();
+export const InventoryModelMutationResponseSchema = z.object({
+  data: z.object({
+    model: InventoryModelSchema,
+    mergedMaterialCount: z.number().int().nonnegative(),
+  }),
+});
 export const AssetDetailKindSchema = z.enum([
   'ASSET_TYPE',
   'CONSUMABLE_TYPE',
@@ -272,6 +303,9 @@ export const AssetDetailSchema = z.object({
 export const AssetDetailsResponseSchema = z.object({ data: z.array(AssetDetailSchema) });
 export const CreateAssetDetailRequestSchema = z
   .object({ kind: AssetDetailKindSchema, name: z.string().trim().min(1).max(120) })
+  .strict();
+export const UpdateAssetDetailRequestSchema = z
+  .object({ name: z.string().trim().min(1).max(120) })
   .strict();
 export const AssetTypeImportResponseSchema = z.object({
   data: z.object({
@@ -317,9 +351,14 @@ export type Material = z.infer<typeof MaterialSchema>;
 export type AssetUnit = z.infer<typeof AssetUnitSchema>;
 export type AssetType = z.infer<typeof AssetTypeSchema>;
 export type CreateAssetTypeRequest = z.infer<typeof CreateAssetTypeRequestSchema>;
+export type InventoryModel = z.infer<typeof InventoryModelSchema>;
+export type CreateInventoryModelRequest = z.infer<typeof CreateInventoryModelRequestSchema>;
+export type MergeInventoryModelsRequest = z.infer<typeof MergeInventoryModelsRequestSchema>;
+export type UpdateInventoryModelRequest = z.infer<typeof UpdateInventoryModelRequestSchema>;
 export type AssetDetailKind = z.infer<typeof AssetDetailKindSchema>;
 export type AssetDetail = z.infer<typeof AssetDetailSchema>;
 export type CreateAssetDetailRequest = z.infer<typeof CreateAssetDetailRequestSchema>;
+export type UpdateAssetDetailRequest = z.infer<typeof UpdateAssetDetailRequestSchema>;
 export type AssetTypeImportResponse = z.infer<typeof AssetTypeImportResponseSchema>;
 export type AssetTypeImportPreviewResponse = z.infer<typeof AssetTypeImportPreviewResponseSchema>;
 export type MaterialResponse = z.infer<typeof MaterialResponseSchema>;

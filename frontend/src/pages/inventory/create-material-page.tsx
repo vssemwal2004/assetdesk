@@ -14,7 +14,7 @@ import {
 import { SelectField } from '../../components/catalog-ui';
 import { AppCard, Button, ErrorSummary, PageHeader, TextField } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
-import { createMaterial, getAssetDetails } from '../../lib/inventory-api';
+import { createMaterial, getAssetDetails, getInventoryModels } from '../../lib/inventory-api';
 import { inventoryStatusLabel } from '../../lib/inventory-status';
 import { MaterialCategoryField } from './material-category-field';
 
@@ -25,6 +25,7 @@ interface MaterialForm {
   configuration: string;
   location: string;
   block: string;
+  department: string;
   vendorName: string;
   description: string;
   trackingMode: TrackingMode;
@@ -42,6 +43,7 @@ const initialForm: MaterialForm = {
   configuration: '',
   location: '',
   block: '',
+  department: '',
   vendorName: '',
   description: '',
   trackingMode: 'SERIALIZED',
@@ -109,6 +111,8 @@ function materialFormMessage(form: MaterialForm): string | null {
 export function CreateMaterialPage() {
   const navigate = useNavigate();
   const [parameters] = useSearchParams();
+  const categoryPreset = Boolean(parameters.get('category'));
+  const modePreset = Boolean(parameters.get('trackingMode'));
   const queryClient = useQueryClient();
   const [form, setForm] = useState<MaterialForm>(() => {
     const requestedMode = parameters.get('trackingMode');
@@ -128,6 +132,12 @@ export function CreateMaterialPage() {
   });
   const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
   const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
+  const departments = detailsQuery.data?.filter((detail) => detail.kind === 'DEPARTMENT') ?? [];
+  const modelsQuery = useQuery({
+    queryKey: ['inventory-models', form.category, form.trackingMode],
+    queryFn: ({ signal }) => getInventoryModels(form.category, form.trackingMode, signal),
+    enabled: Boolean(form.category),
+  });
 
   const mutation = useMutation({
     mutationFn: (input: CreateMaterialRequest) => createMaterial(input),
@@ -158,6 +168,7 @@ export function CreateMaterialPage() {
       typeModelName: form.typeModelName,
       location: form.location,
       block: form.block,
+      ...(form.department ? { department: form.department } : {}),
       ...(form.vendorName.trim() ? { vendorName: form.vendorName } : {}),
       ...(form.description.trim() ? { description: form.description } : {}),
       status: form.status,
@@ -259,6 +270,7 @@ export function CreateMaterialPage() {
         <form className="mt-5 space-y-5" noValidate onSubmit={submit}>
           <div className="grid gap-4 md:grid-cols-2">
             <SelectField
+              disabled={modePreset}
               id="material-tracking-mode"
               label="Type of material"
               onChange={(value) => setTrackingMode(value as TrackingMode)}
@@ -285,23 +297,32 @@ export function CreateMaterialPage() {
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             <MaterialCategoryField
+              disabled={categoryPreset}
               id="material-category"
-              onChange={(category) => setForm((value) => ({ ...value, category }))}
+              onChange={(category) =>
+                setForm((value) => ({ ...value, category, typeModelName: '', name: '' }))
+              }
               trackingMode={form.trackingMode}
               value={form.category}
             />
-            <TextField
-              label="Type/model name"
-              onChange={(event) =>
-                setForm((value) => ({
-                  ...value,
-                  typeModelName: event.target.value,
-                  name: event.target.value,
-                }))
+            <SelectField
+              disabled={!form.category || modelsQuery.isPending}
+              id="material-model"
+              label="Model"
+              onChange={(typeModelName) =>
+                setForm((value) => ({ ...value, typeModelName, name: typeModelName }))
               }
-              required
               value={form.typeModelName}
-            />
+            >
+              <option value="">
+                {form.category ? 'Choose registered model' : 'Choose category first'}
+              </option>
+              {(modelsQuery.data ?? []).map((model) => (
+                <option key={model.id} value={model.name}>
+                  {model.name}
+                </option>
+              ))}
+            </SelectField>
             <SelectField
               id="material-location"
               label="Location"
@@ -325,6 +346,19 @@ export function CreateMaterialPage() {
               {blocks.map((block) => (
                 <option key={block.id} value={block.name}>
                   {block.name}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              id="material-department"
+              label="Department"
+              onChange={(department) => setForm((value) => ({ ...value, department }))}
+              value={form.department}
+            >
+              <option value="">Choose department (optional)</option>
+              {departments.map((department) => (
+                <option key={department.id} value={department.name}>
+                  {department.name}
                 </option>
               ))}
             </SelectField>

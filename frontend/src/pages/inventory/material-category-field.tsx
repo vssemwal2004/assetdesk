@@ -13,11 +13,13 @@ export function MaterialCategoryField({
   value,
   trackingMode,
   onChange,
+  disabled = false,
 }: {
   id: string;
   value: string;
   trackingMode: TrackingMode;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   const query = useQuery({
     queryKey: ['asset-details'],
@@ -40,6 +42,7 @@ export function MaterialCategoryField({
       <select
         aria-describedby={hintId}
         className="field-input"
+        disabled={disabled}
         id={id}
         onChange={(event) => onChange(event.target.value)}
         required

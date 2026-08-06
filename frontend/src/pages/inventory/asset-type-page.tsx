@@ -5,6 +5,8 @@ import {
   Download,
   FileSpreadsheet,
   PackagePlus,
+  Pencil,
+  MoreVertical,
   Search,
   Trash2,
   Upload,
@@ -29,9 +31,12 @@ import {
   commitAssetTypeImport,
   createAssetDetail,
   createAssetType,
+  createInventoryModel,
   deleteAssetDetail,
   getAssetDetails,
+  getInventoryModels,
   previewAssetTypeImport,
+  updateAssetDetail,
   type AssetTypeImportPreviewResponse,
   type AssetTypeImportResponse,
 } from '../../lib/inventory-api';
@@ -96,12 +101,42 @@ export function AssetTypePage() {
   const [preview, setPreview] = useState<AssetTypeImportPreviewResponse['data'] | null>(null);
   const [result, setResult] = useState<AssetTypeImportResponse['data'] | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AssetDetail | null>(null);
+  const [editTarget, setEditTarget] = useState<AssetDetail | null>(null);
+  const [editName, setEditName] = useState('');
+  const [modelCategory, setModelCategory] = useState('');
+  const [modelName, setModelName] = useState('');
+  const [modelTrackingMode, setModelTrackingMode] = useState<'SERIALIZED' | 'QUANTITY'>(
+    'SERIALIZED',
+  );
   const canAddAssetTypes = hasPermission(user, 'ASSET_TYPES_ADD');
   const canDeleteAssetTypes = hasPermission(user, 'ASSET_TYPES_DELETE');
 
   const query = useQuery({
     queryKey: ['asset-details'],
     queryFn: ({ signal }) => getAssetDetails(undefined, signal),
+  });
+  const modelsQuery = useQuery({
+    queryKey: ['inventory-models', modelCategory, modelTrackingMode],
+    queryFn: ({ signal }) => getInventoryModels(modelCategory, modelTrackingMode, signal),
+    enabled: Boolean(modelCategory),
+  });
+  const modelMutation = useMutation({
+    mutationFn: () =>
+      createInventoryModel({
+        category: modelCategory,
+        name: modelName,
+        trackingMode: modelTrackingMode,
+      }),
+    onSuccess: async (model) => {
+      setModelName('');
+      setMessageIsSuccess(true);
+      setMessage(`${model.name} added under ${model.category}.`);
+      await queryClient.invalidateQueries({ queryKey: ['inventory-models'] });
+    },
+    onError: (error) => {
+      setMessageIsSuccess(false);
+      setMessage(isApiError(error) ? error.message : 'The model could not be added.');
+    },
   });
 
   const createMutation = useMutation({
@@ -174,6 +209,23 @@ export function AssetTypePage() {
       setMessage(isApiError(error) ? error.message : 'The asset type could not be deleted.');
     },
   });
+  const editMutation = useMutation({
+    mutationFn: () => updateAssetDetail(editTarget?.id ?? '', editName.trim()),
+    onSuccess: async (detail) => {
+      setEditTarget(null);
+      setEditName('');
+      setMessageIsSuccess(true);
+      setMessage(`${detail.name} updated successfully.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['asset-types'] }),
+        queryClient.invalidateQueries({ queryKey: ['asset-details'] }),
+      ]);
+    },
+    onError: (error) => {
+      setMessageIsSuccess(false);
+      setMessage(isApiError(error) ? error.message : 'The detail could not be updated.');
+    },
+  });
 
   function submitIndividual(event: FormEvent) {
     event.preventDefault();
@@ -236,7 +288,7 @@ export function AssetTypePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         actions={
           <Link className="button-quiet" to="/inventory">
@@ -244,12 +296,106 @@ export function AssetTypePage() {
             Back to Inventory
           </Link>
         }
-        description="Save allowed IT Asset, IT Consumable, Location, Block, and Department dropdown values for inventory."
-        title="Add asset details"
+        description="Manage the controlled values used by inventory forms and imports."
+        title="Inventory setup"
       />
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_430px]">
+      {canAddAssetTypes ? (
         <AppCard>
+          <div className="mb-4">
+            <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+              Model master
+            </p>
+            <h2 className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]">
+              Add registered model
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Choose a category first, then save the official model name. Materials and bulk uploads
+              can only use registered models.
+            </p>
+          </div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+            <div className="lg:w-48">
+              <label className="field-label" htmlFor="model-material-type">
+                Model type
+              </label>
+              <select
+                className="field-input mt-1.5"
+                id="model-material-type"
+                onChange={(event) => {
+                  setModelTrackingMode(event.target.value as 'SERIALIZED' | 'QUANTITY');
+                  setModelCategory('');
+                }}
+                value={modelTrackingMode}
+              >
+                <option value="SERIALIZED">IT Asset</option>
+                <option value="QUANTITY">IT Consumable</option>
+              </select>
+            </div>
+            <div className="min-w-0 flex-1">
+              <label className="field-label" htmlFor="model-category">
+                Category
+              </label>
+              <select
+                className="field-input mt-1.5"
+                id="model-category"
+                onChange={(event) => setModelCategory(event.target.value)}
+                value={modelCategory}
+              >
+                <option value="">Choose category</option>
+                {(query.data ?? [])
+                  .filter(
+                    (detail) =>
+                      detail.kind ===
+                      (modelTrackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE'),
+                  )
+                  .map((detail) => (
+                    <option key={detail.id} value={detail.name}>
+                      {detail.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="min-w-0 flex-[1.4]">
+              <TextField
+                label="Add model"
+                maxLength={120}
+                onChange={(event) => setModelName(event.target.value)}
+                placeholder="Enter official model name"
+                value={modelName}
+              />
+            </div>
+            <Button
+              disabled={!modelCategory || modelName.trim().length < 2}
+              loading={modelMutation.isPending}
+              onClick={() => modelMutation.mutate()}
+              type="button"
+            >
+              Add model
+            </Button>
+          </div>
+          {modelCategory ? (
+            <p className="mt-3 text-xs font-semibold text-[var(--color-text-muted)]">
+              {modelsQuery.data?.length ?? 0} registered models in {modelCategory}. Duplicate names
+              are blocked automatically.
+            </p>
+          ) : null}
+        </AppCard>
+      ) : null}
+
+      <div className="grid items-start gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <AppCard className="xl:order-2">
+          <div className="mb-5">
+            <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+              Reference data
+            </p>
+            <h2 className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]">
+              Add categories and locations
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Maintain only the reusable dropdown values required across inventory.
+            </p>
+          </div>
           <div className="mb-5 grid grid-cols-2 gap-2">
             {canAddAssetTypes ? (
               <Button
@@ -484,10 +630,16 @@ export function AssetTypePage() {
           ) : null}
         </AppCard>
 
-        <AppCard>
-          <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-            Saved asset details
+        <AppCard className="xl:sticky xl:top-5 xl:order-1">
+          <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+            Directory
+          </p>
+          <h2 className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]">
+            Master-data directory
           </h2>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+            Select a data type, then manage every saved value from its action menu.
+          </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px] lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_160px]">
             <label className="relative block">
               <span className="sr-only">Search saved asset details</span>
@@ -532,7 +684,7 @@ export function AssetTypePage() {
               No asset details saved yet.
             </p>
           ) : (
-            <ul className="mt-4 max-h-[560px] space-y-2 overflow-auto pr-1">
+            <ul className="mt-4 max-h-[620px] space-y-1.5 overflow-auto pr-1">
               {query.data
                 .filter((detail) => savedKind === 'ALL' || detail.kind === savedKind)
                 .filter((detail) =>
@@ -540,7 +692,7 @@ export function AssetTypePage() {
                 )
                 .map((assetType) => (
                   <li
-                    className="flex items-center justify-between gap-3 rounded-[8px] border border-[var(--color-border)] px-3 py-3 text-[15px] font-bold text-[var(--color-text-strong)]"
+                    className="group flex items-center justify-between gap-3 rounded-[8px] border border-transparent bg-[var(--color-surface-tint)] px-3 py-2.5 text-[14px] font-bold text-[var(--color-text-strong)] transition hover:border-[var(--color-primary-border)] hover:bg-white"
                     key={assetType.id}
                   >
                     <span className="min-w-0 break-words">
@@ -550,17 +702,41 @@ export function AssetTypePage() {
                       {assetType.name}
                     </span>
                     {canDeleteAssetTypes ? (
-                      <Button
-                        aria-label={`Delete ${assetType.name}`}
-                        onClick={() => {
-                          setMessage(null);
-                          setDeleteTarget(assetType);
-                        }}
-                        type="button"
-                        variant="danger"
-                      >
-                        <Trash2 aria-hidden="true" size={16} />
-                      </Button>
+                      <details className="relative">
+                        <summary
+                          aria-label={`Actions for ${assetType.name}`}
+                          className="icon-button list-none marker:hidden"
+                        >
+                          <MoreVertical size={17} />
+                        </summary>
+                        <div className="absolute right-0 top-full z-50 mt-2 w-40 rounded-[10px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
+                          {canAddAssetTypes ? (
+                            <button
+                              className="menu-item w-full"
+                              onClick={() => {
+                                setMessage(null);
+                                setEditTarget(assetType);
+                                setEditName(assetType.name);
+                              }}
+                              type="button"
+                            >
+                              <Pencil size={16} />
+                              Edit
+                            </button>
+                          ) : null}
+                          <button
+                            className="menu-item w-full text-[var(--color-danger)]"
+                            onClick={() => {
+                              setMessage(null);
+                              setDeleteTarget(assetType);
+                            }}
+                            type="button"
+                          >
+                            <Trash2 size={16} />
+                            Delete
+                          </button>
+                        </div>
+                      </details>
                     ) : null}
                   </li>
                 ))}
@@ -568,6 +744,58 @@ export function AssetTypePage() {
           )}
         </AppCard>
       </div>
+
+      {editTarget ? (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-[120] grid place-items-center bg-slate-950/40 p-4"
+          role="dialog"
+        >
+          <form
+            className="w-[min(92vw,500px)] rounded-[14px] border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-overlay)]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (editName.trim().length > 0) editMutation.mutate();
+            }}
+          >
+            <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+              {detailLabels[editTarget.kind]}
+            </p>
+            <h2 className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]">
+              Edit reference value
+            </h2>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+              Rename this controlled dropdown value. Values already used by inventory are protected.
+            </p>
+            <div className="mt-5">
+              <TextField
+                autoFocus
+                label="Name"
+                maxLength={120}
+                onChange={(event) => setEditName(event.target.value)}
+                value={editName}
+              />
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                disabled={editMutation.isPending}
+                onClick={() => setEditTarget(null)}
+                type="button"
+                variant="secondary"
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={!editName.trim() || editName.trim() === editTarget.name}
+                loading={editMutation.isPending}
+                type="submit"
+              >
+                Save changes
+              </Button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       {deleteTarget ? (
         <div

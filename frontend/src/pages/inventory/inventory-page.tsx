@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Download,
+  FileSpreadsheet,
   ChevronDown,
   Eye,
   MoreVertical,
@@ -44,6 +45,10 @@ import {
   getAssetDetails,
   getInventory,
   getAssetUnits,
+  getInventoryModels,
+  mergeInventoryModels,
+  updateInventoryModel,
+  deleteInventoryModel,
 } from '../../lib/inventory-api';
 import { isApiError } from '../../lib/api-client';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
@@ -189,6 +194,18 @@ export function InventoryPage() {
   const [deleteTarget, setDeleteTarget] = useState<Material | null>(null);
   const [viewMaterial, setViewMaterial] = useState<Material | null>(null);
   const [quantityTarget, setQuantityTarget] = useState<Material | null>(null);
+  const [addCategory, setAddCategory] = useState<MaterialGroup | null>(null);
+  const [mergeCategory, setMergeCategory] = useState<MaterialGroup | null>(null);
+  const [mergeModelIds, setMergeModelIds] = useState<string[]>([]);
+  const [canonicalModelName, setCanonicalModelName] = useState('');
+  const [mergeStep, setMergeStep] = useState<1 | 2>(1);
+  const [modelCrud, setModelCrud] = useState<{
+    category: string;
+    name: string;
+    trackingMode: TrackingMode;
+    action: 'EDIT' | 'DELETE';
+  } | null>(null);
+  const [editedModelName, setEditedModelName] = useState('');
   const [downloading, setDownloading] = useState(false);
   const search = parameters.get('search') ?? '';
   const category = parameters.get('category') ?? '';
@@ -259,6 +276,62 @@ export function InventoryPage() {
       };
     },
     placeholderData: (previous) => previous,
+  });
+  const mergeModelsQuery = useQuery({
+    queryKey: ['inventory-models', mergeCategory?.category],
+    queryFn: ({ signal }) => getInventoryModels(mergeCategory?.category, undefined, signal),
+    enabled: Boolean(mergeCategory),
+  });
+  const mergeModelsMutation = useMutation({
+    mutationFn: () =>
+      mergeInventoryModels({ modelIds: mergeModelIds, canonicalName: canonicalModelName }),
+    onSuccess: async (result) => {
+      setMergeCategory(null);
+      setMergeModelIds([]);
+      setCanonicalModelName('');
+      setMergeStep(1);
+      setActionNotice(
+        `${result.mergedMaterialCount} stock variants merged under ${result.model.name}.`,
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inventory'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-models'] }),
+      ]);
+    },
+    onError: (error) =>
+      setActionError(isApiError(error) ? error.message : 'Models could not be merged.'),
+  });
+  const crudModelsQuery = useQuery({
+    queryKey: ['inventory-models', modelCrud?.category, modelCrud?.trackingMode],
+    queryFn: ({ signal }) =>
+      getInventoryModels(modelCrud?.category, modelCrud?.trackingMode, signal),
+    enabled: Boolean(modelCrud),
+  });
+  const crudModel = crudModelsQuery.data?.find(
+    (model) => model.name.toLocaleUpperCase('en-US') === modelCrud?.name.toLocaleUpperCase('en-US'),
+  );
+  const updateModelMutation = useMutation({
+    mutationFn: () => updateInventoryModel(crudModel?.id ?? '', editedModelName),
+    onSuccess: async () => {
+      setModelCrud(null);
+      setActionNotice(`Model renamed to ${editedModelName.trim()}.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inventory'] }),
+        queryClient.invalidateQueries({ queryKey: ['inventory-models'] }),
+      ]);
+    },
+    onError: (error) =>
+      setActionError(isApiError(error) ? error.message : 'Model could not be updated.'),
+  });
+  const deleteModelMutation = useMutation({
+    mutationFn: () => deleteInventoryModel(crudModel?.id ?? ''),
+    onSuccess: async () => {
+      setModelCrud(null);
+      setActionNotice('Unused model deleted.');
+      await queryClient.invalidateQueries({ queryKey: ['inventory-models'] });
+    },
+    onError: (error) =>
+      setActionError(isApiError(error) ? error.message : 'Model could not be deleted.'),
   });
 
   function updateParameters(updates: Record<string, string>) {
@@ -683,7 +756,31 @@ export function InventoryPage() {
             materials={materials}
             onDelete={confirmDelete}
             onAdjustQuantity={setQuantityTarget}
+            onAddCategory={setAddCategory}
             onView={setViewMaterial}
+            {...(user?.role === 'ADMIN'
+              ? {
+                  onModelCrud: (target: {
+                    category: string;
+                    name: string;
+                    trackingMode: TrackingMode;
+                    action: 'EDIT' | 'DELETE';
+                  }) => {
+                    setModelCrud(target);
+                    setEditedModelName(target.name);
+                  },
+                }
+              : {})}
+            {...(user?.role === 'ADMIN'
+              ? {
+                  onMergeCategory: (group: MaterialGroup) => {
+                    setMergeCategory(group);
+                    setMergeModelIds([]);
+                    setCanonicalModelName('');
+                    setMergeStep(1);
+                  },
+                }
+              : {})}
           />
         </>
       )}
@@ -717,6 +814,269 @@ export function InventoryPage() {
             await queryClient.invalidateQueries({ queryKey: ['inventory'] });
           }}
         />
+      ) : null}
+      {addCategory ? (
+        <Dialog
+          label={`Add material to ${addCategory.category}`}
+          onClose={() => setAddCategory(null)}
+        >
+          <div className="p-6 pr-16">
+            <h2 className="text-xl font-extrabold text-[var(--color-primary-strong)]">
+              Add to {addCategory.category}
+            </h2>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+              Choose how you want to register stock. The category and material type will remain
+              fixed.
+            </p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <Link
+                className="rounded-[12px] border border-[var(--color-border)] p-5 transition hover:border-[var(--color-primary-border)] hover:bg-[var(--color-surface-tint)]"
+                to={`/inventory/new?category=${encodeURIComponent(addCategory.category)}&trackingMode=${addCategory.materials[0]?.trackingMode ?? 'SERIALIZED'}`}
+              >
+                <PackagePlus className="text-[var(--color-primary)]" size={22} />
+                <p className="mt-3 font-extrabold">Individual material</p>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  Add configuration, location, vendor and serials/quantity.
+                </p>
+              </Link>
+              <Link
+                className="rounded-[12px] border border-[var(--color-border)] p-5 transition hover:border-[var(--color-primary-border)] hover:bg-[var(--color-surface-tint)]"
+                to={`/inventory/import?category=${encodeURIComponent(addCategory.category)}&trackingMode=${addCategory.materials[0]?.trackingMode ?? 'SERIALIZED'}`}
+              >
+                <FileSpreadsheet className="text-[var(--color-primary)]" size={22} />
+                <p className="mt-3 font-extrabold">Bulk upload</p>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  Upload multiple stock rows for this category.
+                </p>
+              </Link>
+            </div>
+          </div>
+        </Dialog>
+      ) : null}
+      {mergeCategory ? (
+        <Dialog
+          label={`Merge models in ${mergeCategory.category}`}
+          onClose={() => {
+            setMergeCategory(null);
+            setMergeModelIds([]);
+            setCanonicalModelName('');
+            setMergeStep(1);
+          }}
+        >
+          <div className="max-h-[88vh] overflow-y-auto p-6 pr-16">
+            <h2 className="text-xl font-extrabold text-[var(--color-primary-strong)]">
+              Merge {mergeCategory.category} models
+            </h2>
+            <div className="mt-4 grid grid-cols-2 gap-2" aria-label="Merge progress">
+              <div
+                className={`rounded-[10px] border px-3 py-2 text-sm font-bold ${mergeStep === 1 ? 'border-[var(--color-primary)] bg-[var(--color-surface-tint)] text-[var(--color-primary-strong)]' : 'border-[var(--color-border)]'}`}
+              >
+                1. Select models
+              </div>
+              <div
+                className={`rounded-[10px] border px-3 py-2 text-sm font-bold ${mergeStep === 2 ? 'border-[var(--color-primary)] bg-[var(--color-surface-tint)] text-[var(--color-primary-strong)]' : 'border-[var(--color-border)]'}`}
+              >
+                2. Choose common name
+              </div>
+            </div>
+            {mergeStep === 1 ? (
+              <>
+                <p className="mt-4 text-sm text-[var(--color-text-muted)]">
+                  Select at least two duplicate models. Their configurations, locations, quantities,
+                  serials and history will remain separate.
+                </p>
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="field-label">Models ({mergeModelIds.length} selected)</p>
+                  <Button
+                    disabled={
+                      mergeModelsQuery.isPending || (mergeModelsQuery.data ?? []).length === 0
+                    }
+                    onClick={() =>
+                      setMergeModelIds((current) =>
+                        current.length > 0 &&
+                        current.length === (mergeModelsQuery.data ?? []).length
+                          ? []
+                          : (mergeModelsQuery.data ?? []).map((model) => model.id),
+                      )
+                    }
+                    type="button"
+                    variant="quiet"
+                  >
+                    {mergeModelIds.length > 0 &&
+                    mergeModelIds.length === (mergeModelsQuery.data ?? []).length
+                      ? 'Clear all'
+                      : 'Select all'}
+                  </Button>
+                </div>
+                <div className="mt-2 max-h-72 space-y-2 overflow-auto rounded-[10px] border border-[var(--color-border)] p-2">
+                  {mergeModelsQuery.isPending ? (
+                    <div className="p-5 text-center text-sm text-[var(--color-text-muted)]">
+                      Loading models…
+                    </div>
+                  ) : mergeModelsQuery.isError ? (
+                    <div className="p-5 text-center">
+                      <p className="text-sm font-bold text-[var(--color-danger)]">
+                        Models could not be loaded.
+                      </p>
+                      <Button
+                        className="mt-3"
+                        onClick={() => mergeModelsQuery.refetch()}
+                        type="button"
+                        variant="secondary"
+                      >
+                        Try again
+                      </Button>
+                    </div>
+                  ) : (mergeModelsQuery.data ?? []).length === 0 ? (
+                    <div className="p-5 text-center text-sm text-[var(--color-text-muted)]">
+                      No registered models were found in this category. Restart the backend once so
+                      existing inventory models can be synchronized.
+                    </div>
+                  ) : null}
+                  {(mergeModelsQuery.data ?? []).map((model) => (
+                    <label
+                      className="flex cursor-pointer items-center gap-3 rounded-[8px] p-3 hover:bg-[var(--color-surface-tint)]"
+                      key={model.id}
+                    >
+                      <input
+                        checked={mergeModelIds.includes(model.id)}
+                        onChange={(event) =>
+                          setMergeModelIds((current) =>
+                            event.target.checked
+                              ? [...current, model.id]
+                              : current.filter((id) => id !== model.id),
+                          )
+                        }
+                        type="checkbox"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-bold">{model.name}</span>
+                        <span className="text-xs text-[var(--color-text-muted)]">
+                          {model.materialCount} variants · {model.availableQuantity}/
+                          {model.totalQuantity} available
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="mt-4 text-sm text-[var(--color-text-muted)]">
+                  Choose an existing name below or enter the official common model name.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(mergeModelsQuery.data ?? [])
+                    .filter((model) => mergeModelIds.includes(model.id))
+                    .map((model) => (
+                      <button
+                        className={`rounded-full border px-3 py-2 text-sm font-bold transition ${canonicalModelName === model.name ? 'border-[var(--color-primary)] bg-[var(--color-surface-tint)] text-[var(--color-primary-strong)]' : 'border-[var(--color-border)] hover:border-[var(--color-primary-border)]'}`}
+                        key={model.id}
+                        onClick={() => setCanonicalModelName(model.name)}
+                        type="button"
+                      >
+                        {model.name}
+                      </button>
+                    ))}
+                </div>
+                <div className="mt-4">
+                  <TextField
+                    label="Common model name"
+                    onChange={(event) => setCanonicalModelName(event.target.value)}
+                    placeholder="Enter the correct official name"
+                    value={canonicalModelName}
+                  />
+                </div>
+                <div className="mt-4 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-sm">
+                  <strong>{mergeModelIds.length} models</strong> will become one model. Stock
+                  variants and serial records will not be deleted.
+                </div>
+              </>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              {mergeStep === 1 ? (
+                <>
+                  <Button onClick={() => setMergeCategory(null)} type="button" variant="secondary">
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={mergeModelIds.length < 2}
+                    onClick={() => setMergeStep(2)}
+                    type="button"
+                  >
+                    Continue
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button onClick={() => setMergeStep(1)} type="button" variant="secondary">
+                    Back
+                  </Button>
+                  <Button
+                    disabled={canonicalModelName.trim().length < 2}
+                    loading={mergeModelsMutation.isPending}
+                    onClick={() => mergeModelsMutation.mutate()}
+                    type="button"
+                  >
+                    Merge {mergeModelIds.length} models
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </Dialog>
+      ) : null}
+      {modelCrud ? (
+        <Dialog
+          label={`${modelCrud.action === 'EDIT' ? 'Edit' : 'Delete'} ${modelCrud.name}`}
+          onClose={() => setModelCrud(null)}
+        >
+          <div className="p-6 pr-16">
+            <h2 className="text-xl font-extrabold text-[var(--color-primary-strong)]">
+              {modelCrud.action === 'EDIT' ? 'Edit model' : 'Delete model'}
+            </h2>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+              {modelCrud.category} · {modelCrud.name}
+            </p>
+            {modelCrud.action === 'EDIT' ? (
+              <div className="mt-5">
+                <TextField
+                  label="Official model name"
+                  onChange={(event) => setEditedModelName(event.target.value)}
+                  value={editedModelName}
+                />
+              </div>
+            ) : (
+              <p className="mt-5 rounded-[10px] bg-[var(--color-danger-soft)] p-4 text-sm font-semibold text-[var(--color-danger)]">
+                Deletion is allowed only when this model has no inventory stock. Use Merge Models
+                for duplicates already in use.
+              </p>
+            )}
+            <div className="mt-6 flex justify-end gap-2">
+              <Button onClick={() => setModelCrud(null)} variant="secondary">
+                Cancel
+              </Button>
+              {modelCrud.action === 'EDIT' ? (
+                <Button
+                  disabled={!crudModel || editedModelName.trim().length < 2}
+                  loading={updateModelMutation.isPending}
+                  onClick={() => updateModelMutation.mutate()}
+                >
+                  Save model
+                </Button>
+              ) : (
+                <Button
+                  disabled={!crudModel}
+                  loading={deleteModelMutation.isPending}
+                  onClick={() => deleteModelMutation.mutate()}
+                  variant="danger"
+                >
+                  Delete model
+                </Button>
+              )}
+            </div>
+          </div>
+        </Dialog>
       ) : null}
     </div>
   );
@@ -1248,6 +1608,9 @@ function MaterialTable({
   onAdjustQuantity,
   onDelete,
   onView,
+  onAddCategory,
+  onMergeCategory,
+  onModelCrud,
 }: {
   materials: Material[];
   canAdd: boolean;
@@ -1257,6 +1620,14 @@ function MaterialTable({
   onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
+  onAddCategory: (group: MaterialGroup) => void;
+  onMergeCategory?: (group: MaterialGroup) => void;
+  onModelCrud?: (target: {
+    category: string;
+    name: string;
+    trackingMode: TrackingMode;
+    action: 'EDIT' | 'DELETE';
+  }) => void;
 }) {
   const groups = groupMaterials(materials);
   return (
@@ -1293,6 +1664,9 @@ function MaterialTable({
               key={group.category}
               onDelete={onDelete}
               onAdjustQuantity={onAdjustQuantity}
+              onAddCategory={onAddCategory}
+              {...(onMergeCategory ? { onMergeCategory } : {})}
+              {...(onModelCrud ? { onModelCrud } : {})}
               onView={onView}
             />
           ))}
@@ -1311,6 +1685,9 @@ function GroupedMaterialRows({
   onAdjustQuantity,
   onDelete,
   onView,
+  onAddCategory,
+  onMergeCategory,
+  onModelCrud,
 }: {
   group: MaterialGroup;
   canAdd: boolean;
@@ -1320,6 +1697,14 @@ function GroupedMaterialRows({
   onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
+  onAddCategory: (group: MaterialGroup) => void;
+  onMergeCategory?: (group: MaterialGroup) => void;
+  onModelCrud?: (target: {
+    category: string;
+    name: string;
+    trackingMode: TrackingMode;
+    action: 'EDIT' | 'DELETE';
+  }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [openModels, setOpenModels] = useState<string[]>([]);
@@ -1380,13 +1765,24 @@ function GroupedMaterialRows({
                     <MoreVertical aria-hidden="true" size={17} />
                   </summary>
                   <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-[12px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
-                    <Link
-                      className="menu-item"
-                      to={`/inventory/new?category=${encodeURIComponent(group.category)}&trackingMode=${group.materials[0]?.trackingMode ?? 'SERIALIZED'}`}
+                    <button
+                      className="menu-item w-full"
+                      onClick={() => onAddCategory(group)}
+                      type="button"
                     >
                       <PackagePlus aria-hidden="true" size={17} />
-                      Add more
-                    </Link>
+                      Add material
+                    </button>
+                    {onMergeCategory ? (
+                      <button
+                        className="menu-item w-full"
+                        onClick={() => onMergeCategory(group)}
+                        type="button"
+                      >
+                        <PackageSearch aria-hidden="true" size={17} />
+                        Merge models
+                      </button>
+                    ) : null}
                   </div>
                 </details>
               ) : null}
@@ -1427,9 +1823,71 @@ function GroupedMaterialRows({
                           </p>
                         </div>
                       </div>
-                      <p className="shrink-0 text-xs font-bold text-[var(--color-text-muted)]">
-                        {model.available} / {model.total} available
-                      </p>
+                      <div className="flex shrink-0 items-center gap-3">
+                        <p className="text-xs font-bold text-[var(--color-text-muted)]">
+                          {model.available} / {model.total} available
+                        </p>
+                        {canAdd || onModelCrud ? (
+                          <details
+                            className="relative"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <summary
+                              aria-label={`Actions for ${model.label}`}
+                              className="icon-button list-none marker:hidden"
+                            >
+                              <MoreVertical size={17} />
+                            </summary>
+                            <div className="absolute right-0 top-full z-[90] mt-2 w-44 rounded-[10px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
+                              {canAdd ? (
+                                <Link
+                                  className="menu-item"
+                                  to={`/inventory/new?category=${encodeURIComponent(group.category)}&trackingMode=${model.materials[0]?.trackingMode ?? 'SERIALIZED'}&typeModelName=${encodeURIComponent(model.label)}`}
+                                >
+                                  <PackagePlus size={16} />
+                                  Add stock variant
+                                </Link>
+                              ) : null}
+                              {onModelCrud ? (
+                                <>
+                                  <button
+                                    className="menu-item w-full"
+                                    onClick={() =>
+                                      onModelCrud({
+                                        category: group.category,
+                                        name: model.label,
+                                        trackingMode:
+                                          model.materials[0]?.trackingMode ?? 'SERIALIZED',
+                                        action: 'EDIT',
+                                      })
+                                    }
+                                    type="button"
+                                  >
+                                    <Pencil size={16} />
+                                    Edit model
+                                  </button>
+                                  <button
+                                    className="menu-item w-full text-[var(--color-danger)]"
+                                    onClick={() =>
+                                      onModelCrud({
+                                        category: group.category,
+                                        name: model.label,
+                                        trackingMode:
+                                          model.materials[0]?.trackingMode ?? 'SERIALIZED',
+                                        action: 'DELETE',
+                                      })
+                                    }
+                                    type="button"
+                                  >
+                                    <Trash2 size={16} />
+                                    Delete model
+                                  </button>
+                                </>
+                              ) : null}
+                            </div>
+                          </details>
+                        ) : null}
+                      </div>
                     </div>
                   </td>
                 </tr>

@@ -1,6 +1,6 @@
 import { ArrowLeft, Download, FileSpreadsheet, PackagePlus, Upload } from 'lucide-react';
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import type { TrackingMode } from '@assetdesk/contracts';
 
@@ -17,7 +17,10 @@ const CONSUMABLE_TEMPLATE =
 export function InventoryImportPage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
-  const [mode, setMode] = useState<TrackingMode>('SERIALIZED');
+  const [parameters] = useSearchParams();
+  const fixedCategory = parameters.get('category')?.trim() ?? '';
+  const fixedMode = parameters.get('trackingMode') === 'QUANTITY' ? 'QUANTITY' : 'SERIALIZED';
+  const [mode, setMode] = useState<TrackingMode>(fixedMode);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +50,20 @@ export function InventoryImportPage() {
   }
 
   function downloadTemplate() {
-    const contents = mode === 'SERIALIZED' ? ASSET_TEMPLATE : CONSUMABLE_TEMPLATE;
+    let contents = mode === 'SERIALIZED' ? ASSET_TEMPLATE : CONSUMABLE_TEMPLATE;
+    if (fixedCategory) {
+      const lines = contents.split(/\r?\n/);
+      contents = [
+        lines[0],
+        ...lines
+          .slice(1)
+          .filter(Boolean)
+          .map((line) => {
+            const comma = line.indexOf(',');
+            return `${fixedCategory}${comma >= 0 ? line.slice(comma) : ''}`;
+          }),
+      ].join('\r\n');
+    }
     const url = URL.createObjectURL(
       new Blob(['\uFEFF', contents], { type: 'text/csv;charset=utf-8' }),
     );
@@ -108,6 +124,7 @@ export function InventoryImportPage() {
         <form className="mt-5 space-y-5" onSubmit={(event) => void validate(event)}>
           <div className="grid gap-4 sm:grid-cols-2">
             <SelectField
+              disabled={Boolean(parameters.get('trackingMode'))}
               id="inventory-import-type"
               label="Upload type"
               onChange={(value) => {
@@ -125,6 +142,11 @@ export function InventoryImportPage() {
             </Button>
           </div>
           <div className="rounded-[8px] border border-[var(--color-border)] p-5">
+            {fixedCategory ? (
+              <p className="mb-3 rounded-[8px] bg-[var(--color-primary-soft)] px-3 py-2 text-sm font-extrabold text-[var(--color-primary-strong)]">
+                Category fixed: {fixedCategory}
+              </p>
+            ) : null}
             <p className="font-bold text-[var(--color-text-strong)]">
               {mode === 'SERIALIZED'
                 ? 'One physical IT Asset and unique serial number per row'

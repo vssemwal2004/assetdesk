@@ -26,6 +26,7 @@ import {
   createMaterial,
 } from './inventory.service.js';
 import { MaterialModel } from './material.model.js';
+import { listInventoryModels } from './inventory-model.service.js';
 
 const MAX_ROWS = 1_000;
 const IMPORT_TTL_MS = 60 * 60 * 1_000;
@@ -451,6 +452,22 @@ export async function previewInventoryImport(
   const categories = new Map(categoryEntries);
   const locations = new Map(locationEntries);
   const blocks = new Map(blockEntries);
+  const registeredModelEntries = await Promise.all(
+    [...new Set(rows.map((row) => normalizedLookup(row.values.category)))].map(async (key) => {
+      const category = categories.get(key);
+      return [
+        key,
+        new Set(
+          category
+            ? (await listInventoryModels(category, mode))
+                .flatMap((model) => [model.name, ...model.aliases])
+                .map(normalizedLookup)
+            : [],
+        ),
+      ] as const;
+    }),
+  );
+  const registeredModels = new Map(registeredModelEntries);
   for (const group of groups) {
     const first = group[0];
     if (!first) continue;
@@ -472,6 +489,13 @@ export async function previewInventoryImport(
       const location = locations.get(normalizedLookup(values.location));
       const block = blocks.get(normalizedLookup(values.block));
       if (!category) throw missingDropdownValue(categoryDetailKind, values.category);
+      if (
+        !registeredModels.get(normalizedLookup(values.category))?.has(normalizedLookup(itemName))
+      ) {
+        throw new Error(
+          `Model "${itemName}" is not registered under ${category}. Add it in Add asset details → Add Models first.`,
+        );
+      }
       if (!location) throw missingDropdownValue('LOCATION', values.location);
       if (!block) throw missingDropdownValue('BLOCK', values.block);
       const displayName = materialName(category, itemName);

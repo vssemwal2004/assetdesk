@@ -9,6 +9,9 @@ import {
   MaterialResponseSchema,
   MaterialSchema,
   MaterialsListResponseSchema,
+  InventoryModelsResponseSchema,
+  InventoryModelResponseSchema,
+  InventoryModelMutationResponseSchema,
   type AdjustQuantityRequest,
   type AssetDetail,
   type AssetDetailKind,
@@ -20,6 +23,7 @@ import {
   type CreateAssetUnitRequest,
   type CreateMaterialRequest,
   type Material,
+  type InventoryModel,
   type MaterialStatus,
   type MaterialsListResponse,
   type ReturnPolicy,
@@ -31,6 +35,7 @@ import {
 import { apiRequest } from './api-client';
 
 export type { AssetTypeImportPreviewResponse, AssetTypeImportResponse };
+export type { InventoryModel };
 
 export interface InventoryFilters {
   page: number;
@@ -76,6 +81,61 @@ export async function getInventory(
     ...(signal ? { signal } : {}),
   });
   return MaterialsListResponseSchema.parse(payload);
+}
+
+export async function getInventoryModels(
+  category?: string,
+  trackingMode?: TrackingMode,
+  signal?: AbortSignal,
+): Promise<InventoryModel[]> {
+  const parameters = new URLSearchParams();
+  if (category) parameters.set('category', category);
+  if (trackingMode) parameters.set('trackingMode', trackingMode);
+  const payload = await apiRequest<unknown>(
+    `/api/v1/inventory/models${parameters.size ? `?${parameters.toString()}` : ''}`,
+    { ...(signal ? { signal } : {}) },
+  );
+  return InventoryModelsResponseSchema.parse(payload).data;
+}
+
+export async function createInventoryModel(input: {
+  category: string;
+  name: string;
+  trackingMode: TrackingMode;
+}): Promise<InventoryModel> {
+  const payload = await apiRequest<unknown>('/api/v1/inventory/models', {
+    method: 'POST',
+    json: input,
+  });
+  return InventoryModelResponseSchema.parse(payload).data.model;
+}
+
+export async function mergeInventoryModels(input: {
+  modelIds: string[];
+  canonicalName: string;
+}): Promise<{ model: InventoryModel; mergedMaterialCount: number }> {
+  const payload = await apiRequest<unknown>('/api/v1/inventory/models/merge', {
+    method: 'POST',
+    json: input,
+  });
+  return InventoryModelMutationResponseSchema.parse(payload).data;
+}
+
+export async function updateInventoryModel(modelId: string, name: string): Promise<InventoryModel> {
+  const payload = await apiRequest<unknown>(
+    `/api/v1/inventory/models/${encodeURIComponent(modelId)}`,
+    {
+      method: 'PATCH',
+      json: { name },
+    },
+  );
+  return InventoryModelResponseSchema.parse(payload).data.model;
+}
+
+export async function deleteInventoryModel(modelId: string): Promise<void> {
+  await apiRequest<unknown>(`/api/v1/inventory/models/${encodeURIComponent(modelId)}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function getMaterial(materialCode: string, signal?: AbortSignal): Promise<Material> {
@@ -167,6 +227,14 @@ export async function deleteAssetDetail(assetDetailId: string): Promise<void> {
       method: 'DELETE',
     },
   );
+}
+
+export async function updateAssetDetail(assetDetailId: string, name: string): Promise<AssetDetail> {
+  const payload = await apiRequest<{ data: { detail: AssetDetail } }>(
+    `/api/v1/inventory/asset-details/${encodeURIComponent(assetDetailId)}`,
+    { method: 'PATCH', json: { name } },
+  );
+  return payload.data.detail;
 }
 
 export async function previewAssetTypeImport(

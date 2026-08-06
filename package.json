@@ -21,6 +21,8 @@
     "build:contracts": "npm run build --workspace @assetdesk/contracts",
     "worker:dev": "npm run worker:dev --workspace @assetdesk/backend",
     "worker:start": "npm run worker:start --workspace @assetdesk/backend",
+    "backup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/backup-mongodb.ps1",
+    "backup:install": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-backup-task.ps1",
     "pretypecheck": "npm run build:contracts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "pretest": "npm run build:contracts",

@@ -12,6 +12,10 @@ import {
   BulkUpdateMaterialStatusRequestSchema,
   CreateAssetUnitRequestSchema,
   CreateMaterialRequestSchema,
+  CreateInventoryModelRequestSchema,
+  MergeInventoryModelsRequestSchema,
+  UpdateInventoryModelRequestSchema,
+  UpdateAssetDetailRequestSchema,
   MaterialCodeSchema,
   MaterialStatusSchema,
   ReturnPolicySchema,
@@ -49,6 +53,7 @@ import {
   listAssetUnits,
   listMaterials,
   updateAssetUnit,
+  updateAssetDetail,
   updateMaterial,
   updateMaterialStatus,
 } from './inventory.service.js';
@@ -58,6 +63,13 @@ import {
   previewInventoryImport,
 } from './inventory-import.service.js';
 import { commitAssetTypeImport, previewAssetTypeImport } from './asset-type-import.service.js';
+import {
+  createInventoryModel,
+  listInventoryModels,
+  mergeInventoryModels,
+  updateInventoryModel,
+  deleteInventoryModel,
+} from './inventory-model.service.js';
 
 const inventoryUpload = multer({
   storage: multer.memoryStorage(),
@@ -276,6 +288,113 @@ export function createInventoryRouter(): Router {
     },
   );
 
+  router.get('/models', async (request, response, next) => {
+    try {
+      const actor = authenticated(request);
+      if (
+        !hasServerPermission(actor, 'INVENTORY_VIEW') &&
+        !hasServerPermission(actor, 'INVENTORY_ADD') &&
+        !hasServerPermission(actor, 'INVENTORY_IMPORT')
+      ) {
+        throw new AppError(403, 'PERMISSION_DENIED', 'You do not have access to inventory models.');
+      }
+      const category =
+        typeof request.query.category === 'string' ? request.query.category : undefined;
+      const trackingMode = request.query.trackingMode
+        ? TrackingModeSchema.parse(request.query.trackingMode)
+        : undefined;
+      response.json({ data: await listInventoryModels(category, trackingMode) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post(
+    '/models',
+    requirePermission('ASSET_TYPES_ADD'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const input = CreateInventoryModelRequestSchema.parse(request.body);
+        const model = await createInventoryModel(
+          input.category,
+          input.name,
+          input.trackingMode,
+          authenticated(request).userId,
+        );
+        await audit(request, 'INVENTORY_MODEL_CREATED', 'INVENTORY_MODEL', model.id, {
+          category: model.category,
+          name: model.name,
+        });
+        response.status(201).json({ data: { model } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    '/models/merge',
+    requireRole('ADMIN'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const input = MergeInventoryModelsRequestSchema.parse(request.body);
+        const result = await mergeInventoryModels(
+          input.modelIds,
+          input.canonicalName,
+          authenticated(request).userId,
+        );
+        await audit(request, 'INVENTORY_MODELS_MERGED', 'INVENTORY_MODEL', result.model.id, {
+          sourceModelIds: input.modelIds,
+          canonicalName: result.model.name,
+          mergedMaterialCount: result.mergedMaterialCount,
+        });
+        response.json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    '/models/:modelId',
+    requireRole('ADMIN'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const input = UpdateInventoryModelRequestSchema.parse(request.body);
+        const model = await updateInventoryModel(String(request.params.modelId), input.name);
+        await audit(request, 'INVENTORY_MODEL_UPDATED', 'INVENTORY_MODEL', model.id, {
+          name: model.name,
+        });
+        response.json({ data: { model } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.delete(
+    '/models/:modelId',
+    requireRole('ADMIN'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const modelId = String(request.params.modelId);
+        await deleteInventoryModel(modelId);
+        await audit(request, 'INVENTORY_MODEL_DELETED', 'INVENTORY_MODEL', modelId);
+        response.status(204).send();
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.get('/export', requirePermission('INVENTORY_EXPORT'), async (request, response, next) => {
     try {
       const input = MaterialListQuerySchema.parse(request.query);
@@ -369,6 +488,28 @@ export function createInventoryRouter(): Router {
           name: detail.name,
         });
         response.status(204).send();
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.patch(
+    '/asset-details/:assetDetailId',
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ASSET_TYPES_ADD'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const assetDetailId = z.string().parse(request.params.assetDetailId);
+        const input = UpdateAssetDetailRequestSchema.parse(request.body);
+        const detail = await updateAssetDetail(assetDetailId, input.name);
+        await audit(request, 'ASSET_DETAIL_UPDATED', 'ASSET_DETAIL', detail.id, {
+          kind: detail.kind,
+          name: detail.name,
+        });
+        response.json({ data: { detail } });
       } catch (error) {
         next(error);
       }

@@ -28,6 +28,7 @@ import { AssetUnitModel } from './asset-unit.model.js';
 import { allocateAssetTag, allocateMaterialCode } from './inventory-id.js';
 import { toAssetUnit, toMaterial } from './inventory.mapper.js';
 import { MaterialModel, type MaterialDocument } from './material.model.js';
+import { InventoryModelModel } from './inventory-model.model.js';
 
 const MAX_IDENTIFIER_COLLISION_ATTEMPTS = 32;
 const MAX_QUANTITY = 1_000_000_000;
@@ -260,6 +261,49 @@ export async function deleteAssetDetail(assetDetailId: string): Promise<AssetDet
     if (assetType) await AssetTypeModel.deleteOne({ _id: assetType._id });
   }
   return deleted;
+}
+
+export async function updateAssetDetail(assetDetailId: string, name: string): Promise<AssetDetail> {
+  if (!Types.ObjectId.isValid(assetDetailId))
+    throw new AppError(404, 'ASSET_DETAIL_NOT_FOUND', 'This asset detail was not found.');
+  const detail = await AssetDetailModel.findById(assetDetailId);
+  if (!detail)
+    throw new AppError(404, 'ASSET_DETAIL_NOT_FOUND', 'This asset detail was not found.');
+  const normalizedName = normalizeLookupValue(name);
+  const duplicate = await AssetDetailModel.exists({
+    _id: { $ne: detail._id },
+    kind: detail.kind,
+    normalizedName,
+  });
+  if (duplicate)
+    throw new AppError(409, 'ASSET_DETAIL_EXISTS', 'A detail with this name already exists.');
+  const previousName = detail.name;
+  const inUse =
+    detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE'
+      ? await MaterialModel.exists({ category: exactCaseInsensitive(previousName) })
+      : await MaterialModel.exists({
+          [detail.kind === 'LOCATION'
+            ? 'location'
+            : detail.kind === 'BLOCK'
+              ? 'block'
+              : 'department']: exactCaseInsensitive(previousName),
+        });
+  if (inUse)
+    throw new AppError(
+      409,
+      'ASSET_DETAIL_IN_USE',
+      'This value is used by inventory data and cannot be renamed. Update those records first.',
+    );
+  detail.name = name.trim();
+  detail.normalizedName = normalizedName;
+  await detail.save();
+  if (detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE') {
+    await AssetTypeModel.updateOne(
+      { normalizedName: normalizeAssetType(previousName) },
+      { $set: { name: detail.name, normalizedName: normalizeAssetType(detail.name) } },
+    );
+  }
+  return toAssetDetail(detail);
 }
 
 async function savedDetailName(kind: AssetDetailKind, value: string): Promise<string | null> {
@@ -538,12 +582,27 @@ export async function createMaterial(
 ): Promise<Material> {
   const createdBy = objectId(createdByUserId);
   const category = await requireSavedDetail(categoryDetailKind(input.trackingMode), input.category);
+  const registeredModel = await InventoryModelModel.exists({
+    categoryNormalized: normalizeAssetType(category),
+    nameNormalized: normalizeAssetType(input.typeModelName),
+    trackingMode: input.trackingMode,
+  });
+  if (!registeredModel) {
+    throw new AppError(
+      400,
+      'INVENTORY_MODEL_NOT_REGISTERED',
+      'Choose a registered model from Add asset details → Add Models.',
+    );
+  }
   const location = await requireSavedDetail('LOCATION', input.location);
   const block = await requireSavedDetail('BLOCK', input.block);
+  const department = input.department
+    ? await requireSavedDetail('DEPARTMENT', input.department)
+    : undefined;
   const locationBlock = `${location} / ${block}`;
   const existing = await MaterialModel.exists({
     trackingMode: input.trackingMode,
-    name: exactCaseInsensitive(input.name),
+    typeModelName: exactCaseInsensitive(input.typeModelName),
     category: exactCaseInsensitive(category),
     location: exactCaseInsensitive(location),
     block: exactCaseInsensitive(block),
@@ -571,6 +630,7 @@ export async function createMaterial(
         ...(input.trackingMode === 'SERIALIZED' ? { configuration: input.configuration } : {}),
         location,
         block,
+        ...(department ? { department } : {}),
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),
         locationBlock,
         identityKey: materialIdentity(
