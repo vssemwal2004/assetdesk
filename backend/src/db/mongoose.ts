@@ -10,6 +10,7 @@ import { AssetDetailModel } from '../modules/inventory/asset-detail.model.js';
 import { AssetTypeModel } from '../modules/inventory/asset-type.model.js';
 import { InventoryCounterModel } from '../modules/inventory/inventory-counter.model.js';
 import { InventoryImportModel } from '../modules/inventory/inventory-import.model.js';
+import { InventoryModelModel } from '../modules/inventory/inventory-model.model.js';
 import { MaterialModel } from '../modules/inventory/material.model.js';
 import { IssueSequenceModel } from '../modules/issues/issue-sequence.model.js';
 import { IssueModel } from '../modules/issues/issue.model.js';
@@ -36,6 +37,7 @@ const indexedModels: Array<{
   AssetDetailModel,
   AssetTypeImportModel,
   InventoryImportModel,
+  InventoryModelModel,
   MaterialModel,
   AssetUnitModel,
   ReceiverSequenceModel,

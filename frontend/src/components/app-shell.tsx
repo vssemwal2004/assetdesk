@@ -72,10 +72,19 @@ const inventoryNavigation: NavigationItem[] = [
     permission: 'INVENTORY_VIEW',
   },
   { label: 'Add material', to: '/inventory/new', icon: PackagePlus, permission: 'INVENTORY_ADD' },
+];
+
+const assetDetailsNavigation: NavigationItem[] = [
   {
-    label: 'Add asset details',
-    to: '/inventory/asset-types',
-    icon: Boxes,
+    label: 'Add asset types',
+    to: '/inventory/asset-types/add',
+    icon: PackagePlus,
+    permission: 'ASSET_TYPES_MANAGE',
+  },
+  {
+    label: 'View asset types',
+    to: '/inventory/asset-types/view',
+    icon: ListChecks,
     permission: 'ASSET_TYPES_MANAGE',
   },
 ];
@@ -174,7 +183,8 @@ function pageTitle(pathname: string): string {
   if (pathname === '/reports') return 'Reports';
   if (pathname === '/inventory/new') return 'Add material';
   if (pathname === '/inventory/import') return 'Bulk inventory upload';
-  if (pathname === '/inventory/asset-types') return 'Add asset details';
+  if (pathname === '/inventory/asset-types/view') return 'View asset types';
+  if (pathname.startsWith('/inventory/asset-types')) return 'Add asset types';
   if (pathname.startsWith('/inventory/')) return 'Material details';
   if (pathname === '/inventory') return 'Inventory';
   if (pathname === '/receivers/new') return 'Add receiver';
@@ -492,7 +502,17 @@ export function AppShell() {
               label: 'Inventory',
               icon: Boxes,
               items: inventoryNavigation,
-              activePath: (pathname) => pathname.startsWith('/inventory'),
+              activePath: (pathname) =>
+                pathname.startsWith('/inventory') && !pathname.startsWith('/inventory/asset-types'),
+            }}
+          />
+          <NavigationGroupMenu
+            compact
+            group={{
+              label: 'Asset details',
+              icon: ClipboardList,
+              items: assetDetailsNavigation,
+              activePath: (pathname) => pathname.startsWith('/inventory/asset-types'),
             }}
           />
           {items.slice(1).map((item) => (
@@ -564,7 +584,18 @@ export function AppShell() {
                   label: 'Inventory',
                   icon: Boxes,
                   items: inventoryNavigation,
-                  activePath: (pathname) => pathname.startsWith('/inventory'),
+                  activePath: (pathname) =>
+                    pathname.startsWith('/inventory') &&
+                    !pathname.startsWith('/inventory/asset-types'),
+                }}
+                onClick={() => setDrawerOpen(false)}
+              />
+              <NavigationGroupMenu
+                group={{
+                  label: 'Asset details',
+                  icon: ClipboardList,
+                  items: assetDetailsNavigation,
+                  activePath: (pathname) => pathname.startsWith('/inventory/asset-types'),
                 }}
                 onClick={() => setDrawerOpen(false)}
               />

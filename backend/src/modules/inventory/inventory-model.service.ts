@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import type { InventoryModel, TrackingMode } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
+import { AssetDetailModel } from './asset-detail.model.js';
 import { InventoryModelModel, type InventoryModelRecord } from './inventory-model.model.js';
 import { InventoryImportModel } from './inventory-import.model.js';
 import { MaterialModel } from './material.model.js';
@@ -20,7 +21,34 @@ function exactCaseInsensitive(value: string): RegExp {
   return new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 }
 
+async function refreshCategoryModelCache(
+  category: string,
+  trackingMode: TrackingMode,
+): Promise<void> {
+  const models = await InventoryModelModel.find({
+    categoryNormalized: normalized(category),
+    trackingMode,
+  })
+    .sort({ name: 1 })
+    .select({ name: 1 })
+    .lean();
+  await AssetDetailModel.updateOne(
+    {
+      kind: trackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE',
+      normalizedName: category
+        .normalize('NFKC')
+        .trim()
+        .replace(/\s+/g, '')
+        .toLocaleUpperCase('en-US'),
+    },
+    { $set: { models: models.map((model) => model.name) } },
+  );
+}
+
 async function totals(category: string, names: string[], trackingMode: TrackingMode) {
+  const modelPatterns = names.map(
+    (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+  );
   const rows = await MaterialModel.aggregate<{
     materialCount: number;
     totalQuantity: number;
@@ -30,11 +58,7 @@ async function totals(category: string, names: string[], trackingMode: TrackingM
     {
       $match: {
         category: { $regex: `^${category.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
-        typeModelName: {
-          $in: names.map(
-            (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
-          ),
-        },
+        $or: [{ typeModelName: { $in: modelPatterns } }, { name: { $in: modelPatterns } }],
         trackingMode,
       },
     },
@@ -107,7 +131,10 @@ async function updatePendingImports(
   }
 }
 
-async function syncExistingModels(category?: string, trackingMode?: TrackingMode): Promise<void> {
+async function syncExistingModels(
+  category?: string,
+  trackingMode?: TrackingMode,
+): Promise<{ discovered: number; added: number }> {
   const rows = await MaterialModel.aggregate<{
     category: string;
     name: string;
@@ -116,14 +143,17 @@ async function syncExistingModels(category?: string, trackingMode?: TrackingMode
   }>([
     {
       $match: {
-        typeModelName: { $type: 'string', $ne: '' },
         ...(category ? { category: exactCaseInsensitive(category) } : {}),
         ...(trackingMode ? { trackingMode } : {}),
       },
     },
     {
       $group: {
-        _id: { category: '$category', name: '$typeModelName', trackingMode: '$trackingMode' },
+        _id: {
+          category: '$category',
+          name: { $ifNull: ['$typeModelName', '$name'] },
+          trackingMode: '$trackingMode',
+        },
         createdBy: { $first: '$createdBy' },
       },
     },
@@ -143,9 +173,9 @@ async function syncExistingModels(category?: string, trackingMode?: TrackingMode
       row,
     ]),
   );
-  if (uniqueRows.size === 0) return;
+  if (uniqueRows.size === 0) return { discovered: 0, added: 0 };
   try {
-    await InventoryModelModel.bulkWrite(
+    const result = await InventoryModelModel.bulkWrite(
       [...uniqueRows.values()].map((row) => ({
         updateOne: {
           filter: {
@@ -166,25 +196,77 @@ async function syncExistingModels(category?: string, trackingMode?: TrackingMode
       })),
       { ordered: false },
     );
+    return { discovered: uniqueRows.size, added: result.upsertedCount };
   } catch (error) {
     // Concurrent requests can discover and insert the same legacy model. The unique
     // model-master index makes that race harmless.
     if ((error as { code?: number }).code !== 11000) throw error;
+    return { discovered: uniqueRows.size, added: 0 };
   }
+}
+
+export async function syncAllInventoryModels(): Promise<{
+  discovered: number;
+  added: number;
+  total: number;
+}> {
+  const result = await syncExistingModels();
+  const categories = await InventoryModelModel.aggregate<{
+    category: string;
+    trackingMode: TrackingMode;
+  }>([
+    { $group: { _id: { category: '$category', trackingMode: '$trackingMode' } } },
+    { $project: { _id: 0, category: '$_id.category', trackingMode: '$_id.trackingMode' } },
+  ]);
+  await Promise.all(
+    categories.map(({ category, trackingMode }) =>
+      refreshCategoryModelCache(category, trackingMode),
+    ),
+  );
+  return { ...result, total: await InventoryModelModel.countDocuments() };
 }
 
 export async function listInventoryModels(
   category?: string,
   trackingMode?: TrackingMode,
+  includeStock = false,
 ): Promise<InventoryModel[]> {
-  await syncExistingModels(category, trackingMode);
-  const records = await InventoryModelModel.find({
-    ...(category ? { categoryNormalized: normalized(category) } : {}),
-    ...(trackingMode ? { trackingMode } : {}),
-  })
-    .sort({ category: 1, name: 1 })
-    .lean();
+  let records: InventoryModelRecord[];
+  try {
+    records = await InventoryModelModel.find({
+      ...(category ? { categoryNormalized: normalized(category) } : {}),
+      ...(trackingMode ? { trackingMode } : {}),
+    })
+      .sort({ name: 1 })
+      .maxTimeMS(5_000)
+      .lean();
+  } catch (error) {
+    if ((error as { code?: number }).code === 50) {
+      throw new AppError(
+        503,
+        'INVENTORY_MODELS_QUERY_TIMEOUT',
+        'Model Master database query timed out. Verify the InventoryModel index and try again.',
+      );
+    }
+    throw error;
+  }
   if (records.length === 0) return [];
+
+  if (!includeStock) {
+    return records.map((record) => ({
+      id: record._id.toString(),
+      category: record.category,
+      name: record.name,
+      trackingMode: record.trackingMode,
+      aliases: record.aliases,
+      materialCount: 0,
+      totalQuantity: 0,
+      availableQuantity: 0,
+      issuedQuantity: 0,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    }));
+  }
 
   // Load stock once for the complete result set. The former implementation ran one
   // aggregation per model, which became noticeably slow for large categories.
@@ -205,7 +287,11 @@ export async function listInventoryModels(
     },
     {
       $group: {
-        _id: { category: '$category', name: '$typeModelName', trackingMode: '$trackingMode' },
+        _id: {
+          category: '$category',
+          name: { $ifNull: ['$typeModelName', '$name'] },
+          trackingMode: '$trackingMode',
+        },
         materialCount: { $sum: 1 },
         totalQuantity: { $sum: '$totalQuantity' },
         availableQuantity: { $sum: '$availableQuantity' },
@@ -288,6 +374,7 @@ export async function createInventoryModel(
       aliases: [],
       createdBy: new Types.ObjectId(userId),
     });
+    await refreshCategoryModelCache(record.category, record.trackingMode);
     return publicModel(record.toObject());
   } catch (error) {
     if ((error as { code?: number }).code === 11000)
@@ -385,6 +472,7 @@ export async function mergeInventoryModels(
       'INVENTORY_MODEL_MERGE_FAILED',
       'The model merge could not be completed.',
     );
+  await refreshCategoryModelCache(first.category, first.trackingMode);
   return { model: await publicModel(refreshed), mergedMaterialCount: update.modifiedCount };
 }
 
@@ -434,6 +522,7 @@ export async function updateInventoryModel(modelId: string, name: string): Promi
   record.name = canonical;
   record.nameNormalized = nameNormalized;
   await record.save();
+  await refreshCategoryModelCache(record.category, record.trackingMode);
   return publicModel(record.toObject());
 }
 
@@ -461,4 +550,5 @@ export async function deleteInventoryModel(modelId: string): Promise<void> {
       'This model has inventory stock. Merge it or remove its inventory records first.',
     );
   await InventoryModelModel.deleteOne({ _id: record._id });
+  await refreshCategoryModelCache(record.category, record.trackingMode);
 }

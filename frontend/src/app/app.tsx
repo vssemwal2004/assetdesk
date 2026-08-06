@@ -354,12 +354,24 @@ export function App() {
                 </Route>
                 <Route element={<PermissionRoute permission="ASSET_TYPES_MANAGE" />}>
                   <Route
+                    element={<Navigate replace to="/inventory/asset-types/add" />}
+                    path="/inventory/asset-types"
+                  />
+                  <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>
                         <AssetTypePage />
                       </Suspense>
                     }
-                    path="/inventory/asset-types"
+                    path="/inventory/asset-types/add"
+                  />
+                  <Route
+                    element={
+                      <Suspense fallback={<FeatureRouteFallback />}>
+                        <AssetTypePage />
+                      </Suspense>
+                    }
+                    path="/inventory/asset-types/view"
                   />
                 </Route>
                 <Route element={<AdminRoute />}>

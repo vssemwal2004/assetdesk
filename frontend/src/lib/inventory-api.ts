@@ -32,7 +32,7 @@ import {
   type UpdateMaterialRequest,
 } from '@assetdesk/contracts';
 
-import { apiRequest } from './api-client';
+import { ApiError, apiRequest } from './api-client';
 
 export type { AssetTypeImportPreviewResponse, AssetTypeImportResponse };
 export type { InventoryModel };
@@ -87,14 +87,31 @@ export async function getInventoryModels(
   category?: string,
   trackingMode?: TrackingMode,
   signal?: AbortSignal,
+  includeStock = false,
 ): Promise<InventoryModel[]> {
   const parameters = new URLSearchParams();
   if (category) parameters.set('category', category);
   if (trackingMode) parameters.set('trackingMode', trackingMode);
-  const payload = await apiRequest<unknown>(
+  if (includeStock) parameters.set('includeStock', 'true');
+  const request = apiRequest<unknown>(
     `/api/v1/inventory/models${parameters.size ? `?${parameters.toString()}` : ''}`,
     { ...(signal ? { signal } : {}) },
   );
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(
+      () =>
+        reject(
+          new ApiError({
+            status: 504,
+            code: 'INVENTORY_MODELS_LOAD_TIMEOUT',
+            detail: 'Models took too long to load. The backend may still be running an old build.',
+          }),
+        ),
+      8_000,
+    );
+  });
+  const payload = await Promise.race([request, timeout]).finally(() => clearTimeout(timeoutId));
   return InventoryModelsResponseSchema.parse(payload).data;
 }
 
@@ -108,6 +125,36 @@ export async function createInventoryModel(input: {
     json: input,
   });
   return InventoryModelResponseSchema.parse(payload).data.model;
+}
+
+export async function syncInventoryModels(): Promise<{
+  discovered: number;
+  added: number;
+  total: number;
+}> {
+  const payload = await apiRequest<{
+    data: { discovered: number; added: number; total: number };
+  }>('/api/v1/inventory/models/sync', { method: 'POST' });
+  return payload.data;
+}
+
+export async function importInventoryModels(
+  file: File,
+  trackingMode: TrackingMode,
+): Promise<{
+  created: Array<{ rowNumber: number; category: string; name: string }>;
+  failed: Array<{ rowNumber: number; category: string; name: string; reason: string }>;
+}> {
+  const body = new FormData();
+  body.append('file', file);
+  body.append('trackingMode', trackingMode);
+  const payload = await apiRequest<{
+    data: {
+      created: Array<{ rowNumber: number; category: string; name: string }>;
+      failed: Array<{ rowNumber: number; category: string; name: string; reason: string }>;
+    };
+  }>('/api/v1/inventory/models/import', { method: 'POST', body });
+  return payload.data;
 }
 
 export async function mergeInventoryModels(input: {

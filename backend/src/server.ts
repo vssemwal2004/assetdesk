@@ -5,6 +5,7 @@ import { env } from './config/env.js';
 import { logger } from './config/logger.js';
 import { connectDatabase, disconnectDatabase } from './db/mongoose.js';
 import { startEmailWorkerLoop } from './modules/notifications/email-worker.service.js';
+import { syncAllInventoryModels } from './modules/inventory/inventory-model.service.js';
 
 function databaseRequiredOnStart(): boolean {
   return (
@@ -24,6 +25,8 @@ async function start(): Promise<void> {
   let stopEmailWorker: (() => void) | undefined;
   try {
     await connectDatabase();
+    const modelSync = await syncAllInventoryModels();
+    logger.info(modelSync, 'Inventory Model Master synchronized from existing inventory');
     stopEmailWorker = startEmailWorkerLoop();
   } catch (error) {
     if (databaseRequiredOnStart()) {

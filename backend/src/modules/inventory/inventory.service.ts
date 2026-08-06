@@ -142,6 +142,14 @@ function normalizeAssetType(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
 }
 
+function normalizeModelMatch(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+    .replace(/\s+/g, '')
+    .toLocaleUpperCase('en-US');
+}
+
 function detailKindLabel(kind: AssetDetailKind): string {
   if (kind === 'ASSET_TYPE') return 'IT asset type';
   if (kind === 'CONSUMABLE_TYPE') return 'IT consumable type';
@@ -168,6 +176,7 @@ function toAssetDetail(detail: AssetDetailDocument): AssetDetail {
     id: detail._id.toString(),
     kind: detail.kind,
     name: detail.name,
+    models: detail.models ?? [],
     createdAt: detail.createdAt.toISOString(),
     updatedAt: detail.updatedAt.toISOString(),
   };
@@ -590,18 +599,12 @@ export async function createMaterial(
 ): Promise<Material> {
   const createdBy = objectId(createdByUserId);
   const category = await requireSavedDetail(categoryDetailKind(input.trackingMode), input.category);
-  const registeredModel = await InventoryModelModel.exists({
-    categoryNormalized: normalizeAssetType(category),
-    nameNormalized: normalizeAssetType(input.typeModelName),
-    trackingMode: input.trackingMode,
-  });
-  if (!registeredModel) {
-    throw new AppError(
-      400,
-      'INVENTORY_MODEL_NOT_REGISTERED',
-      'Choose a registered model from Add asset details → Add Models.',
-    );
-  }
+  const typeModelName = await requireRegisteredInventoryModel(
+    category,
+    input.typeModelName,
+    input.trackingMode,
+  );
+  const name = materialDisplayName(category, typeModelName);
   const location = await requireSavedDetail('LOCATION', input.location);
   const block = await requireSavedDetail('BLOCK', input.block);
   const department = input.department
@@ -610,7 +613,7 @@ export async function createMaterial(
   const locationBlock = `${location} / ${block}`;
   const existing = await MaterialModel.exists({
     trackingMode: input.trackingMode,
-    typeModelName: exactCaseInsensitive(input.typeModelName),
+    typeModelName: exactCaseInsensitive(typeModelName),
     category: exactCaseInsensitive(category),
     location: exactCaseInsensitive(location),
     block: exactCaseInsensitive(block),
@@ -632,9 +635,9 @@ export async function createMaterial(
         input.trackingMode === 'QUANTITY' ? input.totalQuantity : input.serialNumbers.length;
       createdMaterial = await MaterialModel.create({
         materialCode,
-        name: input.name,
+        name,
         category,
-        typeModelName: input.typeModelName,
+        typeModelName,
         ...(input.trackingMode === 'SERIALIZED' ? { configuration: input.configuration } : {}),
         location,
         block,
@@ -643,7 +646,7 @@ export async function createMaterial(
         locationBlock,
         identityKey: materialIdentity(
           input.trackingMode,
-          input.name,
+          name,
           category,
           location,
           block,
@@ -712,21 +715,21 @@ async function requireRegisteredInventoryModel(
   name: string,
   trackingMode: TrackingMode,
 ): Promise<string> {
-  const nameNormalized = normalizeAssetType(name);
+  const nameNormalized = normalizeModelMatch(name);
   const models = await InventoryModelModel.find({
     categoryNormalized: normalizeAssetType(category),
     trackingMode,
   }).lean();
   const registered = models.find(
     (model) =>
-      model.nameNormalized === nameNormalized ||
-      model.aliases.some((alias) => normalizeAssetType(alias) === nameNormalized),
+      normalizeModelMatch(model.name) === nameNormalized ||
+      model.aliases.some((alias) => normalizeModelMatch(alias) === nameNormalized),
   );
   if (!registered) {
     throw new AppError(
       400,
       'INVENTORY_MODEL_NOT_REGISTERED',
-      `Model "${name}" is not present in the database under ${category}. Add this model in Add asset details → Add Models first.`,
+      `Model "${name}" is not registered under ${category}. Add it to Model Master first. Letter case and spaces are ignored.`,
     );
   }
   return registered.name;

@@ -297,6 +297,7 @@ export const AssetDetailSchema = z.object({
   id: z.string().min(1),
   kind: AssetDetailKindSchema,
   name: z.string().trim().min(1).max(120),
+  models: z.array(z.string().trim().min(2).max(120)).default([]),
   createdAt: z.string().datetime({ offset: true }),
   updatedAt: z.string().datetime({ offset: true }),
 });

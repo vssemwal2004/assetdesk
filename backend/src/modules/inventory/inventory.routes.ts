@@ -63,9 +63,11 @@ import {
   previewInventoryImport,
 } from './inventory-import.service.js';
 import { commitAssetTypeImport, previewAssetTypeImport } from './asset-type-import.service.js';
+import { importInventoryModels } from './inventory-model-import.service.js';
 import {
   createInventoryModel,
   listInventoryModels,
+  syncAllInventoryModels,
   mergeInventoryModels,
   updateInventoryModel,
   deleteInventoryModel,
@@ -294,7 +296,8 @@ export function createInventoryRouter(): Router {
       if (
         !hasServerPermission(actor, 'INVENTORY_VIEW') &&
         !hasServerPermission(actor, 'INVENTORY_ADD') &&
-        !hasServerPermission(actor, 'INVENTORY_IMPORT')
+        !hasServerPermission(actor, 'INVENTORY_IMPORT') &&
+        !hasServerPermission(actor, 'INVENTORY_MODELS_ADD')
       ) {
         throw new AppError(403, 'PERMISSION_DENIED', 'You do not have access to inventory models.');
       }
@@ -303,7 +306,8 @@ export function createInventoryRouter(): Router {
       const trackingMode = request.query.trackingMode
         ? TrackingModeSchema.parse(request.query.trackingMode)
         : undefined;
-      response.json({ data: await listInventoryModels(category, trackingMode) });
+      const includeStock = request.query.includeStock === 'true';
+      response.json({ data: await listInventoryModels(category, trackingMode, includeStock) });
     } catch (error) {
       next(error);
     }
@@ -328,6 +332,50 @@ export function createInventoryRouter(): Router {
           name: model.name,
         });
         response.status(201).json({ data: { model } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    '/models/import',
+    requirePermission('INVENTORY_MODELS_ADD'),
+    requireTrustedOrigin,
+    requireCsrf,
+    uploadInventoryFile,
+    async (request, response, next) => {
+      try {
+        if (!request.file)
+          throw new AppError(400, 'MODEL_IMPORT_FILE_REQUIRED', 'Choose a CSV or XLSX file.');
+        const trackingMode = TrackingModeSchema.parse(request.body.trackingMode);
+        const result = await importInventoryModels(
+          request.file,
+          trackingMode,
+          authenticated(request).userId,
+        );
+        await audit(request, 'INVENTORY_MODELS_IMPORTED', 'INVENTORY_MODEL', 'BULK', {
+          created: result.created.length,
+          failed: result.failed.length,
+          trackingMode,
+        });
+        response.json({ data: result });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    '/models/sync',
+    requireRole('ADMIN'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const result = await syncAllInventoryModels();
+        await audit(request, 'INVENTORY_MODELS_SYNCED', 'INVENTORY_MODEL', 'ALL', result);
+        response.json({ data: result });
       } catch (error) {
         next(error);
       }

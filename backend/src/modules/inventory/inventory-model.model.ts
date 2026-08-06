@@ -32,6 +32,7 @@ InventoryModelSchema.index(
   { categoryNormalized: 1, nameNormalized: 1, trackingMode: 1 },
   { unique: true },
 );
+InventoryModelSchema.index({ categoryNormalized: 1, trackingMode: 1, name: 1 });
 
 export const InventoryModelModel = model<InventoryModelRecord>(
   'InventoryModel',

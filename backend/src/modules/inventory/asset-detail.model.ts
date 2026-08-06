@@ -7,6 +7,7 @@ export interface AssetDetailRecord {
   kind: AssetDetailKind;
   name: string;
   normalizedName: string;
+  models: string[];
   createdBy: Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -24,6 +25,7 @@ const AssetDetailSchema = new Schema<AssetDetailRecord>(
     },
     name: { type: String, required: true, trim: true, minlength: 1, maxlength: 120 },
     normalizedName: { type: String, required: true, maxlength: 120 },
+    models: { type: [String], default: [] },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true, immutable: true },
   },
   { timestamps: true, versionKey: false },

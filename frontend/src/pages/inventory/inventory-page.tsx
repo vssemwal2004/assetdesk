@@ -288,6 +288,7 @@ export function InventoryPage() {
         mergeCategory?.category,
         mergeCategory?.materials[0]?.trackingMode,
         signal,
+        true,
       ),
     enabled: Boolean(mergeCategory),
   });
