@@ -2,9 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronRight,
+  Database,
   Download,
   FileSpreadsheet,
+  Layers3,
+  ListFilter,
   PackagePlus,
+  PackageSearch,
   Pencil,
   MoreVertical,
   RefreshCw,
@@ -45,6 +50,7 @@ import {
 import { isApiError } from '../../lib/api-client';
 
 type Mode = 'individual' | 'bulk';
+type AddWorkspace = 'REFERENCE' | 'MODELS';
 
 const detailLabels: Record<AssetDetailKind, string> = {
   ASSET_TYPE: 'IT Asset',
@@ -52,6 +58,22 @@ const detailLabels: Record<AssetDetailKind, string> = {
   LOCATION: 'Location',
   BLOCK: 'Block',
   DEPARTMENT: 'Department',
+};
+
+const detailDescriptions: Record<AssetDetailKind, string> = {
+  ASSET_TYPE: 'A serialized hardware category such as CPU, Laptop or Printer.',
+  CONSUMABLE_TYPE: 'A quantity-based category such as Cable, Cartridge or Connector.',
+  LOCATION: 'A reusable physical site or room used when recording inventory.',
+  BLOCK: 'A building or campus block used to group locations.',
+  DEPARTMENT: 'An organizational department that owns or uses inventory.',
+};
+
+const detailPlaceholders: Record<AssetDetailKind, string> = {
+  ASSET_TYPE: 'Example: Desktop computers',
+  CONSUMABLE_TYPE: 'Example: Printer cartridges',
+  LOCATION: 'Example: Computer Centre',
+  BLOCK: 'Example: A Block',
+  DEPARTMENT: 'Example: IT Department',
 };
 
 const detailTemplates: Record<AssetDetailKind, { fileName: string; csv: string }> = {
@@ -95,6 +117,7 @@ export function AssetTypePage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const modelFileInput = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<Mode>('individual');
+  const [addWorkspace, setAddWorkspace] = useState<AddWorkspace>('REFERENCE');
   const [kind, setKind] = useState<AssetDetailKind>('ASSET_TYPE');
   const [bulkKind, setBulkKind] = useState<AssetDetailKind>('ASSET_TYPE');
   const [name, setName] = useState('');
@@ -403,10 +426,23 @@ export function AssetTypePage() {
     <div className="space-y-5">
       <PageHeader
         actions={
-          <Link className="button-quiet" to="/inventory">
-            <ArrowLeft aria-hidden="true" size={18} />
-            Back to Inventory
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {!viewOnly ? (
+              <Link className="button-secondary" to="/inventory/asset-types/view">
+                <PackageSearch aria-hidden="true" size={18} />
+                View directory
+              </Link>
+            ) : (
+              <Link className="button-secondary" to="/inventory/asset-types/add">
+                <PackagePlus aria-hidden="true" size={18} />
+                Add asset types
+              </Link>
+            )}
+            <Link className="button-quiet" to="/inventory">
+              <ArrowLeft aria-hidden="true" size={18} />
+              Inventory
+            </Link>
+          </div>
         }
         description={
           viewOnly
@@ -416,22 +452,130 @@ export function AssetTypePage() {
         title={viewOnly ? 'View asset types' : 'Add asset types'}
       />
 
-      {canAddModels && !viewOnly ? (
-        <AppCard>
-          <div className="mb-4">
-            <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
-              Model master
+      {message ? (
+        messageIsSuccess ? (
+          <div
+            className="rounded-[12px] border border-emerald-200 bg-[var(--color-success-soft)] p-4 text-[var(--color-success)]"
+            role="status"
+          >
+            <div className="flex items-center gap-3">
+              <CheckCircle2 aria-hidden="true" className="shrink-0" size={20} />
+              <p className="font-bold">{message}</p>
+            </div>
+          </div>
+        ) : (
+          <ErrorSummary message={message} title="Asset details" />
+        )
+      ) : null}
+
+      {!viewOnly ? (
+        <section className="mx-auto max-w-5xl overflow-hidden rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)]">
+          <div className="border-b border-[var(--color-border)] bg-[linear-gradient(135deg,var(--color-primary-soft),white_65%)] px-5 py-5 sm:px-7">
+            <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-[var(--color-primary)]">
+              Setup workspace
             </p>
             <h2 className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]">
-              Add registered model
+              What would you like to add?
             </h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Choose a category first, then save the official model name. Materials and bulk uploads
-              can only use registered models.
+            <p className="mt-1 max-w-2xl text-sm text-[var(--color-text-muted)]">
+              Create the category or reference value first. Then register its allowed models.
             </p>
+          </div>
+          <nav aria-label="Asset setup sections" className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
+            <button
+              aria-current={addWorkspace === 'REFERENCE' ? 'page' : undefined}
+              className={`group flex min-h-28 items-start gap-4 rounded-[12px] border p-4 text-left transition ${
+                addWorkspace === 'REFERENCE'
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] shadow-sm'
+                  : 'border-[var(--color-border)] bg-white hover:border-[var(--color-primary-border)] hover:bg-[var(--color-surface-tint)]'
+              }`}
+              onClick={() => {
+                setAddWorkspace('REFERENCE');
+                setMessage(null);
+              }}
+              type="button"
+            >
+              <span className="grid size-11 shrink-0 place-items-center rounded-[10px] bg-white text-[var(--color-primary)] shadow-sm">
+                <Layers3 aria-hidden="true" size={21} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-primary)]">
+                  Step 1
+                </span>
+                <span className="mt-1 block font-extrabold text-[var(--color-text-strong)]">
+                  Categories & reference data
+                </span>
+                <span className="mt-1 block text-sm font-medium text-[var(--color-text-muted)]">
+                  Asset types, consumables, locations, blocks and departments
+                </span>
+              </span>
+              <ChevronRight
+                aria-hidden="true"
+                className="mt-2 shrink-0 text-[var(--color-primary)] transition group-hover:translate-x-0.5"
+                size={19}
+              />
+            </button>
+            <button
+              aria-current={addWorkspace === 'MODELS' ? 'page' : undefined}
+              className={`group flex min-h-28 items-start gap-4 rounded-[12px] border p-4 text-left transition ${
+                addWorkspace === 'MODELS'
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] shadow-sm'
+                  : 'border-[var(--color-border)] bg-white hover:border-[var(--color-primary-border)] hover:bg-[var(--color-surface-tint)]'
+              } ${!canAddModels ? 'cursor-not-allowed opacity-60' : ''}`}
+              disabled={!canAddModels}
+              onClick={() => {
+                setAddWorkspace('MODELS');
+                setMessage(null);
+              }}
+              type="button"
+            >
+              <span className="grid size-11 shrink-0 place-items-center rounded-[10px] bg-white text-[var(--color-primary)] shadow-sm">
+                <Database aria-hidden="true" size={21} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-primary)]">
+                  Step 2
+                </span>
+                <span className="mt-1 block font-extrabold text-[var(--color-text-strong)]">
+                  Registered models
+                </span>
+                <span className="mt-1 block text-sm font-medium text-[var(--color-text-muted)]">
+                  Control which model names can be used in inventory
+                </span>
+              </span>
+              <ChevronRight
+                aria-hidden="true"
+                className="mt-2 shrink-0 text-[var(--color-primary)] transition group-hover:translate-x-0.5"
+                size={19}
+              />
+            </button>
+          </nav>
+        </section>
+      ) : null}
+
+      {canAddModels && !viewOnly && addWorkspace === 'MODELS' ? (
+        <AppCard className="mx-auto max-w-5xl">
+          <div className="mb-5 flex flex-col gap-4 border-b border-[var(--color-border)] pb-5 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+                <Database aria-hidden="true" size={20} />
+              </span>
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+                  Model master
+                </p>
+                <h2 className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]">
+                  Add registered model
+                </h2>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  Choose a category first, then save the official model name. Materials and bulk
+                  uploads can only use registered models.
+                </p>
+              </div>
+            </div>
             {user?.role === 'ADMIN' ? (
               <Button
-                className="mt-3"
+                className="shrink-0"
                 loading={syncModelsMutation.isPending}
                 onClick={() => syncModelsMutation.mutate()}
                 type="button"
@@ -442,30 +586,30 @@ export function AssetTypePage() {
               </Button>
             ) : null}
           </div>
-          <div className="mb-4 grid grid-cols-2 gap-2">
-            <Button
+          <div className="mb-5 inline-flex rounded-[10px] bg-[var(--color-surface-tint)] p-1">
+            <button
+              className={`flex min-h-10 items-center gap-2 rounded-[8px] px-4 text-sm font-bold transition ${modelMode === 'individual' ? 'bg-white text-[var(--color-primary-strong)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-primary)]'}`}
               onClick={() => {
                 setModelMode('individual');
                 setModelImportResult(null);
                 setMessage(null);
               }}
               type="button"
-              variant={modelMode === 'individual' ? 'primary' : 'secondary'}
             >
               <PackagePlus aria-hidden="true" size={18} />
               Individual
-            </Button>
-            <Button
+            </button>
+            <button
+              className={`flex min-h-10 items-center gap-2 rounded-[8px] px-4 text-sm font-bold transition ${modelMode === 'bulk' ? 'bg-white text-[var(--color-primary-strong)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-primary)]'}`}
               onClick={() => {
                 setModelMode('bulk');
                 setMessage(null);
               }}
               type="button"
-              variant={modelMode === 'bulk' ? 'primary' : 'secondary'}
             >
               <FileSpreadsheet aria-hidden="true" size={18} />
               Bulk upload
-            </Button>
+            </button>
           </div>
           <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-end">
             <div>
@@ -569,16 +713,29 @@ export function AssetTypePage() {
                 models
               </p>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Required columns: Category and Model Name. Categories must already exist below in
-                Asset Details. CSV/XLSX, maximum 1,000 rows and 5 MB.
+                Required columns: Category and Model Name. Categories must already exist in the
+                Categories & reference data section. CSV/XLSX, maximum 1,000 rows and 5 MB.
               </p>
-              <input
-                accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                className="field-input mt-3"
-                onChange={chooseModelFile}
-                ref={modelFileInput}
-                type="file"
-              />
+              <label className="mt-4 block cursor-pointer rounded-[12px] border-2 border-dashed border-[var(--color-primary-border)] bg-[var(--color-surface-tint)] px-5 py-7 text-center transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]">
+                <Upload
+                  aria-hidden="true"
+                  className="mx-auto text-[var(--color-primary)]"
+                  size={24}
+                />
+                <span className="mt-2 block font-bold text-[var(--color-text-strong)]">
+                  {modelFile ? modelFile.name : 'Choose a model sheet'}
+                </span>
+                <span className="mt-1 block text-xs font-semibold text-[var(--color-text-muted)]">
+                  CSV or XLSX · maximum 5 MB
+                </span>
+                <input
+                  accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  className="sr-only"
+                  onChange={chooseModelFile}
+                  ref={modelFileInput}
+                  type="file"
+                />
+              </label>
               <div className="mt-4 flex justify-end">
                 <Button
                   disabled={!modelFile}
@@ -638,101 +795,93 @@ export function AssetTypePage() {
         </section>
       ) : null}
 
-      <div
-        className={viewOnly ? 'block' : 'grid items-start gap-5 xl:grid-cols-[380px_minmax(0,1fr)]'}
-      >
-        {!viewOnly ? (
-          <AppCard className="xl:order-2">
-            <div className="mb-5">
-              <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
-                Reference data
-              </p>
-              <h2 className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]">
-                Add categories and locations
-              </h2>
-              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                Maintain only the reusable dropdown values required across inventory.
-              </p>
+      <div className={viewOnly ? 'block' : 'mx-auto max-w-5xl'}>
+        {!viewOnly && addWorkspace === 'REFERENCE' ? (
+          <AppCard>
+            <div className="mb-5 flex items-start gap-3 border-b border-[var(--color-border)] pb-5">
+              <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+                <Layers3 aria-hidden="true" size={20} />
+              </span>
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+                  Reference data
+                </p>
+                <h2 className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]">
+                  Add categories and locations
+                </h2>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  These values become controlled dropdown options throughout inventory.
+                </p>
+              </div>
             </div>
-            <div className="mb-5 grid grid-cols-2 gap-2">
+            <div className="mb-5 inline-flex rounded-[10px] bg-[var(--color-surface-tint)] p-1">
               {canAddAssetTypes ? (
-                <Button
+                <button
+                  className={`flex min-h-10 items-center gap-2 rounded-[8px] px-4 text-sm font-bold transition ${mode === 'individual' ? 'bg-white text-[var(--color-primary-strong)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-primary)]'}`}
                   onClick={() => {
                     setMode('individual');
                     setMessage(null);
                     setResult(null);
                   }}
                   type="button"
-                  variant={mode === 'individual' ? 'primary' : 'secondary'}
                 >
                   <PackagePlus aria-hidden="true" size={18} />
                   Individual
-                </Button>
+                </button>
               ) : null}
               {canAddAssetTypes ? (
-                <Button
+                <button
+                  className={`flex min-h-10 items-center gap-2 rounded-[8px] px-4 text-sm font-bold transition ${mode === 'bulk' ? 'bg-white text-[var(--color-primary-strong)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-primary)]'}`}
                   onClick={() => {
                     setMode('bulk');
                     setMessage(null);
                     setResult(null);
                   }}
                   type="button"
-                  variant={mode === 'bulk' ? 'primary' : 'secondary'}
                 >
                   <FileSpreadsheet aria-hidden="true" size={18} />
                   Bulk upload
-                </Button>
+                </button>
               ) : null}
             </div>
-
-            {message ? (
-              messageIsSuccess ? (
-                <div
-                  className="rounded-[12px] border border-emerald-200 bg-[var(--color-success-soft)] p-4 text-[var(--color-success)]"
-                  role="status"
-                >
-                  <div className="flex items-center gap-3">
-                    <CheckCircle2 aria-hidden="true" className="shrink-0" size={20} />
-                    <p className="font-bold">{message}</p>
-                  </div>
-                </div>
-              ) : (
-                <ErrorSummary
-                  message={message}
-                  title={mode === 'individual' ? 'Asset detail' : 'Upload'}
-                />
-              )
-            ) : null}
 
             {!canAddAssetTypes ? (
               <p className="mt-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-sm font-semibold text-[var(--color-text-muted)]">
                 You can view saved asset details. Add/upload access is not enabled for this account.
               </p>
             ) : mode === 'individual' ? (
-              <form className="mt-5 space-y-5" onSubmit={submitIndividual}>
-                <label className="block space-y-1.5">
-                  <span className="field-label">Detail type</span>
-                  <select
-                    className="field-input"
-                    onChange={(event) => setKind(event.target.value as AssetDetailKind)}
-                    value={kind}
-                  >
-                    <option value="ASSET_TYPE">IT Asset</option>
-                    <option value="CONSUMABLE_TYPE">IT Consumable</option>
-                    <option value="LOCATION">Location</option>
-                    <option value="BLOCK">Block</option>
-                    <option value="DEPARTMENT">Department</option>
-                  </select>
-                </label>
-                <TextField
-                  label="Name"
-                  maxLength={120}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Desktop, Cable, Computer Centre, A Block, IT Department"
-                  required
-                  value={name}
-                />
-                <div className="flex justify-end">
+              <form onSubmit={submitIndividual}>
+                <div className="grid gap-5 md:grid-cols-2">
+                  <label className="block space-y-1.5">
+                    <span className="field-label">What are you adding?</span>
+                    <select
+                      className="field-input"
+                      onChange={(event) => setKind(event.target.value as AssetDetailKind)}
+                      value={kind}
+                    >
+                      <option value="ASSET_TYPE">IT Asset</option>
+                      <option value="CONSUMABLE_TYPE">IT Consumable</option>
+                      <option value="LOCATION">Location</option>
+                      <option value="BLOCK">Block</option>
+                      <option value="DEPARTMENT">Department</option>
+                    </select>
+                    <span className="block text-xs font-medium leading-5 text-[var(--color-text-muted)]">
+                      {detailDescriptions[kind]}
+                    </span>
+                  </label>
+                  <TextField
+                    label="Name"
+                    maxLength={120}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder={detailPlaceholders[kind]}
+                    required
+                    value={name}
+                  />
+                </div>
+                <div className="mt-6 flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-5">
+                  <p className="hidden text-sm text-[var(--color-text-muted)] sm:block">
+                    Duplicate values are blocked automatically.
+                  </p>
                   <Button loading={createMutation.isPending} type="submit">
                     {createMutation.isPending ? 'Saving...' : 'Save detail'}
                   </Button>
@@ -761,10 +910,15 @@ export function AssetTypePage() {
                     <option value="DEPARTMENT">Department</option>
                   </select>
                 </label>
-                <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
-                  <div className="rounded-[8px] border border-[var(--color-border)] p-5">
+                <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                  <label className="block cursor-pointer rounded-[12px] border-2 border-dashed border-[var(--color-primary-border)] bg-[var(--color-surface-tint)] p-6 text-center transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]">
+                    <Upload
+                      aria-hidden="true"
+                      className="mx-auto text-[var(--color-primary)]"
+                      size={24}
+                    />
                     <p className="font-bold text-[var(--color-text-strong)]">
-                      Upload {detailLabels[bulkKind]} list
+                      {file ? file.name : `Choose ${detailLabels[bulkKind]} sheet`}
                     </p>
                     <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                       CSV and XLSX, maximum 5 MB and 1,000 rows. Required column:{' '}
@@ -772,7 +926,7 @@ export function AssetTypePage() {
                     </p>
                     <input
                       accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                      className="field-input mt-4"
+                      className="sr-only"
                       onChange={chooseFile}
                       ref={fileInput}
                       type="file"
@@ -782,7 +936,7 @@ export function AssetTypePage() {
                         Selected: {file.name} · {(file.size / 1024).toFixed(1)} KB
                       </p>
                     ) : null}
-                  </div>
+                  </label>
                   <Button onClick={downloadTemplate} type="button" variant="secondary">
                     <Download aria-hidden="true" size={18} />
                     Template
@@ -893,160 +1047,172 @@ export function AssetTypePage() {
           </AppCard>
         ) : null}
 
-        <AppCard className={viewOnly ? 'max-w-none' : 'xl:sticky xl:top-5 xl:order-1'}>
-          <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
-            Directory
-          </p>
-          <h2 className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]">
-            Master-data directory
-          </h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            Select a data type, then manage every saved value from its action menu.
-          </p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px] lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_160px]">
-            <label className="relative block">
-              <span className="sr-only">Search saved asset details</span>
-              <Search
-                aria-hidden="true"
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
-                size={17}
-              />
-              <input
-                className="field-input pl-10"
-                onChange={(event) => {
-                  setSavedSearch(event.target.value);
-                  setDirectoryPage(1);
-                }}
-                placeholder="Search details"
-                type="search"
-                value={savedSearch}
-              />
-            </label>
-            <label>
-              <span className="sr-only">Filter saved details by type</span>
-              <select
-                className="field-input"
-                onChange={(event) => {
-                  setSavedKind(event.target.value as AssetDetailKind | 'ALL');
-                  setDirectoryPage(1);
-                }}
-                value={savedKind}
-              >
-                <option value="ALL">All types</option>
-                <option value="ASSET_TYPE">IT Asset</option>
-                <option value="CONSUMABLE_TYPE">IT Consumable</option>
-                <option value="LOCATION">Location</option>
-                <option value="BLOCK">Block</option>
-                <option value="DEPARTMENT">Department</option>
-              </select>
-            </label>
-          </div>
-          {query.isPending ? (
-            <LoadingPanel label="Loading asset details" />
-          ) : query.isError ? (
-            <ErrorState
-              message="Asset details could not be loaded."
-              onRetry={() => void query.refetch()}
-            />
-          ) : query.data.length === 0 ? (
-            <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-              No asset details saved yet.
-            </p>
-          ) : filteredDetails.length === 0 ? (
-            <p className="mt-4 rounded-[10px] bg-[var(--color-surface-tint)] p-4 text-sm font-semibold text-[var(--color-text-muted)]">
-              No records match the selected type and search text.
-            </p>
-          ) : (
-            <ul
-              className={
-                viewOnly
-                  ? 'mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3'
-                  : 'mt-4 max-h-[620px] space-y-1.5 overflow-auto pr-1'
-              }
-            >
-              {visibleDetails.map((assetType) => (
-                <li
-                  className="group flex items-center justify-between gap-3 rounded-[8px] border border-transparent bg-[var(--color-surface-tint)] px-3 py-2.5 text-[14px] font-bold text-[var(--color-text-strong)] transition hover:border-[var(--color-primary-border)] hover:bg-white"
-                  key={assetType.id}
+        {viewOnly ? (
+          <AppCard className="max-w-none">
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+                <ListFilter aria-hidden="true" size={20} />
+              </span>
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+                  Directory
+                </p>
+                <h2 className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]">
+                  Master-data directory
+                </h2>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  Search controlled values and use the action menu to edit or delete a record.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+              <label className="relative block">
+                <span className="sr-only">Search saved asset details</span>
+                <Search
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
+                  size={17}
+                />
+                <input
+                  className="field-input pl-10"
+                  onChange={(event) => {
+                    setSavedSearch(event.target.value);
+                    setDirectoryPage(1);
+                  }}
+                  placeholder="Search details"
+                  type="search"
+                  value={savedSearch}
+                />
+              </label>
+              <label>
+                <span className="sr-only">Filter saved details by type</span>
+                <select
+                  className="field-input"
+                  onChange={(event) => {
+                    setSavedKind(event.target.value as AssetDetailKind | 'ALL');
+                    setDirectoryPage(1);
+                  }}
+                  value={savedKind}
                 >
-                  <span className="min-w-0 break-words">
-                    <span className="mr-2 rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-xs text-[var(--color-primary)]">
-                      {detailLabels[assetType.kind]}
+                  <option value="ALL">All types</option>
+                  <option value="ASSET_TYPE">IT Asset</option>
+                  <option value="CONSUMABLE_TYPE">IT Consumable</option>
+                  <option value="LOCATION">Location</option>
+                  <option value="BLOCK">Block</option>
+                  <option value="DEPARTMENT">Department</option>
+                </select>
+              </label>
+            </div>
+            {query.isPending ? (
+              <LoadingPanel label="Loading asset details" />
+            ) : query.isError ? (
+              <ErrorState
+                message="Asset details could not be loaded."
+                onRetry={() => void query.refetch()}
+              />
+            ) : query.data.length === 0 ? (
+              <p className="mt-3 text-sm text-[var(--color-text-muted)]">
+                No asset details saved yet.
+              </p>
+            ) : filteredDetails.length === 0 ? (
+              <p className="mt-4 rounded-[10px] bg-[var(--color-surface-tint)] p-4 text-sm font-semibold text-[var(--color-text-muted)]">
+                No records match the selected type and search text.
+              </p>
+            ) : (
+              <ul className="mt-4 rounded-[12px] border border-[var(--color-border)] bg-white">
+                <li className="hidden grid-cols-[minmax(0,1fr)_180px_120px_48px] items-center gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface-tint)] px-4 py-3 text-xs font-extrabold uppercase tracking-[0.06em] text-[var(--color-text-muted)] md:grid">
+                  <span>Name</span>
+                  <span>Data type</span>
+                  <span>Models</span>
+                  <span className="sr-only">Actions</span>
+                </li>
+                {visibleDetails.map((assetType) => (
+                  <li
+                    className="group grid grid-cols-[minmax(0,1fr)_44px] items-center gap-3 border-b border-[var(--color-border)] px-4 py-3.5 text-sm text-[var(--color-text-strong)] transition last:border-b-0 hover:bg-[var(--color-surface-tint)] md:grid-cols-[minmax(0,1fr)_180px_120px_48px] md:gap-4"
+                    key={assetType.id}
+                  >
+                    <span className="min-w-0 break-words font-bold">{assetType.name}</span>
+                    <span className="hidden md:block">
+                      <span className="rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-primary)]">
+                        {detailLabels[assetType.kind]}
+                      </span>
                     </span>
-                    {assetType.name}
-                  </span>
-                  {canDeleteAssetTypes ? (
-                    <details className="relative">
-                      <summary
-                        aria-label={`Actions for ${assetType.name}`}
-                        className="icon-button list-none marker:hidden"
-                      >
-                        <MoreVertical size={17} />
-                      </summary>
-                      <div className="absolute right-0 top-full z-50 mt-2 w-40 rounded-[10px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
-                        {canAddAssetTypes ? (
+                    <span className="hidden text-sm font-semibold text-[var(--color-text-muted)] md:block">
+                      {(assetType.models?.length ?? 0).toLocaleString('en-IN')}
+                    </span>
+                    {canDeleteAssetTypes ? (
+                      <details className="relative">
+                        <summary
+                          aria-label={`Actions for ${assetType.name}`}
+                          className="icon-button list-none marker:hidden"
+                        >
+                          <MoreVertical size={17} />
+                        </summary>
+                        <div className="absolute right-0 top-full z-50 mt-2 w-40 rounded-[10px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
+                          {canAddAssetTypes ? (
+                            <button
+                              className="menu-item w-full"
+                              onClick={() => {
+                                setMessage(null);
+                                setEditTarget(assetType);
+                                setEditName(assetType.name);
+                              }}
+                              type="button"
+                            >
+                              <Pencil size={16} />
+                              Edit
+                            </button>
+                          ) : null}
                           <button
-                            className="menu-item w-full"
+                            className="menu-item w-full text-[var(--color-danger)]"
                             onClick={() => {
                               setMessage(null);
-                              setEditTarget(assetType);
-                              setEditName(assetType.name);
+                              setDeleteTarget(assetType);
                             }}
                             type="button"
                           >
-                            <Pencil size={16} />
-                            Edit
+                            <Trash2 size={16} />
+                            Delete
                           </button>
-                        ) : null}
-                        <button
-                          className="menu-item w-full text-[var(--color-danger)]"
-                          onClick={() => {
-                            setMessage(null);
-                            setDeleteTarget(assetType);
-                          }}
-                          type="button"
-                        >
-                          <Trash2 size={16} />
-                          Delete
-                        </button>
-                      </div>
-                    </details>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-          {!query.isPending && !query.isError && filteredDetails.length > 0 ? (
-            <div className="mt-4 flex flex-col gap-3 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-semibold text-[var(--color-text-muted)]">
-                Showing {(effectiveDirectoryPage - 1) * directoryPageSize + 1}–
-                {Math.min(effectiveDirectoryPage * directoryPageSize, filteredDetails.length)} of{' '}
-                {filteredDetails.length.toLocaleString('en-IN')}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  disabled={effectiveDirectoryPage <= 1}
-                  onClick={() => setDirectoryPage((page) => Math.max(1, page - 1))}
-                  type="button"
-                  variant="secondary"
-                >
-                  Previous
-                </Button>
-                <span className="grid min-w-20 place-items-center text-sm font-bold">
-                  {effectiveDirectoryPage} / {directoryPages}
-                </span>
-                <Button
-                  disabled={effectiveDirectoryPage >= directoryPages}
-                  onClick={() => setDirectoryPage((page) => Math.min(directoryPages, page + 1))}
-                  type="button"
-                  variant="secondary"
-                >
-                  Next
-                </Button>
+                        </div>
+                      </details>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {!query.isPending && !query.isError && filteredDetails.length > 0 ? (
+              <div className="mt-4 flex flex-col gap-3 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+                  Showing {(effectiveDirectoryPage - 1) * directoryPageSize + 1}–
+                  {Math.min(effectiveDirectoryPage * directoryPageSize, filteredDetails.length)} of{' '}
+                  {filteredDetails.length.toLocaleString('en-IN')}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    disabled={effectiveDirectoryPage <= 1}
+                    onClick={() => setDirectoryPage((page) => Math.max(1, page - 1))}
+                    type="button"
+                    variant="secondary"
+                  >
+                    Previous
+                  </Button>
+                  <span className="grid min-w-20 place-items-center text-sm font-bold">
+                    {effectiveDirectoryPage} / {directoryPages}
+                  </span>
+                  <Button
+                    disabled={effectiveDirectoryPage >= directoryPages}
+                    onClick={() => setDirectoryPage((page) => Math.min(directoryPages, page + 1))}
+                    type="button"
+                    variant="secondary"
+                  >
+                    Next
+                  </Button>
+                </div>
               </div>
-            </div>
-          ) : null}
-        </AppCard>
+            ) : null}
+          </AppCard>
+        ) : null}
       </div>
 
       {editTarget ? (
