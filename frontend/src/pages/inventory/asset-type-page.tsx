@@ -40,6 +40,7 @@ import {
   createInventoryModel,
   deleteAssetDetail,
   getAssetDetails,
+  getInventoryModels,
   importInventoryModels,
   previewAssetTypeImport,
   syncInventoryModels,
@@ -48,6 +49,11 @@ import {
   type AssetTypeImportResponse,
 } from '../../lib/inventory-api';
 import { isApiError } from '../../lib/api-client';
+import {
+  inventoryCategoryOptions,
+  inventoryModelOptions,
+  resolveCatalogOption,
+} from './inventory-form-utils';
 
 type Mode = 'individual' | 'bulk';
 type AddWorkspace = 'REFERENCE' | 'MODELS';
@@ -150,6 +156,11 @@ export function AssetTypePage() {
     queryKey: ['asset-details'],
     queryFn: ({ signal }) => getAssetDetails(undefined, signal),
   });
+  const masterModelsQuery = useQuery({
+    queryKey: ['inventory-models', 'model-master', modelTrackingMode],
+    queryFn: ({ signal }) => getInventoryModels(undefined, modelTrackingMode, signal),
+    enabled: !viewOnly && addWorkspace === 'MODELS',
+  });
   const filteredDetails = useMemo(
     () =>
       (query.data ?? [])
@@ -179,16 +190,31 @@ export function AssetTypePage() {
     };
   }, [query.data]);
   const categoryKind = modelTrackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE';
-  const registeredModels =
+  const cachedModels =
     query.data?.find(
       (detail) =>
         detail.kind === categoryKind &&
         detail.name.toLocaleUpperCase('en-US') === modelCategory.toLocaleUpperCase('en-US'),
     )?.models ?? [];
+  const modelCategories = inventoryCategoryOptions(
+    query.data ?? [],
+    masterModelsQuery.data ?? [],
+    modelTrackingMode,
+    modelCategory,
+  );
+  const selectedModelCategory = resolveCatalogOption(modelCategory, modelCategories);
+  const registeredModels = inventoryModelOptions(
+    (masterModelsQuery.data ?? []).filter(
+      (model) =>
+        model.category.toLocaleUpperCase('en-US') ===
+        selectedModelCategory.toLocaleUpperCase('en-US'),
+    ),
+    cachedModels,
+  );
   const modelMutation = useMutation({
     mutationFn: () =>
       createInventoryModel({
-        category: modelCategory,
+        category: selectedModelCategory,
         name: modelName,
         trackingMode: modelTrackingMode,
       }),
@@ -622,6 +648,7 @@ export function AssetTypePage() {
                 onChange={(event) => {
                   setModelTrackingMode(event.target.value as 'SERIALIZED' | 'QUANTITY');
                   setModelCategory('');
+                  setModelName('');
                   setModelImportResult(null);
                 }}
                 value={modelTrackingMode}
@@ -647,20 +674,14 @@ export function AssetTypePage() {
                   className="field-input mt-1.5"
                   id="model-category"
                   onChange={(event) => setModelCategory(event.target.value)}
-                  value={modelCategory}
+                  value={selectedModelCategory}
                 >
                   <option value="">Choose category</option>
-                  {(query.data ?? [])
-                    .filter(
-                      (detail) =>
-                        detail.kind ===
-                        (modelTrackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE'),
-                    )
-                    .map((detail) => (
-                      <option key={detail.id} value={detail.name}>
-                        {detail.name}
-                      </option>
-                    ))}
+                  {modelCategories.map((category) => (
+                    <option key={category.toLocaleUpperCase('en-US')} value={category}>
+                      {category}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="min-w-0">

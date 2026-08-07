@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CreateMaterialRequestSchema,
+  MergeInventoryModelsRequestSchema,
   MaterialStatusSchema,
   MaterialSchema,
   UpdateAssetUnitRequestSchema,
@@ -80,5 +81,33 @@ describe('inventory contracts', () => {
 
   it('does not accept ISSUED as an Admin-managed asset status', () => {
     expect(UpdateAssetUnitRequestSchema.safeParse({ status: 'ISSUED' }).success).toBe(false);
+  });
+
+  it('rejects a merge unless at least two different model IDs are selected', () => {
+    expect(
+      MergeInventoryModelsRequestSchema.safeParse({
+        modelIds: ['507f1f77bcf86cd799439011', '507f1f77bcf86cd799439011'],
+        canonicalName: 'Latitude 5450',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts the derived material display name allowed by category and model limits', () => {
+    const category = 'C'.repeat(120);
+    const model = 'M'.repeat(120);
+    expect(
+      CreateMaterialRequestSchema.safeParse({
+        name: `${category} ${model}`,
+        category,
+        typeModelName: model,
+        location: 'Main store',
+        block: 'A Block',
+        trackingMode: 'QUANTITY',
+        returnPolicy: 'CONSUMABLE',
+        totalQuantity: 10,
+        unitLabel: 'pieces',
+        assignmentTypes: ['SHORT_TERM'],
+      }).success,
+    ).toBe(true);
   });
 });

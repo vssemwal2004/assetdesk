@@ -1,4 +1,4 @@
-import mongoose, { Types } from 'mongoose';
+import mongoose, { Types, type ClientSession } from 'mongoose';
 
 import type {
   AdjustQuantityRequest,
@@ -26,9 +26,11 @@ import { AssetDetailModel, type AssetDetailDocument } from './asset-detail.model
 import { AssetTypeModel, type AssetTypeDocument } from './asset-type.model.js';
 import { AssetUnitModel } from './asset-unit.model.js';
 import { allocateAssetTag, allocateMaterialCode } from './inventory-id.js';
+import { buildMaterialIdentity, materialDisplayName } from './inventory-identity.js';
 import { toAssetUnit, toMaterial } from './inventory.mapper.js';
 import { MaterialModel, type MaterialDocument } from './material.model.js';
 import { InventoryModelModel } from './inventory-model.model.js';
+import { reconcileInventoryCategory } from './inventory-model.service.js';
 
 const MAX_IDENTIFIER_COLLISION_ATTEMPTS = 32;
 const MAX_QUANTITY = 1_000_000_000;
@@ -187,17 +189,22 @@ export async function listAssetTypes(): Promise<AssetTypeListResult> {
   return { assetTypes: records.map((record) => toAssetType(record)) };
 }
 
-export async function createAssetType(name: string, createdByUserId: string): Promise<AssetType> {
+export async function createAssetType(
+  name: string,
+  createdByUserId: string,
+  session?: ClientSession,
+): Promise<AssetType> {
   const normalizedName = normalizeAssetType(name);
   const createdBy = objectId(createdByUserId);
-  const existing = await AssetTypeModel.findOne({ normalizedName });
+  const existing = await AssetTypeModel.findOne({ normalizedName }).session(session ?? null);
   if (existing) return toAssetType(existing);
   try {
-    const assetType = await AssetTypeModel.create({ name: name.trim(), normalizedName, createdBy });
+    const assetType = new AssetTypeModel({ name: name.trim(), normalizedName, createdBy });
+    await assetType.save(session ? { session } : undefined);
     return toAssetType(assetType);
   } catch (error) {
     if (duplicateField(error) === 'normalizedName') {
-      const assetType = await AssetTypeModel.findOne({ normalizedName });
+      const assetType = await AssetTypeModel.findOne({ normalizedName }).session(session ?? null);
       if (assetType) return toAssetType(assetType);
     }
     throw error;
@@ -315,19 +322,31 @@ export async function updateAssetDetail(assetDetailId: string, name: string): Pr
   return toAssetDetail(detail);
 }
 
-async function savedDetailName(kind: AssetDetailKind, value: string): Promise<string | null> {
+async function savedDetailName(
+  kind: AssetDetailKind,
+  value: string,
+  session?: ClientSession,
+): Promise<string | null> {
   const normalizedName = normalizeLookupValue(value);
-  const detail = await AssetDetailModel.findOne({ kind, normalizedName });
+  const detail = await AssetDetailModel.findOne({ kind, normalizedName }).session(session ?? null);
   if (detail) return detail.name;
   if (kind === 'ASSET_TYPE' || kind === 'CONSUMABLE_TYPE') {
-    const assetType = await AssetTypeModel.findOne({ normalizedName: normalizeAssetType(value) });
+    const trackingMode = kind === 'ASSET_TYPE' ? 'SERIALIZED' : 'QUANTITY';
+    const registeredCategory = await reconcileInventoryCategory(value, trackingMode, session);
+    if (registeredCategory) return registeredCategory;
+    const assetType = await AssetTypeModel.findOne({ normalizedName: normalizeAssetType(value) })
+      .session(session ?? null);
     return assetType?.name ?? null;
   }
   return null;
 }
 
-async function requireSavedDetail(kind: AssetDetailKind, value: string): Promise<string> {
-  const saved = await savedDetailName(kind, value);
+async function requireSavedDetail(
+  kind: AssetDetailKind,
+  value: string,
+  session?: ClientSession,
+): Promise<string> {
+  const saved = await savedDetailName(kind, value, session);
   if (saved) return saved;
   const label = detailKindLabel(kind);
   throw new AppError(
@@ -383,39 +402,6 @@ function objectId(value: string): Types.ObjectId {
 
 function normalizeSerial(serialNumber: string): string {
   return serialNumber.trim().toLocaleUpperCase('en-US');
-}
-
-function normalizeConfiguration(value: string): string {
-  return value
-    .normalize('NFKC')
-    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
-    .trim()
-    .replace(/\s+/g, '')
-    .toLocaleUpperCase('en-US');
-}
-
-function materialIdentity(
-  trackingMode: TrackingMode,
-  name: string,
-  category: string,
-  location: string,
-  block: string,
-  configuration?: string,
-): string {
-  const normalizePart = (value: string) =>
-    value.normalize('NFKC').trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
-  const base = `${trackingMode}|${normalizePart(name)}|${normalizePart(category)}|${normalizePart(location)}|${normalizePart(block)}`;
-  return trackingMode === 'SERIALIZED'
-    ? `${base}|${normalizeConfiguration(configuration ?? '')}`
-    : base;
-}
-
-function materialDisplayName(category: string, typeModelName: string): string {
-  const cleanCategory = category.trim().replace(/\s+/g, ' ');
-  const cleanModel = typeModelName.trim().replace(/\s+/g, ' ');
-  return cleanModel.toLocaleLowerCase('en-US').startsWith(cleanCategory.toLocaleLowerCase('en-US'))
-    ? cleanModel
-    : `${cleanCategory} ${cleanModel}`;
 }
 
 function materialConflict(): AppError {
@@ -596,19 +582,25 @@ export function calculateQuantityAdjustment(
 export async function createMaterial(
   input: CreateMaterialRequest,
   createdByUserId: string,
+  session?: ClientSession,
 ): Promise<Material> {
   const createdBy = objectId(createdByUserId);
-  const category = await requireSavedDetail(categoryDetailKind(input.trackingMode), input.category);
+  const category = await requireSavedDetail(
+    categoryDetailKind(input.trackingMode),
+    input.category,
+    session,
+  );
   const typeModelName = await requireRegisteredInventoryModel(
     category,
     input.typeModelName,
     input.trackingMode,
+    session,
   );
   const name = materialDisplayName(category, typeModelName);
-  const location = await requireSavedDetail('LOCATION', input.location);
-  const block = await requireSavedDetail('BLOCK', input.block);
+  const location = await requireSavedDetail('LOCATION', input.location, session);
+  const block = await requireSavedDetail('BLOCK', input.block, session);
   const department = input.department
-    ? await requireSavedDetail('DEPARTMENT', input.department)
+    ? await requireSavedDetail('DEPARTMENT', input.department, session)
     : undefined;
   const locationBlock = `${location} / ${block}`;
   const existing = await MaterialModel.exists({
@@ -620,7 +612,7 @@ export async function createMaterial(
     ...(input.trackingMode === 'SERIALIZED'
       ? { configuration: exactCaseInsensitive(input.configuration) }
       : {}),
-  });
+  }).session(session ?? null);
   if (existing) throw materialConflict();
 
   for (let attempt = 0; attempt < MAX_IDENTIFIER_COLLISION_ATTEMPTS; attempt += 1) {
@@ -633,7 +625,7 @@ export async function createMaterial(
     try {
       const initialQuantity =
         input.trackingMode === 'QUANTITY' ? input.totalQuantity : input.serialNumbers.length;
-      createdMaterial = await MaterialModel.create({
+      createdMaterial = new MaterialModel({
         materialCode,
         name,
         category,
@@ -644,7 +636,7 @@ export async function createMaterial(
         ...(department ? { department } : {}),
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),
         locationBlock,
-        identityKey: materialIdentity(
+        identityKey: buildMaterialIdentity(
           input.trackingMode,
           name,
           category,
@@ -663,7 +655,8 @@ export async function createMaterial(
         ...(input.trackingMode === 'QUANTITY' ? { unitLabel: input.unitLabel } : {}),
         createdBy,
       });
-      await createAssetType(category, createdByUserId);
+      await createdMaterial.save(session ? { session } : undefined);
+      await createAssetType(category, createdByUserId, session);
 
       if (input.trackingMode === 'SERIALIZED') {
         const material = createdMaterial;
@@ -682,19 +675,20 @@ export async function createMaterial(
               createdBy,
             };
           }),
+          session ? { session } : undefined,
         );
       }
 
       return toMaterial(createdMaterial);
     } catch (error) {
-      if (createdMaterial) {
+      if (createdMaterial && !session) {
         await Promise.all([
           AssetUnitModel.deleteMany({ materialId: createdMaterial._id }),
           MaterialModel.deleteOne({ _id: createdMaterial._id }),
         ]);
       }
-      if (duplicateField(error) === 'materialCode') continue;
-      if (duplicateField(error) === 'assetTag') continue;
+      if (!session && duplicateField(error) === 'materialCode') continue;
+      if (!session && duplicateField(error) === 'assetTag') continue;
       const materialDuplicate = translateMaterialDuplicateError(error);
       if (materialDuplicate) throw materialDuplicate;
       const translated = translateAssetUnitDuplicateError(error);
@@ -714,16 +708,19 @@ async function requireRegisteredInventoryModel(
   category: string,
   name: string,
   trackingMode: TrackingMode,
+  session?: ClientSession,
 ): Promise<string> {
   const nameNormalized = normalizeModelMatch(name);
   const models = await InventoryModelModel.find({
     categoryNormalized: normalizeAssetType(category),
     trackingMode,
-  }).lean();
+  })
+    .session(session ?? null)
+    .lean();
   const registered = models.find(
     (model) =>
       normalizeModelMatch(model.name) === nameNormalized ||
-      model.aliases.some((alias) => normalizeModelMatch(alias) === nameNormalized),
+      (model.aliases ?? []).some((alias) => normalizeModelMatch(alias) === nameNormalized),
   );
   if (!registered) {
     throw new AppError(
@@ -907,7 +904,7 @@ export async function updateMaterial(
           : {}),
       });
       if (duplicate) throw materialConflict();
-      material.identityKey = materialIdentity(
+      material.identityKey = buildMaterialIdentity(
         material.trackingMode,
         material.name,
         material.category,
@@ -1026,43 +1023,59 @@ export async function deleteMaterial(materialCode: string): Promise<Material> {
 export async function adjustQuantity(
   materialCode: string,
   input: AdjustQuantityRequest,
+  existingSession?: ClientSession,
 ): Promise<QuantityAdjustmentResult> {
+  if (existingSession) return adjustQuantityInSession(materialCode, input, existingSession);
+
   const session = await mongoose.startSession();
+  try {
+    let result: QuantityAdjustmentResult | undefined;
+    await session.withTransaction(async () => {
+      result = await adjustQuantityInSession(materialCode, input, session);
+    });
+    if (!result) {
+      throw new AppError(500, 'QUANTITY_ADJUSTMENT_FAILED', 'The quantity could not be adjusted.');
+    }
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
+async function adjustQuantityInSession(
+  materialCode: string,
+  input: AdjustQuantityRequest,
+  session: ClientSession,
+): Promise<QuantityAdjustmentResult> {
   let updatedMaterial: MaterialDocument | undefined;
   let previousTotalQuantity = 0;
   let previousAvailableQuantity = 0;
 
-  try {
-    await session.withTransaction(async () => {
-      const material = await MaterialModel.findOne({ materialCode }).session(session);
-      if (!material) throw materialNotFound();
-      if (material.trackingMode !== 'QUANTITY') {
-        throw new AppError(
-          409,
-          'MATERIAL_NOT_QUANTITY_TRACKED',
-          'Quantity adjustments only apply to quantity-tracked material.',
-        );
-      }
-      if (material.status !== 'ACTIVE') {
-        throw new AppError(
-          409,
-          'MATERIAL_ARCHIVED',
-          'Reactivate this material before adjusting quantity.',
-        );
-      }
-
-      const next = calculateQuantityAdjustment(material, input.quantityDelta);
-
-      previousTotalQuantity = material.totalQuantity;
-      previousAvailableQuantity = material.availableQuantity;
-      material.totalQuantity = next.totalQuantity;
-      material.availableQuantity = next.availableQuantity;
-      await material.save({ session });
-      updatedMaterial = material;
-    });
-  } finally {
-    await session.endSession();
+  const material = await MaterialModel.findOne({ materialCode }).session(session);
+  if (!material) throw materialNotFound();
+  if (material.trackingMode !== 'QUANTITY') {
+    throw new AppError(
+      409,
+      'MATERIAL_NOT_QUANTITY_TRACKED',
+      'Quantity adjustments only apply to quantity-tracked material.',
+    );
   }
+  if (material.status !== 'ACTIVE') {
+    throw new AppError(
+      409,
+      'MATERIAL_ARCHIVED',
+      'Reactivate this material before adjusting quantity.',
+    );
+  }
+
+  const next = calculateQuantityAdjustment(material, input.quantityDelta);
+
+  previousTotalQuantity = material.totalQuantity;
+  previousAvailableQuantity = material.availableQuantity;
+  material.totalQuantity = next.totalQuantity;
+  material.availableQuantity = next.availableQuantity;
+  await material.save({ session });
+  updatedMaterial = material;
 
   if (!updatedMaterial) {
     throw new AppError(500, 'QUANTITY_ADJUSTMENT_FAILED', 'The quantity could not be adjusted.');

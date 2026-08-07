@@ -16,9 +16,14 @@ import { AppCard, Button, ErrorSummary, PageHeader, TextField } from '../../comp
 import { isApiError } from '../../lib/api-client';
 import { createMaterial, getAssetDetails, getInventoryModels } from '../../lib/inventory-api';
 import { inventoryStatusLabel } from '../../lib/inventory-status';
+import {
+  inventoryModelOptions,
+  materialRequestName,
+  resolveCatalogOption,
+} from './inventory-form-utils';
 import { MaterialCategoryField } from './material-category-field';
 
-interface MaterialForm {
+export interface MaterialForm {
   name: string;
   category: string;
   typeModelName: string;
@@ -65,14 +70,6 @@ function normalizedSerialNumbers(values: string[]): string[] {
   return values.map((serialNumber) => serialNumber.trim());
 }
 
-function materialName(assetType: string, typeModelName: string): string {
-  const category = assetType.trim().replace(/\s+/g, ' ');
-  const model = typeModelName.trim().replace(/\s+/g, ' ');
-  return model.toLocaleLowerCase('en-US').startsWith(category.toLocaleLowerCase('en-US'))
-    ? model
-    : `${category} ${model}`;
-}
-
 export function serialFieldsForQuantity(current: string[], rawQuantity: string): string[] {
   const quantity = Number(rawQuantity);
   return Number.isInteger(quantity) && quantity > 0 && quantity <= 1000
@@ -105,7 +102,51 @@ function materialFormMessage(form: MaterialForm): string | null {
   if (form.trackingMode === 'QUANTITY' && form.unitLabel.trim().length < 1) {
     return 'Enter a unit label, for example units, boxes, meters, or pieces.';
   }
+  if (form.trackingMode === 'QUANTITY') {
+    const quantity = Number(form.totalQuantity);
+    if (!form.totalQuantity.trim() || !Number.isInteger(quantity) || quantity < 0) {
+      return 'Enter an initial quantity of zero or more.';
+    }
+    if (quantity > 1_000_000_000) {
+      return 'Initial quantity cannot exceed 1,000,000,000.';
+    }
+  }
   return null;
+}
+
+export function buildCreateMaterialDraft(
+  form: MaterialForm,
+  selectedModelName = form.typeModelName,
+): unknown {
+  const base = {
+    name: materialRequestName(form.category, selectedModelName),
+    category: form.category,
+    typeModelName: selectedModelName,
+    location: form.location,
+    block: form.block,
+    ...(form.department.trim() ? { department: form.department } : {}),
+    ...(form.vendorName.trim() ? { vendorName: form.vendorName } : {}),
+    ...(form.description.trim() ? { description: form.description } : {}),
+    status: form.status,
+    assignmentTypes:
+      form.trackingMode === 'SERIALIZED' ? (['LONG_TERM'] as const) : (['SHORT_TERM'] as const),
+  };
+
+  return form.trackingMode === 'SERIALIZED'
+    ? {
+        ...base,
+        trackingMode: 'SERIALIZED',
+        returnPolicy: 'REUSABLE',
+        configuration: form.configuration,
+        serialNumbers: normalizedSerialNumbers(form.serialNumbers),
+      }
+    : {
+        ...base,
+        trackingMode: 'QUANTITY',
+        returnPolicy: form.returnPolicy,
+        totalQuantity: Number(form.totalQuantity),
+        unitLabel: form.unitLabel,
+      };
 }
 
 export function CreateMaterialPage() {
@@ -138,6 +179,19 @@ export function CreateMaterialPage() {
     queryFn: ({ signal }) => getInventoryModels(form.category, form.trackingMode, signal),
     enabled: Boolean(form.category),
   });
+  const categoryKind = form.trackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE';
+  const cachedModelNames =
+    detailsQuery.data?.find(
+      (detail) =>
+        detail.kind === categoryKind &&
+        detail.name.toLocaleUpperCase('en-US') === form.category.toLocaleUpperCase('en-US'),
+    )?.models ?? [];
+  const modelOptions = inventoryModelOptions(
+    modelsQuery.data ?? [],
+    cachedModelNames,
+    form.typeModelName,
+  );
+  const selectedModelName = resolveCatalogOption(form.typeModelName, modelOptions);
 
   const mutation = useMutation({
     mutationFn: (input: CreateMaterialRequest) => createMaterial(input),
@@ -162,37 +216,9 @@ export function CreateMaterialPage() {
       return;
     }
 
-    const base = {
-      name: materialName(form.category, form.typeModelName),
-      category: form.category,
-      typeModelName: form.typeModelName,
-      location: form.location,
-      block: form.block,
-      ...(form.department ? { department: form.department } : {}),
-      ...(form.vendorName.trim() ? { vendorName: form.vendorName } : {}),
-      ...(form.description.trim() ? { description: form.description } : {}),
-      status: form.status,
-      assignmentTypes:
-        form.trackingMode === 'SERIALIZED' ? (['LONG_TERM'] as const) : (['SHORT_TERM'] as const),
-    };
-    const draft =
-      form.trackingMode === 'SERIALIZED'
-        ? {
-            ...base,
-            trackingMode: 'SERIALIZED',
-            returnPolicy: 'REUSABLE',
-            configuration: form.configuration,
-            serialNumbers: normalizedSerialNumbers(form.serialNumbers),
-          }
-        : {
-            ...base,
-            trackingMode: 'QUANTITY',
-            returnPolicy: form.returnPolicy,
-            totalQuantity: Number(form.totalQuantity),
-            unitLabel: form.unitLabel,
-          };
-
-    const result = CreateMaterialRequestSchema.safeParse(draft);
+    const result = CreateMaterialRequestSchema.safeParse(
+      buildCreateMaterialDraft(form, selectedModelName),
+    );
     if (!result.success) {
       setMessage(firstIssueMessage(result.error));
       return;
@@ -204,8 +230,12 @@ export function CreateMaterialPage() {
     setForm((current) => ({
       ...current,
       category: '',
+      typeModelName: '',
+      name: '',
       trackingMode: value,
-      returnPolicy: value === 'SERIALIZED' ? 'REUSABLE' : current.returnPolicy,
+      returnPolicy: value === 'SERIALIZED' ? 'REUSABLE' : 'CONSUMABLE',
+      totalQuantity: '1',
+      serialNumbers: [''],
     }));
   }
 
@@ -306,20 +336,33 @@ export function CreateMaterialPage() {
               value={form.category}
             />
             <SelectField
-              disabled={!form.category || modelsQuery.isPending}
+              disabled={!form.category || (modelsQuery.isPending && modelOptions.length === 0)}
+              hint={
+                modelsQuery.isError
+                  ? cachedModelNames.length > 0
+                    ? 'Showing the last Model Master values saved with this category.'
+                    : 'Models could not be loaded. Refresh the page or check Model Master.'
+                  : form.category && !modelsQuery.isPending && modelOptions.length === 0
+                    ? 'No models are registered for this category and material type.'
+                    : undefined
+              }
               id="material-model"
               label="Model"
               onChange={(typeModelName) =>
                 setForm((value) => ({ ...value, typeModelName, name: typeModelName }))
               }
-              value={form.typeModelName}
+              value={selectedModelName}
             >
               <option value="">
-                {form.category ? 'Choose registered model' : 'Choose category first'}
+                {!form.category
+                  ? 'Choose category first'
+                  : modelsQuery.isPending && modelOptions.length === 0
+                    ? 'Loading registered models…'
+                    : 'Choose registered model'}
               </option>
-              {(modelsQuery.data ?? []).map((model) => (
-                <option key={model.id} value={model.name}>
-                  {model.name}
+              {modelOptions.map((modelName) => (
+                <option key={modelName.toLocaleUpperCase('en-US')} value={modelName}>
+                  {modelName}
                 </option>
               ))}
             </SelectField>

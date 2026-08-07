@@ -9,6 +9,7 @@ import {
 import { AssetTagSchema, MaterialCodeSchema } from './identifiers.js';
 
 const NameSchema = z.string().trim().min(2).max(120);
+const MaterialDisplayNameSchema = z.string().trim().min(2).max(241);
 const CategorySchema = z.string().trim().min(2).max(120);
 const DescriptionSchema = z.string().trim().max(1_000);
 const AssetTypeNameSchema = z.string().trim().min(2).max(120);
@@ -32,7 +33,7 @@ export const MaterialStatusSchema = z.enum([
 export type MaterialStatus = z.infer<typeof MaterialStatusSchema>;
 
 const CreateMaterialBaseSchema = z.object({
-  name: NameSchema,
+  name: MaterialDisplayNameSchema,
   category: CategorySchema,
   typeModelName: NameSchema,
   location: LocationSchema,
@@ -278,7 +279,16 @@ export const CreateInventoryModelRequestSchema = z
   .strict();
 export const MergeInventoryModelsRequestSchema = z
   .object({ modelIds: z.array(z.string().min(1)).min(2).max(200), canonicalName: NameSchema })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (new Set(value.modelIds).size !== value.modelIds.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['modelIds'],
+        message: 'Choose at least two different models to merge.',
+      });
+    }
+  });
 export const UpdateInventoryModelRequestSchema = z.object({ name: NameSchema }).strict();
 export const InventoryModelMutationResponseSchema = z.object({
   data: z.object({

@@ -45,7 +45,8 @@ const MaterialSchema = new Schema<MaterialRecord>(
       immutable: true,
       match: /^GEU-(?:MAT-\d{6}|\d{4}-\d{6})$/,
     },
-    name: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
+    // A display name is derived from category + model, both of which may be 120 characters.
+    name: { type: String, required: true, trim: true, minlength: 2, maxlength: 241 },
     category: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
     typeModelName: { type: String, trim: true, minlength: 2, maxlength: 120 },
     configuration: { type: String, trim: true, minlength: 1, maxlength: 1_000 },
@@ -53,7 +54,8 @@ const MaterialSchema = new Schema<MaterialRecord>(
     block: { type: String, trim: true, minlength: 1, maxlength: 120 },
     department: { type: String, trim: true, minlength: 1, maxlength: 120 },
     vendorName: { type: String, trim: true, maxlength: 120 },
-    locationBlock: { type: String, trim: true, minlength: 1, maxlength: 120 },
+    // This is derived as "location / block" from two independently valid 120-char values.
+    locationBlock: { type: String, trim: true, minlength: 1, maxlength: 243 },
     identityKey: { type: String, maxlength: 300 },
     description: { type: String, trim: true, maxlength: 1_000 },
     trackingMode: {

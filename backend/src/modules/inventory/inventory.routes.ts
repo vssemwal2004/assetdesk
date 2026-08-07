@@ -1,4 +1,5 @@
 import { Router, type Request, type RequestHandler } from 'express';
+import mongoose, { type ClientSession } from 'mongoose';
 import multer from 'multer';
 import { z } from 'zod';
 
@@ -173,9 +174,10 @@ async function audit(
   targetType: string,
   targetId: string,
   metadata?: Record<string, unknown>,
+  session?: ClientSession,
 ): Promise<void> {
   const actor = authenticated(request);
-  await appendAuditEvent({
+  const event = {
     requestId: request.requestId,
     actorUserId: actor.userId,
     actorWorkerId: actor.workerId,
@@ -185,7 +187,30 @@ async function audit(
     targetId,
     result: 'SUCCESS',
     ...(metadata ? { metadata } : {}),
-  });
+  };
+  if (session) {
+    await appendAuditEvent(event, { session });
+    return;
+  }
+  await appendAuditEvent(event);
+}
+
+async function runInventoryTransaction<T>(
+  operation: (session: ClientSession) => Promise<T>,
+): Promise<T> {
+  const session = await mongoose.startSession();
+  let completed = false;
+  let result: T;
+  try {
+    await session.withTransaction(async () => {
+      result = await operation(session);
+      completed = true;
+    });
+  } finally {
+    await session.endSession();
+  }
+  if (!completed) throw new Error('Inventory transaction completed without a result.');
+  return result!;
 }
 
 function pageMeta(result: { page: number; pageSize: number; total: number; totalPages: number }) {
@@ -307,7 +332,13 @@ export function createInventoryRouter(): Router {
         ? TrackingModeSchema.parse(request.query.trackingMode)
         : undefined;
       const includeStock = request.query.includeStock === 'true';
-      response.json({ data: await listInventoryModels(category, trackingMode, includeStock) });
+      response.json({
+        data: await listInventoryModels(category, trackingMode, includeStock, {
+          role: actor.role,
+          actorUserId: actor.userId,
+          dataScope: actor.dataAccess.inventory,
+        }),
+      });
     } catch (error) {
       next(error);
     }
@@ -321,15 +352,19 @@ export function createInventoryRouter(): Router {
     async (request, response, next) => {
       try {
         const input = CreateInventoryModelRequestSchema.parse(request.body);
-        const model = await createInventoryModel(
-          input.category,
-          input.name,
-          input.trackingMode,
-          authenticated(request).userId,
-        );
-        await audit(request, 'INVENTORY_MODEL_CREATED', 'INVENTORY_MODEL', model.id, {
-          category: model.category,
-          name: model.name,
+        const model = await runInventoryTransaction(async (session) => {
+          const created = await createInventoryModel(
+            input.category,
+            input.name,
+            input.trackingMode,
+            authenticated(request).userId,
+            session,
+          );
+          await audit(request, 'INVENTORY_MODEL_CREATED', 'INVENTORY_MODEL', created.id, {
+            category: created.category,
+            name: created.name,
+          }, session);
+          return created;
         });
         response.status(201).json({ data: { model } });
       } catch (error) {
@@ -390,15 +425,19 @@ export function createInventoryRouter(): Router {
     async (request, response, next) => {
       try {
         const input = MergeInventoryModelsRequestSchema.parse(request.body);
-        const result = await mergeInventoryModels(
-          input.modelIds,
-          input.canonicalName,
-          authenticated(request).userId,
-        );
-        await audit(request, 'INVENTORY_MODELS_MERGED', 'INVENTORY_MODEL', result.model.id, {
-          sourceModelIds: input.modelIds,
-          canonicalName: result.model.name,
-          mergedMaterialCount: result.mergedMaterialCount,
+        const result = await runInventoryTransaction(async (session) => {
+          const merged = await mergeInventoryModels(
+            input.modelIds,
+            input.canonicalName,
+            authenticated(request).userId,
+            session,
+          );
+          await audit(request, 'INVENTORY_MODELS_MERGED', 'INVENTORY_MODEL', merged.model.id, {
+            sourceModelIds: input.modelIds,
+            canonicalName: merged.model.name,
+            mergedMaterialCount: merged.mergedMaterialCount,
+          }, session);
+          return merged;
         });
         response.json({ data: result });
       } catch (error) {
@@ -415,9 +454,16 @@ export function createInventoryRouter(): Router {
     async (request, response, next) => {
       try {
         const input = UpdateInventoryModelRequestSchema.parse(request.body);
-        const model = await updateInventoryModel(String(request.params.modelId), input.name);
-        await audit(request, 'INVENTORY_MODEL_UPDATED', 'INVENTORY_MODEL', model.id, {
-          name: model.name,
+        const model = await runInventoryTransaction(async (session) => {
+          const updated = await updateInventoryModel(
+            String(request.params.modelId),
+            input.name,
+            session,
+          );
+          await audit(request, 'INVENTORY_MODEL_UPDATED', 'INVENTORY_MODEL', updated.id, {
+            name: updated.name,
+          }, session);
+          return updated;
         });
         response.json({ data: { model } });
       } catch (error) {
@@ -434,8 +480,10 @@ export function createInventoryRouter(): Router {
     async (request, response, next) => {
       try {
         const modelId = String(request.params.modelId);
-        await deleteInventoryModel(modelId);
-        await audit(request, 'INVENTORY_MODEL_DELETED', 'INVENTORY_MODEL', modelId);
+        await runInventoryTransaction(async (session) => {
+          await deleteInventoryModel(modelId, session);
+          await audit(request, 'INVENTORY_MODEL_DELETED', 'INVENTORY_MODEL', modelId, undefined, session);
+        });
         response.status(204).send();
       } catch (error) {
         next(error);
@@ -643,11 +691,14 @@ export function createInventoryRouter(): Router {
     async (request, response, next) => {
       try {
         const input = CreateMaterialRequestSchema.parse(request.body);
-        const material = await createMaterial(input, authenticated(request).userId);
-        await audit(request, 'MATERIAL_CREATED', 'MATERIAL', material.materialCode, {
-          trackingMode: material.trackingMode,
-          returnPolicy: material.returnPolicy,
-          initialQuantity: material.totalQuantity,
+        const material = await runInventoryTransaction(async (session) => {
+          const created = await createMaterial(input, authenticated(request).userId, session);
+          await audit(request, 'MATERIAL_CREATED', 'MATERIAL', created.materialCode, {
+            trackingMode: created.trackingMode,
+            returnPolicy: created.returnPolicy,
+            initialQuantity: created.totalQuantity,
+          }, session);
+          return created;
         });
         response.status(201).json({ data: { material } });
       } catch (error) {
@@ -849,14 +900,17 @@ export function createInventoryRouter(): Router {
       try {
         const code = materialCode(request);
         const input = AdjustQuantityRequestSchema.parse(request.body);
-        const result = await adjustQuantity(code, input);
-        await audit(request, 'MATERIAL_QUANTITY_ADJUSTED', 'MATERIAL', code, {
-          quantityDelta: input.quantityDelta,
-          reason: input.reason,
-          previousTotalQuantity: result.adjustment.previousTotalQuantity,
-          previousAvailableQuantity: result.adjustment.previousAvailableQuantity,
-          totalQuantity: result.material.totalQuantity,
-          availableQuantity: result.material.availableQuantity,
+        const result = await runInventoryTransaction(async (session) => {
+          const adjusted = await adjustQuantity(code, input, session);
+          await audit(request, 'MATERIAL_QUANTITY_ADJUSTED', 'MATERIAL', code, {
+            quantityDelta: input.quantityDelta,
+            reason: input.reason,
+            previousTotalQuantity: adjusted.adjustment.previousTotalQuantity,
+            previousAvailableQuantity: adjusted.adjustment.previousAvailableQuantity,
+            totalQuantity: adjusted.material.totalQuantity,
+            availableQuantity: adjusted.material.availableQuantity,
+          }, session);
+          return adjusted;
         });
         response.json({ data: result });
       } catch (error) {

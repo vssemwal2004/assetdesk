@@ -5,9 +5,11 @@ import {
   ChevronDown,
   Eye,
   MoreVertical,
+  Minus,
   PackagePlus,
   PackageSearch,
   Pencil,
+  Plus,
   Trash2,
   X,
 } from 'lucide-react';
@@ -53,6 +55,12 @@ import {
 import { isApiError } from '../../lib/api-client';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
 import { inventoryStatusLabel, normalizeInventoryStatus } from '../../lib/inventory-status';
+import {
+  materialGroupKey,
+  quantityAdjustmentMaximum,
+  signedQuantityDelta,
+  type QuantityAdjustmentDirection,
+} from './inventory-form-utils';
 
 function materialStatus(value: string): MaterialStatus | undefined {
   return normalizeInventoryStatus(value);
@@ -101,20 +109,23 @@ function inventorySummary(materials: Material[]) {
   );
 }
 
-interface MaterialGroup {
+export interface MaterialGroup {
   category: string;
+  trackingMode: TrackingMode;
   materials: Material[];
   totalQuantity: number;
   availableQuantity: number;
   issuedQuantity: number;
 }
 
-function groupMaterials(materials: Material[]): MaterialGroup[] {
+export function groupMaterials(materials: Material[]): MaterialGroup[] {
   const groups = new Map<string, MaterialGroup>();
   for (const material of materials) {
     const category = material.category || 'Unassigned asset type';
-    const group = groups.get(category) ?? {
+    const key = materialGroupKey(category, material.trackingMode);
+    const group = groups.get(key) ?? {
       category,
+      trackingMode: material.trackingMode,
       materials: [],
       totalQuantity: 0,
       availableQuantity: 0,
@@ -124,7 +135,7 @@ function groupMaterials(materials: Material[]): MaterialGroup[] {
     group.totalQuantity += material.totalQuantity;
     group.availableQuantity += material.availableQuantity;
     group.issuedQuantity += material.issuedQuantity;
-    groups.set(category, group);
+    groups.set(key, group);
   }
   return [...groups.values()]
     .map((group) => ({
@@ -147,7 +158,11 @@ function groupMaterials(materials: Material[]): MaterialGroup[] {
           ),
       ),
     }))
-    .sort((left, right) => left.category.localeCompare(right.category));
+    .sort(
+      (left, right) =>
+        left.category.localeCompare(right.category) ||
+        left.trackingMode.localeCompare(right.trackingMode),
+    );
 }
 
 function materialStatsLabel(material: Material): string {
@@ -281,12 +296,13 @@ export function InventoryPage() {
     queryKey: [
       'inventory-models',
       mergeCategory?.category,
-      mergeCategory?.materials[0]?.trackingMode,
+      mergeCategory?.trackingMode,
+      { includeStock: true },
     ],
     queryFn: ({ signal }) =>
       getInventoryModels(
         mergeCategory?.category,
-        mergeCategory?.materials[0]?.trackingMode,
+        mergeCategory?.trackingMode,
         signal,
         true,
       ),
@@ -294,7 +310,10 @@ export function InventoryPage() {
   });
   const mergeModelsMutation = useMutation({
     mutationFn: () =>
-      mergeInventoryModels({ modelIds: mergeModelIds, canonicalName: canonicalModelName }),
+      mergeInventoryModels({
+        modelIds: [...new Set(mergeModelIds)],
+        canonicalName: canonicalModelName.trim().replace(/\s+/g, ' '),
+      }),
     onSuccess: async (result) => {
       setMergeCategory(null);
       setMergeModelIds([]);
@@ -306,6 +325,7 @@ export function InventoryPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['inventory'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory-models'] }),
+        queryClient.invalidateQueries({ queryKey: ['asset-details'] }),
       ]);
     },
     onError: (error) =>
@@ -328,6 +348,7 @@ export function InventoryPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['inventory'] }),
         queryClient.invalidateQueries({ queryKey: ['inventory-models'] }),
+        queryClient.invalidateQueries({ queryKey: ['asset-details'] }),
       ]);
     },
     onError: (error) =>
@@ -338,7 +359,10 @@ export function InventoryPage() {
     onSuccess: async () => {
       setModelCrud(null);
       setActionNotice('Unused model deleted.');
-      await queryClient.invalidateQueries({ queryKey: ['inventory-models'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inventory-models'] }),
+        queryClient.invalidateQueries({ queryKey: ['asset-details'] }),
+      ]);
     },
     onError: (error) =>
       setActionError(isApiError(error) ? error.message : 'Model could not be deleted.'),
@@ -722,7 +746,10 @@ export function InventoryPage() {
         <>
           <div className="space-y-3 min-[840px]:hidden">
             {materialGroups.map((group) => (
-              <details className="group space-y-2" key={group.category}>
+              <details
+                className="group space-y-2"
+                key={materialGroupKey(group.category, group.trackingMode)}
+              >
                 <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -735,7 +762,8 @@ export function InventoryPage() {
                           {group.category}
                         </h2>
                         <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                          {group.materials.length} model{group.materials.length === 1 ? '' : 's'}
+                          {humanizeCatalogValue(group.trackingMode)} · {group.materials.length} model
+                          {group.materials.length === 1 ? '' : 's'}
                         </p>
                       </div>
                     </div>
@@ -783,8 +811,9 @@ export function InventoryPage() {
               : {})}
             {...(user?.role === 'ADMIN'
               ? {
-                  onMergeCategory: (group: MaterialGroup) => {
-                    setMergeCategory(group);
+                onMergeCategory: (group: MaterialGroup) => {
+                  setActionError(null);
+                  setMergeCategory(group);
                     setMergeModelIds([]);
                     setCanonicalModelName('');
                     setMergeStep(1);
@@ -841,7 +870,7 @@ export function InventoryPage() {
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <Link
                 className="rounded-[12px] border border-[var(--color-border)] p-5 transition hover:border-[var(--color-primary-border)] hover:bg-[var(--color-surface-tint)]"
-                to={`/inventory/new?category=${encodeURIComponent(addCategory.category)}&trackingMode=${addCategory.materials[0]?.trackingMode ?? 'SERIALIZED'}`}
+                to={`/inventory/new?category=${encodeURIComponent(addCategory.category)}&trackingMode=${addCategory.trackingMode}`}
               >
                 <PackagePlus className="text-[var(--color-primary)]" size={22} />
                 <p className="mt-3 font-extrabold">Individual material</p>
@@ -851,7 +880,7 @@ export function InventoryPage() {
               </Link>
               <Link
                 className="rounded-[12px] border border-[var(--color-border)] p-5 transition hover:border-[var(--color-primary-border)] hover:bg-[var(--color-surface-tint)]"
-                to={`/inventory/import?category=${encodeURIComponent(addCategory.category)}&trackingMode=${addCategory.materials[0]?.trackingMode ?? 'SERIALIZED'}`}
+                to={`/inventory/import?category=${encodeURIComponent(addCategory.category)}&trackingMode=${addCategory.trackingMode}`}
               >
                 <FileSpreadsheet className="text-[var(--color-primary)]" size={22} />
                 <p className="mt-3 font-extrabold">Bulk upload</p>
@@ -867,6 +896,7 @@ export function InventoryPage() {
         <Dialog
           label={`Merge models in ${mergeCategory.category}`}
           onClose={() => {
+            setActionError(null);
             setMergeCategory(null);
             setMergeModelIds([]);
             setCanonicalModelName('');
@@ -889,6 +919,11 @@ export function InventoryPage() {
                 2. Choose common name
               </div>
             </div>
+            {actionError ? (
+              <div className="mt-4">
+                <ErrorSummary message={actionError} title="Models could not be merged" />
+              </div>
+            ) : null}
             {mergeStep === 1 ? (
               <>
                 <p className="mt-4 text-sm text-[var(--color-text-muted)]">
@@ -1008,7 +1043,14 @@ export function InventoryPage() {
             <div className="mt-5 flex justify-end gap-2">
               {mergeStep === 1 ? (
                 <>
-                  <Button onClick={() => setMergeCategory(null)} type="button" variant="secondary">
+                  <Button
+                    onClick={() => {
+                      setActionError(null);
+                      setMergeCategory(null);
+                    }}
+                    type="button"
+                    variant="secondary"
+                  >
                     Cancel
                   </Button>
                   <Button
@@ -1027,7 +1069,10 @@ export function InventoryPage() {
                   <Button
                     disabled={canonicalModelName.trim().length < 2}
                     loading={mergeModelsMutation.isPending}
-                    onClick={() => mergeModelsMutation.mutate()}
+                    onClick={() => {
+                      setActionError(null);
+                      mergeModelsMutation.mutate();
+                    }}
                     type="button"
                   >
                     Merge {mergeModelIds.length} models
@@ -1137,9 +1182,16 @@ function InventoryQuantityDialog({
   onSaved: () => Promise<void>;
   onCancel: () => void;
 }) {
-  const [delta, setDelta] = useState('');
+  const [direction, setDirection] = useState<QuantityAdjustmentDirection>('INCREASE');
+  const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState<string | null>(null);
+  const maximum = quantityAdjustmentMaximum(material, direction);
+  const parsedAmount = Number(amount);
+  const projectedTotal =
+    Number.isInteger(parsedAmount) && parsedAmount > 0
+      ? material.totalQuantity + signedQuantityDelta(direction, amount)
+      : material.totalQuantity;
   const mutation = useMutation({
     mutationFn: (input: { quantityDelta: number; reason: string }) =>
       adjustMaterialQuantity(material.materialCode, input),
@@ -1151,8 +1203,20 @@ function InventoryQuantityDialog({
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
+    if (!amount.trim() || !Number.isInteger(parsedAmount) || parsedAmount < 1) {
+      setMessage('Enter a whole-number quantity greater than zero.');
+      return;
+    }
+    if (parsedAmount > maximum) {
+      setMessage(
+        direction === 'DECREASE'
+          ? `You can remove at most ${material.availableQuantity} currently available ${material.unitLabel ?? 'units'}.`
+          : 'The adjusted quantity exceeds the supported inventory limit.',
+      );
+      return;
+    }
     const parsed = AdjustQuantityRequestSchema.safeParse({
-      quantityDelta: Number(delta),
+      quantityDelta: signedQuantityDelta(direction, amount),
       reason,
     });
     if (!parsed.success) {
@@ -1163,12 +1227,14 @@ function InventoryQuantityDialog({
   }
 
   return (
-    <Dialog label={`Edit quantity for ${material.name}`} onClose={onCancel}>
+    <Dialog label={`Adjust quantity for ${material.name}`} onClose={onCancel}>
       <form className="p-5 sm:p-6" onSubmit={submit}>
-        <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">Edit quantity</h2>
+        <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+          Adjust quantity
+        </h2>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-          Current total: {material.totalQuantity} {material.unitLabel ?? 'units'}. Use a positive
-          number to add or a negative number to reduce available stock.
+          Choose whether stock is increasing or decreasing, then enter the quantity as a positive
+          whole number.
         </p>
         {message ? (
           <div className="mt-4">
@@ -1176,15 +1242,48 @@ function InventoryQuantityDialog({
           </div>
         ) : null}
         <div className="mt-5 space-y-4">
+          <fieldset>
+            <legend className="field-label">Adjustment type</legend>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              {(
+                [
+                  ['INCREASE', 'Increase stock', Plus],
+                  ['DECREASE', 'Decrease stock', Minus],
+                ] as const
+              ).map(([value, label, Icon]) => (
+                <button
+                  aria-pressed={direction === value}
+                  className={`flex min-h-11 items-center justify-center gap-2 rounded-[8px] border px-3 text-sm font-extrabold transition ${
+                    direction === value
+                      ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]'
+                      : 'border-[var(--color-border-control)] bg-white text-[var(--color-text-muted)] hover:border-[var(--color-primary-border)]'
+                  }`}
+                  key={value}
+                  onClick={() => {
+                    setDirection(value);
+                    setAmount('');
+                    setMessage(null);
+                  }}
+                  type="button"
+                >
+                  <Icon aria-hidden="true" size={17} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
           <TextField
+            hint={`Current: ${material.totalQuantity} total · ${material.availableQuantity} available. New total: ${projectedTotal}.`}
             inputMode="numeric"
-            label="Quantity change"
-            onChange={(event) => setDelta(event.target.value)}
-            placeholder="Example: 10 or -3"
+            label={direction === 'INCREASE' ? 'Quantity to add' : 'Quantity to remove'}
+            max={String(maximum)}
+            min="1"
+            onChange={(event) => setAmount(event.target.value)}
+            placeholder="Enter a positive whole number"
             required
             step="1"
             type="number"
-            value={delta}
+            value={amount}
           />
           <TextField
             label="Reason"
@@ -1206,7 +1305,7 @@ function InventoryQuantityDialog({
             Cancel
           </Button>
           <Button loading={mutation.isPending} type="submit">
-            Save quantity
+            {direction === 'INCREASE' ? 'Increase quantity' : 'Decrease quantity'}
           </Button>
         </div>
       </form>
@@ -1673,7 +1772,7 @@ function MaterialTable({
               canAdjustQuantity={canAdjustQuantity}
               canEdit={canEdit}
               group={group}
-              key={group.category}
+              key={materialGroupKey(group.category, group.trackingMode)}
               onDelete={onDelete}
               onAdjustQuantity={onAdjustQuantity}
               onAddCategory={onAddCategory}
@@ -1759,7 +1858,8 @@ function GroupedMaterialRows({
                   {group.category}
                 </p>
                 <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                  {modelGroups.length} model{modelGroups.length === 1 ? '' : 's'} ·{' '}
+                  {humanizeCatalogValue(group.trackingMode)} · {modelGroups.length} model
+                  {modelGroups.length === 1 ? '' : 's'} ·{' '}
                   {group.materials.length} stock variant{group.materials.length === 1 ? '' : 's'}
                 </p>
               </div>
@@ -1854,7 +1954,7 @@ function GroupedMaterialRows({
                               {canAdd ? (
                                 <Link
                                   className="menu-item"
-                                  to={`/inventory/new?category=${encodeURIComponent(group.category)}&trackingMode=${model.materials[0]?.trackingMode ?? 'SERIALIZED'}&typeModelName=${encodeURIComponent(model.label)}`}
+                                  to={`/inventory/new?category=${encodeURIComponent(group.category)}&trackingMode=${group.trackingMode}&typeModelName=${encodeURIComponent(model.label)}`}
                                 >
                                   <PackagePlus size={16} />
                                   Add stock variant
@@ -1868,8 +1968,7 @@ function GroupedMaterialRows({
                                       onModelCrud({
                                         category: group.category,
                                         name: model.label,
-                                        trackingMode:
-                                          model.materials[0]?.trackingMode ?? 'SERIALIZED',
+                                        trackingMode: group.trackingMode,
                                         action: 'EDIT',
                                       })
                                     }
@@ -1884,8 +1983,7 @@ function GroupedMaterialRows({
                                       onModelCrud({
                                         category: group.category,
                                         name: model.label,
-                                        trackingMode:
-                                          model.materials[0]?.trackingMode ?? 'SERIALIZED',
+                                        trackingMode: group.trackingMode,
                                         action: 'DELETE',
                                       })
                                     }

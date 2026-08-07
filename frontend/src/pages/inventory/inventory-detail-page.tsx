@@ -4,6 +4,7 @@ import {
   Boxes,
   CheckCircle2,
   FileClock,
+  Minus,
   PackagePlus,
   Pencil,
   Plus,
@@ -61,6 +62,13 @@ import {
   updateAssetUnit,
   updateMaterial,
 } from '../../lib/inventory-api';
+import {
+  inventoryModelOptions,
+  quantityAdjustmentMaximum,
+  resolveCatalogOption,
+  signedQuantityDelta,
+  type QuantityAdjustmentDirection,
+} from './inventory-form-utils';
 import { MaterialCategoryField } from './material-category-field';
 
 function dateDaysAgo(days: number): string {
@@ -860,6 +868,19 @@ function EditMaterialForm({
     queryFn: ({ signal }) => getInventoryModels(form.category, material.trackingMode, signal),
     enabled: Boolean(form.category),
   });
+  const categoryKind = material.trackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE';
+  const cachedModelNames =
+    detailsQuery.data?.find(
+      (detail) =>
+        detail.kind === categoryKind &&
+        detail.name.toLocaleUpperCase('en-US') === form.category.toLocaleUpperCase('en-US'),
+    )?.models ?? [];
+  const modelOptions = inventoryModelOptions(
+    modelsQuery.data ?? [],
+    cachedModelNames,
+    form.typeModelName,
+  );
+  const selectedModelName = resolveCatalogOption(form.typeModelName, modelOptions);
   const mutation = useMutation({
     mutationFn: (input: UpdateMaterialRequest) => updateMaterial(material.materialCode, input),
     onSuccess: onSaved,
@@ -874,9 +895,9 @@ function EditMaterialForm({
       return;
     }
     const result = UpdateMaterialRequestSchema.safeParse({
-      name: form.typeModelName,
+      name: selectedModelName,
       category: form.category,
-      typeModelName: form.typeModelName,
+      typeModelName: selectedModelName,
       location: form.location,
       block: form.block,
       department: form.department,
@@ -896,20 +917,33 @@ function EditMaterialForm({
       {message ? <ErrorSummary message={message} /> : null}
       <div className="grid gap-5 sm:grid-cols-2">
         <SelectField
-          disabled={!form.category || modelsQuery.isPending}
+          disabled={!form.category || (modelsQuery.isPending && modelOptions.length === 0)}
+          hint={
+            modelsQuery.isError
+              ? cachedModelNames.length > 0
+                ? 'Showing the last Model Master values saved with this category.'
+                : 'Models could not be loaded. Refresh the page or check Model Master.'
+              : form.category && !modelsQuery.isPending && modelOptions.length === 0
+                ? 'No models are registered for this category and material type.'
+                : undefined
+          }
           id="edit-material-model"
           label="Type/model name"
           onChange={(typeModelName) =>
             setForm((value) => ({ ...value, name: typeModelName, typeModelName }))
           }
-          value={form.typeModelName}
+          value={selectedModelName}
         >
           <option value="">
-            {form.category ? 'Choose registered model' : 'Choose category first'}
+            {!form.category
+              ? 'Choose category first'
+              : modelsQuery.isPending && modelOptions.length === 0
+                ? 'Loading registered models…'
+                : 'Choose registered model'}
           </option>
-          {(modelsQuery.data ?? []).map((model) => (
-            <option key={model.id} value={model.name}>
-              {model.name}
+          {modelOptions.map((modelName) => (
+            <option key={modelName.toLocaleUpperCase('en-US')} value={modelName}>
+              {modelName}
             </option>
           ))}
         </SelectField>
@@ -1379,17 +1413,28 @@ function QuantityDialog({
   onSaved: (material: Material) => Promise<void>;
   onCancel: () => void;
 }) {
-  const [delta, setDelta] = useState('');
+  const [direction, setDirection] = useState<QuantityAdjustmentDirection>('INCREASE');
+  const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [serialNumbers, setSerialNumbers] = useState<string[]>([]);
   const [selectedAssetTags, setSelectedAssetTags] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
-  const quantityDelta = Number(delta);
+  const parsedAmount = Number(amount);
+  const contractMaximum = quantityAdjustmentMaximum(material, direction);
+  const maximum =
+    material.trackingMode === 'SERIALIZED'
+      ? Math.min(contractMaximum, direction === 'INCREASE' ? 1_000 : 100)
+      : contractMaximum;
+  const quantityDelta = signedQuantityDelta(direction, amount);
   const availableUnitsQuery = useQuery({
     queryKey: ['asset-units-removable', material.materialCode],
     queryFn: ({ signal }) =>
       getAssetUnits(material.materialCode, 1, { status: 'AVAILABLE', pageSize: 100 }, signal),
-    enabled: material.trackingMode === 'SERIALIZED' && quantityDelta < 0,
+    enabled:
+      material.trackingMode === 'SERIALIZED' &&
+      direction === 'DECREASE' &&
+      Number.isInteger(parsedAmount) &&
+      parsedAmount > 0,
   });
   const mutation = useMutation({
     mutationFn: async (input: { quantityDelta: number; reason: string }) => {
@@ -1418,11 +1463,11 @@ function QuantityDialog({
     onError: (error) =>
       setMessage(isApiError(error) ? error.message : 'The quantity could not be adjusted.'),
   });
-  function setSerializedDelta(rawValue: string) {
-    setDelta(rawValue);
+  function setSerializedAmount(rawValue: string) {
+    setAmount(rawValue);
     const next = Number(rawValue);
     if (material.trackingMode !== 'SERIALIZED') return;
-    if (Number.isInteger(next) && next > 0 && next <= 1000) {
+    if (direction === 'INCREASE' && Number.isInteger(next) && next > 0 && next <= maximum) {
       setSerialNumbers((current) =>
         Array.from({ length: next }, (_, index) => current[index] ?? ''),
       );
@@ -1430,6 +1475,14 @@ function QuantityDialog({
       setSerialNumbers([]);
     }
     setSelectedAssetTags([]);
+  }
+
+  function changeDirection(value: QuantityAdjustmentDirection) {
+    setDirection(value);
+    setAmount('');
+    setSerialNumbers([]);
+    setSelectedAssetTags([]);
+    setMessage(null);
   }
   function toggleAssetTag(assetTag: string) {
     setSelectedAssetTags((current) =>
@@ -1440,7 +1493,20 @@ function QuantityDialog({
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const result = AdjustQuantityRequestSchema.safeParse({ quantityDelta: Number(delta), reason });
+    setMessage(null);
+    if (!amount.trim() || !Number.isInteger(parsedAmount) || parsedAmount < 1) {
+      setMessage('Enter a whole-number quantity greater than zero.');
+      return;
+    }
+    if (parsedAmount > maximum) {
+      setMessage(
+        direction === 'DECREASE'
+          ? `You can remove at most ${maximum} available ${material.trackingMode === 'SERIALIZED' ? 'IT Assets in one change' : material.unitLabel ?? 'units'}.`
+          : `You can add at most ${maximum} ${material.trackingMode === 'SERIALIZED' ? 'IT Assets in one change' : material.unitLabel ?? 'units'}.`,
+      );
+      return;
+    }
+    const result = AdjustQuantityRequestSchema.safeParse({ quantityDelta, reason });
     if (!result.success) {
       setMessage(result.error.issues[0]?.message ?? 'Check the adjustment.');
       return;
@@ -1479,7 +1545,7 @@ function QuantityDialog({
       <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
         {material.trackingMode === 'SERIALIZED'
           ? 'Add IT Assets with serial numbers, or remove available units that have never been issued.'
-          : 'Use a positive number to add stock or a negative number to correct a stock reduction. Issued stock cannot be removed.'}
+          : 'Choose Increase or Decrease, then enter a positive whole number. Issued stock cannot be removed.'}
       </p>
       {message ? (
         <div className="mt-4">
@@ -1487,20 +1553,48 @@ function QuantityDialog({
         </div>
       ) : null}
       <form className="mt-5 space-y-5" onSubmit={submit}>
+        <fieldset>
+          <legend className="field-label">Adjustment type</legend>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            {(
+              [
+                ['INCREASE', 'Increase stock', Plus],
+                ['DECREASE', 'Decrease stock', Minus],
+              ] as const
+            ).map(([value, label, Icon]) => (
+              <button
+                aria-pressed={direction === value}
+                className={`flex min-h-11 items-center justify-center gap-2 rounded-[8px] border px-3 text-sm font-extrabold transition ${
+                  direction === value
+                    ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]'
+                    : 'border-[var(--color-border-control)] bg-white text-[var(--color-text-muted)] hover:border-[var(--color-primary-border)]'
+                }`}
+                key={value}
+                onClick={() => changeDirection(value)}
+                type="button"
+              >
+                <Icon aria-hidden="true" size={17} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
         <TextField
-          hint={`Current total: ${material.totalQuantity} ${material.unitLabel ?? 'IT Assets'}`}
+          hint={`Current: ${material.totalQuantity} total · ${material.availableQuantity} available${material.trackingMode === 'SERIALIZED' && direction === 'DECREASE' ? ' · maximum 100 removals per change' : ''}.`}
           inputMode="numeric"
-          label="Quantity change"
+          label={direction === 'INCREASE' ? 'Quantity to add' : 'Quantity to remove'}
+          max={String(maximum)}
+          min="1"
           onChange={(event) =>
             material.trackingMode === 'SERIALIZED'
-              ? setSerializedDelta(event.target.value)
-              : setDelta(event.target.value)
+              ? setSerializedAmount(event.target.value)
+              : setAmount(event.target.value)
           }
-          placeholder="For example: 10 or -2"
+          placeholder="Enter a positive whole number"
           required
           step="1"
           type="number"
-          value={delta}
+          value={amount}
         />
         {material.trackingMode === 'SERIALIZED' && quantityDelta > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -1585,7 +1679,11 @@ function QuantityDialog({
             Cancel
           </Button>
           <Button loading={mutation.isPending} type="submit">
-            {mutation.isPending ? 'Saving…' : 'Save adjustment'}
+            {mutation.isPending
+              ? 'Saving…'
+              : direction === 'INCREASE'
+                ? 'Increase quantity'
+                : 'Decrease quantity'}
           </Button>
         </div>
       </form>

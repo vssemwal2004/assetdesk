@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AppError } from '../../middleware/error-handler.js';
+import { buildMaterialIdentity, materialDisplayName } from './inventory-identity.js';
 import {
   assertMaterialCanArchive,
   assertManualTransition,
@@ -146,6 +147,32 @@ describe('quantity safety', () => {
         ),
       'QUANTITY_ADJUSTMENT_BELOW_ISSUED_STOCK',
     );
+  });
+});
+
+describe('material identity', () => {
+  it('keeps valid derived names and long configurations within indexed identity limits', () => {
+    const category = 'C'.repeat(120);
+    const model = 'M'.repeat(120);
+    const name = materialDisplayName(category, model);
+    const identity = buildMaterialIdentity(
+      'SERIALIZED',
+      name,
+      category,
+      'L'.repeat(120),
+      'B'.repeat(120),
+      'configuration '.repeat(80),
+    );
+
+    expect(name).toHaveLength(241);
+    expect(identity).toMatch(/^SHA256:[A-F0-9]{64}$/);
+    expect(identity.length).toBeLessThanOrEqual(300);
+  });
+
+  it('preserves the legacy plain identity format when it fits the database field', () => {
+    expect(
+      buildMaterialIdentity('QUANTITY', 'Paper A4', 'Paper', 'Store', 'A', undefined),
+    ).toBe('QUANTITY|PAPERA4|PAPER|STORE|A');
   });
 });
 
