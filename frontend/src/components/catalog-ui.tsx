@@ -70,7 +70,7 @@ export function SelectField({
   value: string;
   onChange: (value: string) => void;
   children: ReactNode;
-  hint?: string;
+  hint?: string | undefined;
   disabled?: boolean;
 }) {
   const hintId = `${id}-hint`;

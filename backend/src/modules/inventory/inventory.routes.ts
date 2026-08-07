@@ -177,7 +177,17 @@ async function audit(
   session?: ClientSession,
 ): Promise<void> {
   const actor = authenticated(request);
-  const event = {
+  const event: {
+    requestId: string;
+    actorUserId: string;
+    actorWorkerId: string;
+    actorRole: 'ADMIN' | 'WORKER';
+    action: string;
+    targetType: string;
+    targetId: string;
+    result: 'SUCCESS' | 'DENIED' | 'FAILED';
+    metadata?: Record<string, unknown>;
+  } = {
     requestId: request.requestId,
     actorUserId: actor.userId,
     actorWorkerId: actor.workerId,

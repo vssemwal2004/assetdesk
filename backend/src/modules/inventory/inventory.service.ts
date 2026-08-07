@@ -658,25 +658,27 @@ export async function createMaterial(
       await createdMaterial.save(session ? { session } : undefined);
       await createAssetType(category, createdByUserId, session);
 
-      if (input.trackingMode === 'SERIALIZED') {
+    if (input.trackingMode === 'SERIALIZED') {
         const material = createdMaterial;
-        await AssetUnitModel.insertMany(
-          input.serialNumbers.map((serialNumber, index) => {
-            const assetTag = assetTags[index];
-            if (!assetTag) throw new Error('Asset tag allocation failed.');
-            return {
-              assetTag,
-              materialId: material._id,
-              materialCode: material.materialCode,
-              serialNumber,
-              serialNumberNormalized: normalizeSerial(serialNumber),
-              condition: 'Good',
-              status: 'AVAILABLE',
-              createdBy,
-            };
-          }),
-          session ? { session } : undefined,
-        );
+        const unitDocuments = input.serialNumbers.map((serialNumber, index) => {
+          const assetTag = assetTags[index];
+          if (!assetTag) throw new Error('Asset tag allocation failed.');
+          return {
+            assetTag,
+            materialId: material._id,
+            materialCode: material.materialCode,
+            serialNumber,
+            serialNumberNormalized: normalizeSerial(serialNumber),
+            condition: 'Good',
+            status: 'AVAILABLE',
+            createdBy,
+          };
+        });
+        if (session) {
+          await AssetUnitModel.insertMany(unitDocuments, { session });
+        } else {
+          await AssetUnitModel.insertMany(unitDocuments);
+        }
       }
 
       return toMaterial(createdMaterial);
