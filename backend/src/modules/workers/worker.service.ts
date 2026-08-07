@@ -2,10 +2,11 @@ import type {
   AccountStatus,
   CreateWorkerRequest,
   TemporaryCredential,
+  UpdateWorkerAccessRequest,
   UpdateWorkerRequest,
   Worker,
 } from '@assetdesk/contracts';
-import mongoose from 'mongoose';
+import mongoose, { type ClientSession } from 'mongoose';
 
 import { AppError } from '../../middleware/error-handler.js';
 import { temporaryPasswordExpiry } from '../auth/auth.service.js';
@@ -218,6 +219,31 @@ export async function updateWorker(workerId: string, input: UpdateWorkerRequest)
     throw error;
   }
 
+  return toWorker(worker);
+}
+
+export async function updateWorkerAccess(
+  workerId: string,
+  input: UpdateWorkerAccessRequest,
+  session?: ClientSession,
+): Promise<Worker> {
+  const worker = await UserModel.findOneAndUpdate(
+    { workerId, role: 'WORKER' },
+    {
+      $set: {
+        permissions: input.permissions,
+        'dataAccess.inventory': input.dataAccess.inventory,
+        'dataAccess.issues': input.dataAccess.issues,
+        'dataAccess.cartridges': input.dataAccess.cartridges,
+      },
+    },
+    {
+      returnDocument: 'after',
+      runValidators: true,
+      ...(session ? { session } : {}),
+    },
+  );
+  if (!worker) throw new AppError(404, 'WORKER_NOT_FOUND', 'This Worker was not found.');
   return toWorker(worker);
 }
 

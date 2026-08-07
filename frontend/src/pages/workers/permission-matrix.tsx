@@ -1,3 +1,16 @@
+import {
+  BarChart3,
+  Boxes,
+  ChevronRight,
+  ClipboardList,
+  ContactRound,
+  LayoutDashboard,
+  Printer,
+  RotateCcw,
+  type LucideIcon,
+} from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+
 import type { WorkerDataAccess, WorkerDataScope, WorkerPermission } from '@assetdesk/contracts';
 
 import { Button, cn } from '../../components/ui';
@@ -246,9 +259,15 @@ export const permissionDefinitions: PermissionDefinition[] = [
   },
 ];
 
-export const permissionLabels = Object.fromEntries(
-  permissionDefinitions.map((definition) => [definition.permission, definition.label]),
-) as Record<WorkerPermission, string>;
+export const permissionLabels = {
+  ...Object.fromEntries(
+    permissionDefinitions.map((definition) => [definition.permission, definition.label]),
+  ),
+  INVENTORY_MANAGE: 'Manage inventory (legacy)',
+  ASSET_TYPES_MANAGE: 'Manage asset types (legacy)',
+  ASSET_UNITS_MANAGE: 'Manage asset units (legacy)',
+  RECEIVERS_MANAGE: 'Manage receivers (legacy)',
+} as Record<WorkerPermission, string>;
 
 const groupedPermissions = permissionDefinitions.reduce<Record<string, PermissionDefinition[]>>(
   (groups, definition) => {
@@ -259,9 +278,17 @@ const groupedPermissions = permissionDefinitions.reduce<Record<string, Permissio
 );
 
 const selectablePermissions = permissionDefinitions.map((definition) => definition.permission);
+const selectablePermissionSet = new Set<WorkerPermission>(selectablePermissions);
 
 function unique(values: WorkerPermission[]): WorkerPermission[] {
-  return selectablePermissions.filter((permission) => values.includes(permission));
+  const hiddenPermissions = values.filter(
+    (permission, index) =>
+      !selectablePermissionSet.has(permission) && values.indexOf(permission) === index,
+  );
+  return [
+    ...hiddenPermissions,
+    ...selectablePermissions.filter((permission) => values.includes(permission)),
+  ];
 }
 
 export function PermissionMatrix({
@@ -294,13 +321,24 @@ export function PermissionMatrix({
       {!readonly ? (
         <div className="flex flex-wrap justify-end gap-2">
           <Button
-            onClick={() => onChange?.([...selectablePermissions])}
+            onClick={() => onChange?.(unique([...selected, ...selectablePermissions]))}
             type="button"
             variant="secondary"
           >
             Select all
           </Button>
-          <Button onClick={() => onChange?.(['DASHBOARD'])} type="button" variant="secondary">
+          <Button
+            onClick={() =>
+              onChange?.(
+                unique([
+                  ...selected.filter((permission) => !selectablePermissionSet.has(permission)),
+                  'DASHBOARD',
+                ]),
+              )
+            }
+            type="button"
+            variant="secondary"
+          >
             Minimal
           </Button>
         </div>
@@ -380,6 +418,334 @@ export function PermissionMatrix({
         })}
       </div>
     </div>
+  );
+}
+
+type PermissionGroupName =
+  'Dashboard' | 'Issues' | 'Returns' | 'Inventory' | 'Receivers' | 'Reports' | 'Cartridges';
+
+interface PermissionGroupMetadata {
+  description: string;
+  icon: LucideIcon;
+  scope?: keyof WorkerDataAccess;
+}
+
+const permissionGroupMetadata: Record<PermissionGroupName, PermissionGroupMetadata> = {
+  Dashboard: {
+    description: 'Operational overview and assigned activity.',
+    icon: LayoutDashboard,
+  },
+  Issues: {
+    description: 'Issue records, receipts, assignments, and due dates.',
+    icon: ClipboardList,
+    scope: 'issues',
+  },
+  Returns: {
+    description: 'Return history and material return workflows.',
+    icon: RotateCcw,
+  },
+  Inventory: {
+    description: 'Materials, asset units, model master, imports, and exports.',
+    icon: Boxes,
+    scope: 'inventory',
+  },
+  Receivers: {
+    description: 'Receiver directory records and maintenance.',
+    icon: ContactRound,
+  },
+  Reports: {
+    description: 'Operational reports and downloads.',
+    icon: BarChart3,
+  },
+  Cartridges: {
+    description: 'Cartridge stock, movements, Gate Passes, and quality checks.',
+    icon: Printer,
+    scope: 'cartridges',
+  },
+};
+
+const permissionGroupNames = Object.keys(groupedPermissions) as PermissionGroupName[];
+
+const dataScopeCopy: Record<keyof WorkerDataAccess, { label: string; own: string; all: string }> = {
+  inventory: {
+    label: 'Inventory data visibility',
+    own: 'Only inventory records created by this employee.',
+    all: 'All inventory records across the platform.',
+  },
+  issues: {
+    label: 'Issue data visibility',
+    own: 'Only issue records created by this employee.',
+    all: 'All issue and return records across the platform.',
+  },
+  cartridges: {
+    label: 'Cartridge data visibility',
+    own: 'Only cartridge records created by this employee.',
+    all: 'All cartridge and Gate Pass records across the platform.',
+  },
+};
+
+function PermissionGroupToggle({
+  checked,
+  partial,
+  group,
+  onChange,
+}: {
+  checked: boolean;
+  partial: boolean;
+  group: string;
+  onChange: (enabled: boolean) => void;
+}) {
+  const reference = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (reference.current) reference.current.indeterminate = partial;
+  }, [partial]);
+
+  return (
+    <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-[10px] border border-[var(--color-border)] bg-white px-3 text-sm font-bold text-[var(--color-text-strong)] hover:border-[var(--color-primary-border)]">
+      <input
+        aria-label={`Enable all ${group} permissions`}
+        checked={checked}
+        className="size-4 accent-[var(--color-primary)]"
+        onChange={(event) => onChange(event.target.checked)}
+        ref={reference}
+        type="checkbox"
+      />
+      Enable all in this area
+    </label>
+  );
+}
+
+function DataScopeSelector({
+  area,
+  value,
+  onChange,
+}: {
+  area: keyof WorkerDataAccess;
+  value: WorkerDataAccess;
+  onChange: (value: WorkerDataAccess) => void;
+}) {
+  const copy = dataScopeCopy[area];
+
+  return (
+    <fieldset className="rounded-[12px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)]/45 p-3 sm:p-4">
+      <legend className="px-1 text-sm font-extrabold text-[var(--color-primary-strong)]">
+        {copy.label}
+      </legend>
+      <p className="mt-0.5 text-xs leading-5 text-[var(--color-text-muted)]">
+        Applied whenever a selected permission reads or exports this area.
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {(
+          [
+            ['OWN', 'Own data', copy.own],
+            ['ALL', 'Whole data', copy.all],
+          ] as const
+        ).map(([scope, label, description]) => {
+          const checked = value[area] === scope;
+          return (
+            <label
+              className={cn(
+                'flex min-h-16 cursor-pointer items-start gap-3 rounded-[10px] border bg-white p-3 transition-colors',
+                checked
+                  ? 'border-[var(--color-primary)] shadow-sm'
+                  : 'border-[var(--color-border)] hover:border-[var(--color-primary-border)]',
+              )}
+              key={scope}
+            >
+              <input
+                checked={checked}
+                className="mt-0.5 size-4 shrink-0 accent-[var(--color-primary)]"
+                name={`managed-data-${area}`}
+                onChange={() => onChange({ ...value, [area]: scope })}
+                type="radio"
+              />
+              <span>
+                <span className="block text-sm font-extrabold text-[var(--color-text-strong)]">
+                  {label}
+                </span>
+                <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-muted)]">
+                  {description}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+export function AccessEditor({
+  selected,
+  dataAccess,
+  onPermissionsChange,
+  onDataAccessChange,
+}: {
+  selected: WorkerPermission[];
+  dataAccess: WorkerDataAccess;
+  onPermissionsChange: (permissions: WorkerPermission[]) => void;
+  onDataAccessChange: (value: WorkerDataAccess) => void;
+}) {
+  const [activeGroup, setActiveGroup] = useState<PermissionGroupName>('Dashboard');
+  const definitions = groupedPermissions[activeGroup] ?? [];
+  const metadata = permissionGroupMetadata[activeGroup];
+  const groupPermissions = definitions.map((definition) => definition.permission);
+  const checkedCount = groupPermissions.filter((permission) =>
+    selected.includes(permission),
+  ).length;
+  const allChecked = checkedCount === groupPermissions.length;
+  const visibleSelectedCount = selectablePermissions.filter((permission) =>
+    selected.includes(permission),
+  ).length;
+
+  function setPermission(permission: WorkerPermission, enabled: boolean) {
+    onPermissionsChange(
+      enabled ? unique([...selected, permission]) : selected.filter((item) => item !== permission),
+    );
+  }
+
+  function setGroup(enabled: boolean) {
+    onPermissionsChange(
+      enabled
+        ? unique([...selected, ...groupPermissions])
+        : selected.filter((permission) => !groupPermissions.includes(permission)),
+    );
+  }
+
+  return (
+    <section className="overflow-hidden rounded-[14px] border border-[var(--color-border)] bg-white">
+      <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-tint)] px-4 py-3 lg:hidden">
+        <label className="text-xs font-bold text-[var(--color-text-muted)]" htmlFor="access-area">
+          Access area
+        </label>
+        <select
+          className="field-input mt-1"
+          id="access-area"
+          onChange={(event) => setActiveGroup(event.target.value as PermissionGroupName)}
+          value={activeGroup}
+        >
+          {permissionGroupNames.map((group) => {
+            const total = groupedPermissions[group]?.length ?? 0;
+            const enabled = (groupedPermissions[group] ?? []).filter((definition) =>
+              selected.includes(definition.permission),
+            ).length;
+            return (
+              <option key={group} value={group}>
+                {group} ({enabled}/{total})
+              </option>
+            );
+          })}
+        </select>
+      </div>
+
+      <div className="lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+        <aside className="hidden border-r border-[var(--color-border)] bg-[var(--color-surface-tint)] lg:block">
+          <div className="border-b border-[var(--color-border)] p-4">
+            <p className="text-xs font-bold text-[var(--color-text-muted)]">Access summary</p>
+            <p className="mt-1 text-sm font-extrabold text-[var(--color-primary-strong)]">
+              {visibleSelectedCount} of {selectablePermissions.length} enabled
+            </p>
+          </div>
+          <nav aria-label="Permission areas" className="space-y-1 p-2">
+            {permissionGroupNames.map((group) => {
+              const Icon = permissionGroupMetadata[group].icon;
+              const groupDefinitions = groupedPermissions[group] ?? [];
+              const enabled = groupDefinitions.filter((definition) =>
+                selected.includes(definition.permission),
+              ).length;
+              const active = group === activeGroup;
+              return (
+                <button
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'flex min-h-12 w-full items-center gap-3 rounded-[10px] px-3 text-left transition-colors',
+                    active
+                      ? 'bg-white text-[var(--color-primary)] shadow-sm'
+                      : 'text-[var(--color-text-muted)] hover:bg-white/70 hover:text-[var(--color-text-strong)]',
+                  )}
+                  key={group}
+                  onClick={() => setActiveGroup(group)}
+                  type="button"
+                >
+                  <Icon aria-hidden="true" className="shrink-0" size={19} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-extrabold">{group}</span>
+                    <span className="block text-xs font-semibold">
+                      {enabled}/{groupDefinitions.length} enabled
+                    </span>
+                  </span>
+                  <ChevronRight aria-hidden="true" className="shrink-0" size={16} />
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        <div className="min-w-0">
+          <header className="border-b border-[var(--color-border)] px-4 py-4 sm:px-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="text-base font-extrabold text-[var(--color-primary-strong)]">
+                  {activeGroup}
+                </h3>
+                <p className="mt-1 max-w-2xl text-sm leading-5 text-[var(--color-text-muted)]">
+                  {metadata.description}
+                </p>
+                <p className="mt-1 text-xs font-bold text-[var(--color-primary)]" role="status">
+                  {checkedCount} of {groupPermissions.length} permissions enabled
+                </p>
+              </div>
+              <PermissionGroupToggle
+                checked={allChecked}
+                group={activeGroup}
+                onChange={setGroup}
+                partial={checkedCount > 0 && !allChecked}
+              />
+            </div>
+          </header>
+
+          <div className="space-y-4 p-3 sm:p-5">
+            {metadata.scope ? (
+              <DataScopeSelector
+                area={metadata.scope}
+                onChange={onDataAccessChange}
+                value={dataAccess}
+              />
+            ) : null}
+
+            <div className="divide-y divide-[var(--color-border)] rounded-[12px] border border-[var(--color-border)] px-3 sm:px-4">
+              {definitions.map((definition) => {
+                const enabled = selected.includes(definition.permission);
+                return (
+                  <label
+                    className="flex min-h-[68px] cursor-pointer items-start gap-3 py-3.5"
+                    key={definition.permission}
+                  >
+                    <input
+                      checked={enabled}
+                      className="mt-1 size-4 shrink-0 accent-[var(--color-primary)]"
+                      onChange={(event) =>
+                        setPermission(definition.permission, event.target.checked)
+                      }
+                      type="checkbox"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-extrabold text-[var(--color-text-strong)]">
+                        {definition.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs leading-5 text-[var(--color-text-muted)]">
+                        {definition.description}
+                      </span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

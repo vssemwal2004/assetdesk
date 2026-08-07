@@ -94,6 +94,13 @@ export const UpdateWorkerRequestSchema = CreateWorkerRequestSchema.partial().ref
   'Provide at least one field to update',
 );
 
+export const UpdateWorkerAccessRequestSchema = z
+  .object({
+    permissions: WorkerPermissionsSchema,
+    dataAccess: WorkerDataAccessSchema.strict(),
+  })
+  .strict();
+
 export const UpdateWorkerStatusRequestSchema = z.object({
   status: z.enum(['ACTIVE', 'DISABLED']),
 });
@@ -190,6 +197,7 @@ export const WorkerImportCommitResponseSchema = z.object({
 
 export type CreateWorkerRequest = z.infer<typeof CreateWorkerRequestSchema>;
 export type UpdateWorkerRequest = z.infer<typeof UpdateWorkerRequestSchema>;
+export type UpdateWorkerAccessRequest = z.infer<typeof UpdateWorkerAccessRequestSchema>;
 export type WorkerPermission = z.infer<typeof WorkerPermissionSchema>;
 export type WorkerDataScope = z.infer<typeof WorkerDataScopeSchema>;
 export type WorkerDataAccess = z.infer<typeof WorkerDataAccessSchema>;

@@ -7,6 +7,7 @@ import {
   WorkersListResponseSchema,
   type CreateWorkerRequest,
   type TemporaryCredential,
+  type UpdateWorkerAccessRequest,
   type UpdateWorkerRequest,
   type Worker,
   type WorkerImportCommitResponse,
@@ -69,6 +70,20 @@ export async function updateWorker(workerId: string, input: UpdateWorkerRequest)
     method: 'PATCH',
     json: input,
   });
+  return WorkerResponseSchema.parse(payload).data.worker;
+}
+
+export async function updateWorkerAccess(
+  workerId: string,
+  input: UpdateWorkerAccessRequest,
+): Promise<Worker> {
+  const payload = await apiRequest<unknown>(
+    `/api/v1/workers/${encodeURIComponent(workerId)}/access`,
+    {
+      method: 'PATCH',
+      json: input,
+    },
+  );
   return WorkerResponseSchema.parse(payload).data.worker;
 }
 

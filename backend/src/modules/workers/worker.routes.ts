@@ -1,13 +1,16 @@
 import { Router, type Request, type RequestHandler } from 'express';
+import mongoose, { type ClientSession } from 'mongoose';
 import multer from 'multer';
 import { z } from 'zod';
 
 import {
   AccountStatusSchema,
   CreateWorkerRequestSchema,
+  UpdateWorkerAccessRequestSchema,
   UpdateWorkerRequestSchema,
   UpdateWorkerStatusRequestSchema,
   WorkerIdSchema,
+  type Worker,
 } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
@@ -27,6 +30,7 @@ import {
   listWorkers,
   regenerateWorkerCredential,
   updateWorker,
+  updateWorkerAccess,
   updateWorkerStatus,
 } from './worker.service.js';
 
@@ -95,10 +99,11 @@ async function audit(
   targetType: string,
   targetId: string,
   metadata?: Record<string, unknown>,
+  session?: ClientSession,
 ): Promise<void> {
   const actor = request.auth;
   if (!actor) throw new AppError(401, 'AUTH_REQUIRED', 'Sign in to continue.');
-  await appendAuditEvent({
+  const event = {
     requestId: request.requestId,
     actorUserId: actor.userId,
     actorWorkerId: actor.workerId,
@@ -106,9 +111,14 @@ async function audit(
     action,
     targetType,
     targetId,
-    result: 'SUCCESS',
+    result: 'SUCCESS' as const,
     ...(metadata ? { metadata } : {}),
-  });
+  };
+  if (session) {
+    await appendAuditEvent(event, { session });
+    return;
+  }
+  await appendAuditEvent(event);
 }
 
 function secureManagementRouter(): Router {
@@ -166,6 +176,39 @@ export function createWorkersRouter(): Router {
     }
   });
 
+  router.patch(
+    '/:workerId/access',
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const id = workerId(request);
+        const input = UpdateWorkerAccessRequestSchema.parse(request.body);
+        const session = await mongoose.startSession();
+        let worker: Worker | undefined;
+        try {
+          await session.withTransaction(async () => {
+            worker = await updateWorkerAccess(id, input, session);
+            await audit(
+              request,
+              'WORKER_ACCESS_UPDATED',
+              'USER',
+              id,
+              { fields: ['permissions', 'dataAccess'] },
+              session,
+            );
+          });
+        } finally {
+          await session.endSession();
+        }
+        if (!worker) throw new Error('Worker access transaction returned no document.');
+        response.json({ data: { worker } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.patch('/:workerId', requireTrustedOrigin, requireCsrf, async (request, response, next) => {
     try {
       const id = workerId(request);
@@ -198,16 +241,21 @@ export function createWorkersRouter(): Router {
     },
   );
 
-  router.delete('/:workerId', requireTrustedOrigin, requireCsrf, async (request, response, next) => {
-    try {
-      const id = workerId(request);
-      await deleteWorker(id);
-      await audit(request, 'WORKER_DELETED', 'USER', id);
-      response.status(204).send();
-    } catch (error) {
-      next(error);
-    }
-  });
+  router.delete(
+    '/:workerId',
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const id = workerId(request);
+        await deleteWorker(id);
+        await audit(request, 'WORKER_DELETED', 'USER', id);
+        response.status(204).send();
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.post(
     '/:workerId/regenerate-credentials',

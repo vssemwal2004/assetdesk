@@ -5,10 +5,12 @@ import {
   MoreVertical,
   Pencil,
   Plus,
+  RotateCcw,
   ShieldCheck,
   Trash2,
   UserRound,
   UsersRound,
+  X,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
@@ -17,6 +19,7 @@ import type { Worker, WorkerPermission } from '@assetdesk/contracts';
 
 import {
   Button,
+  cn,
   EmptyState,
   ErrorState,
   ErrorSummary,
@@ -25,9 +28,9 @@ import {
   SearchForm,
   WorkerStatusBadge,
 } from '../../components/ui';
-import { deleteWorker, getWorkers, updateWorker } from '../../lib/workers-api';
+import { deleteWorker, getWorkers, updateWorkerAccess } from '../../lib/workers-api';
 import { isApiError } from '../../lib/api-client';
-import { DataAccessMatrix, PermissionMatrix, permissionLabels } from './permission-matrix';
+import { AccessEditor, permissionLabels } from './permission-matrix';
 
 function formatDate(value: string | null): string {
   if (!value) return 'Never';
@@ -252,7 +255,10 @@ export function WorkersPage() {
           </div>
 
           {response && response.meta.totalPages > 1 ? (
-            <nav aria-label="Employee list pages" className="flex items-center justify-between gap-3">
+            <nav
+              aria-label="Employee list pages"
+              className="flex items-center justify-between gap-3"
+            >
               <Button
                 disabled={page <= 1}
                 onClick={() => updateParameters({ page: String(page - 1) })}
@@ -389,11 +395,7 @@ function WorkerCard({
         View employee details
       </Link>
       <div className="mt-3 flex justify-end">
-        <WorkerActionsMenu
-          onDelete={onDelete}
-          onManageAccess={onManageAccess}
-          worker={worker}
-        />
+        <WorkerActionsMenu onDelete={onDelete} onManageAccess={onManageAccess} worker={worker} />
       </div>
     </article>
   );
@@ -403,10 +405,12 @@ function Dialog({
   children,
   onClose,
   label,
+  wide = false,
 }: {
   children: ReactNode;
   onClose: () => void;
   label: string;
+  wide?: boolean;
 }) {
   const reference = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -415,7 +419,10 @@ function Dialog({
   return (
     <dialog
       aria-label={label}
-      className="w-[min(94vw,980px)] rounded-[12px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
+      className={cn(
+        'rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40',
+        wide ? 'w-[min(96vw,1120px)]' : 'w-[min(94vw,980px)]',
+      )}
       onCancel={onClose}
       onClose={onClose}
       ref={reference}
@@ -520,45 +527,122 @@ function ManageAccessDialog({
   const [selected, setSelected] = useState<WorkerPermission[]>(worker.permissions);
   const [dataAccess, setDataAccess] = useState(worker.dataAccess);
   const [message, setMessage] = useState<string | null>(null);
+  const permissionChanges =
+    selected.filter((permission) => !worker.permissions.includes(permission)).length +
+    worker.permissions.filter((permission) => !selected.includes(permission)).length;
+  const scopeChanges = (['inventory', 'issues', 'cartridges'] as const).filter(
+    (area) => dataAccess[area] !== worker.dataAccess[area],
+  ).length;
+  const changeCount = permissionChanges + scopeChanges;
+  const dirty = changeCount > 0;
   const mutation = useMutation({
-    mutationFn: () => updateWorker(worker.workerId, { permissions: selected, dataAccess }),
+    mutationFn: () => updateWorkerAccess(worker.workerId, { permissions: selected, dataAccess }),
     onSuccess: () => void onSaved(),
-    onError: (error) =>
-      setMessage(isApiError(error) ? error.message : 'Access could not be saved.'),
+    onError: (error) => {
+      if (isApiError(error)) {
+        setMessage(`${error.message}${error.requestId ? ` Request ID: ${error.requestId}` : ''}`);
+        return;
+      }
+      setMessage('Access could not be saved.');
+    },
   });
 
+  function resetChanges() {
+    setSelected(worker.permissions);
+    setDataAccess(worker.dataAccess);
+    setMessage(null);
+  }
+
   return (
-    <Dialog label={`Manage access for ${worker.name}`} onClose={onClose}>
-      <div className="max-h-[86vh] overflow-y-auto p-5 sm:p-6">
-        <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-          Manage access
-        </h2>
-        <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
-          {worker.name} · {worker.workerId}
-        </p>
-        {message ? (
-          <div className="mt-4">
-            <ErrorSummary message={message} />
+    <Dialog label={`Manage access for ${worker.name}`} onClose={onClose} wide>
+      <div className="flex max-h-[92vh] flex-col overflow-hidden">
+        <header className="shrink-0 border-b border-[var(--color-border)] bg-white px-4 py-4 sm:px-6">
+          <div className="flex items-start gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-[12px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+              <ShieldCheck aria-hidden="true" size={22} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+                  Manage access
+                </h2>
+                <WorkerStatusBadge status={worker.status} />
+              </div>
+              <p className="mt-0.5 truncate text-sm text-[var(--color-text-muted)]">
+                {worker.name} · {worker.workerId}
+              </p>
+            </div>
+            <button
+              aria-label="Close manage access"
+              className="icon-button shrink-0"
+              disabled={mutation.isPending}
+              onClick={onClose}
+              type="button"
+            >
+              <X aria-hidden="true" size={19} />
+            </button>
           </div>
-        ) : null}
-        <div className="mt-5">
-          <PermissionMatrix onChange={setSelected} selected={selected} />
-          <div className="mt-3">
-            <DataAccessMatrix onChange={setDataAccess} value={dataAccess} />
+          <p className="mt-3 max-w-3xl text-sm leading-5 text-[var(--color-text-muted)]">
+            Choose an area, enable the actions this employee needs, and set how much data they can
+            see.
+          </p>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--color-background)] p-3 sm:p-5">
+          {message ? (
+            <div className="mb-4">
+              <ErrorSummary message={message} title="Access was not saved" />
+            </div>
+          ) : null}
+          <AccessEditor
+            dataAccess={dataAccess}
+            onDataAccessChange={(value) => {
+              setMessage(null);
+              setDataAccess(value);
+            }}
+            onPermissionsChange={(permissions) => {
+              setMessage(null);
+              setSelected(permissions);
+            }}
+            selected={selected}
+          />
+        </div>
+
+        <footer className="shrink-0 border-t border-[var(--color-border)] bg-white px-4 py-3 sm:px-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p
+              className={cn(
+                'text-xs font-bold',
+                dirty ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-muted)]',
+              )}
+              role="status"
+            >
+              {dirty
+                ? `${changeCount} unsaved ${changeCount === 1 ? 'change' : 'changes'}`
+                : `${selected.length} permissions enabled · no unsaved changes`}
+            </p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button
+                disabled={!dirty || mutation.isPending}
+                onClick={resetChanges}
+                variant="quiet"
+              >
+                <RotateCcw aria-hidden="true" size={17} />
+                Reset
+              </Button>
+              <Button disabled={mutation.isPending} onClick={onClose} variant="secondary">
+                Cancel
+              </Button>
+              <Button
+                disabled={selected.length === 0 || !dirty}
+                loading={mutation.isPending}
+                onClick={() => mutation.mutate()}
+              >
+                {mutation.isPending ? 'Saving access…' : 'Save access'}
+              </Button>
+            </div>
           </div>
-        </div>
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <Button disabled={mutation.isPending} onClick={onClose} variant="secondary">
-            Cancel
-          </Button>
-          <Button
-            disabled={selected.length === 0}
-            loading={mutation.isPending}
-            onClick={() => mutation.mutate()}
-          >
-            Save access
-          </Button>
-        </div>
+        </footer>
       </div>
     </Dialog>
   );

@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler } from 'express';
+import mongoose from 'mongoose';
 import { ZodError } from 'zod';
 
 import { env } from '../config/env.js';
@@ -27,20 +28,41 @@ function zodFields(error: ZodError): Record<string, string> {
   return fields;
 }
 
+function mongooseFields(error: mongoose.Error.ValidationError): Record<string, string> {
+  const fields: Record<string, string> = {};
+
+  for (const [path, issue] of Object.entries(error.errors)) {
+    fields[path] ??= issue.message;
+  }
+
+  return fields;
+}
+
 export const errorHandler: ErrorRequestHandler = (error: unknown, request, response, _next) => {
   const knownError = error instanceof AppError;
-  const validationError = error instanceof ZodError;
-  const status = knownError ? error.status : validationError ? 400 : 500;
+  const requestValidationError = error instanceof ZodError;
+  const persistenceValidationError = error instanceof mongoose.Error.ValidationError;
+  const status = knownError
+    ? error.status
+    : requestValidationError
+      ? 400
+      : persistenceValidationError
+        ? 422
+        : 500;
   const code = knownError
     ? error.code
-    : validationError
+    : requestValidationError
       ? 'VALIDATION_FAILED'
-      : 'INTERNAL_SERVER_ERROR';
+      : persistenceValidationError
+        ? 'PERSISTENCE_VALIDATION_FAILED'
+        : 'INTERNAL_SERVER_ERROR';
   const detail = knownError
     ? error.message
-    : validationError
+    : requestValidationError
       ? 'One or more request fields are invalid.'
-      : 'The server could not complete the request.';
+      : persistenceValidationError
+        ? 'One or more fields could not be saved. Correct the highlighted values and try again.'
+        : 'The server could not complete the request.';
 
   if (status >= 500) {
     logger.error({ err: error, requestId: request.requestId }, 'Unhandled request error');
@@ -52,14 +74,21 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, request, respo
     .json({
       type: 'about:blank',
       title:
-        status === 500 ? 'Internal server error' : validationError ? 'Invalid request' : detail,
+        status === 500
+          ? 'Internal server error'
+          : requestValidationError
+            ? 'Invalid request'
+            : persistenceValidationError
+              ? 'Unable to save changes'
+              : detail,
       status,
       detail,
       code,
       instance: request.originalUrl,
       requestId: request.requestId,
       ...(knownError && error.fields ? { fields: error.fields } : {}),
-      ...(validationError ? { fields: zodFields(error) } : {}),
+      ...(requestValidationError ? { fields: zodFields(error) } : {}),
+      ...(persistenceValidationError ? { fields: mongooseFields(error) } : {}),
       ...(env.NODE_ENV === 'development' && status === 500 && error instanceof Error
         ? { debugMessage: error.message }
         : {}),
