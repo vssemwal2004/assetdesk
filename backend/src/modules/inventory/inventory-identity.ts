@@ -33,5 +33,5 @@ export function buildMaterialIdentity(
   if (trackingMode === 'SERIALIZED') parts.push(configuration ?? '');
   const identity = parts.map(normalizeIdentityPart).join('|');
   if (identity.length <= MAX_STORED_IDENTITY_LENGTH) return identity;
-  return `SHA256:${createHash('sha256').update(identity).digest('hex')}`;
+  return `SHA256:${createHash('sha256').update(identity).digest('hex').toLocaleUpperCase('en-US')}`;
 }

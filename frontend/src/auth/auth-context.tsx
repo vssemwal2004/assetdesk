@@ -52,7 +52,9 @@ function sessionErrorMessage(error: unknown): string {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = useState<AuthStatus>('loading');
+  const [status, setStatus] = useState<AuthStatus>(() =>
+    isAuthenticatedTab() ? 'loading' : 'unauthenticated',
+  );
   const [user, setUser] = useState<AuthUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const disconnectedSession = useRef(false);
@@ -80,8 +82,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!isAuthenticatedTab()) {
       void logoutRequest().catch(() => undefined);
-      setUser(null);
-      setStatus('unauthenticated');
       return () => {
         active = false;
       };

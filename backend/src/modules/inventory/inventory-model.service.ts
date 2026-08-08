@@ -1,4 +1,4 @@
-import mongoose, { Types, type ClientSession } from 'mongoose';
+import { Types, type ClientSession } from 'mongoose';
 
 import type { InventoryModel, TrackingMode } from '@assetdesk/contracts';
 

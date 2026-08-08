@@ -18,7 +18,6 @@ import type {
   UpdateMaterialRequest,
   UserRole,
 } from '@assetdesk/contracts';
-import { MaterialCodeSchema } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
 import { IssueModel } from '../issues/issue.model.js';
@@ -1049,7 +1048,6 @@ async function adjustQuantityInSession(
   input: AdjustQuantityRequest,
   session: ClientSession,
 ): Promise<QuantityAdjustmentResult> {
-  let updatedMaterial: MaterialDocument | undefined;
   let previousTotalQuantity = 0;
   let previousAvailableQuantity = 0;
 
@@ -1077,13 +1075,9 @@ async function adjustQuantityInSession(
   material.totalQuantity = next.totalQuantity;
   material.availableQuantity = next.availableQuantity;
   await material.save({ session });
-  updatedMaterial = material;
 
-  if (!updatedMaterial) {
-    throw new AppError(500, 'QUANTITY_ADJUSTMENT_FAILED', 'The quantity could not be adjusted.');
-  }
   return {
-    material: toMaterial(updatedMaterial),
+    material: toMaterial(material),
     adjustment: {
       quantityDelta: input.quantityDelta,
       reason: input.reason,

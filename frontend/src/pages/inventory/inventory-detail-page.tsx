@@ -155,12 +155,16 @@ export function InventoryDetailPage() {
 
   useEffect(() => {
     if (parameters.get('status') === '1' && query.data && canChangeStatus) {
-      setNextMaterialStatus(query.data.status);
-      setDialog('status');
+      const timeoutId = window.setTimeout(() => {
+        setNextMaterialStatus(query.data.status);
+        setDialog('status');
+      }, 0);
       const next = new URLSearchParams(parameters);
       next.delete('status');
       setParameters(next, { replace: true });
+      return () => window.clearTimeout(timeoutId);
     }
+    return undefined;
   }, [canChangeStatus, parameters, query.data, setParameters]);
 
   const statusMutation = useMutation({
