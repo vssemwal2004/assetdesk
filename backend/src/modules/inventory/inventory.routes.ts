@@ -332,7 +332,8 @@ export function createInventoryRouter(): Router {
         !hasServerPermission(actor, 'INVENTORY_VIEW') &&
         !hasServerPermission(actor, 'INVENTORY_ADD') &&
         !hasServerPermission(actor, 'INVENTORY_IMPORT') &&
-        !hasServerPermission(actor, 'INVENTORY_MODELS_ADD')
+        !hasServerPermission(actor, 'INVENTORY_MODELS_ADD') &&
+        !hasServerPermission(actor, 'INVENTORY_MODELS_MERGE')
       ) {
         throw new AppError(403, 'PERMISSION_DENIED', 'You do not have access to inventory models.');
       }
@@ -429,7 +430,7 @@ export function createInventoryRouter(): Router {
 
   router.post(
     '/models/merge',
-    requireRole('ADMIN'),
+    requirePermission('INVENTORY_MODELS_MERGE'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {

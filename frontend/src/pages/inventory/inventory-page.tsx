@@ -239,6 +239,7 @@ export function InventoryPage() {
   const canDeleteInventory = hasPermission(user, 'INVENTORY_DELETE');
   const canAdjustQuantity = hasPermission(user, 'INVENTORY_QUANTITY_ADJUST');
   const canExportInventory = hasPermission(user, 'INVENTORY_EXPORT');
+  const canMergeModels = hasPermission(user, 'INVENTORY_MODELS_MERGE');
 
   const detailQuery = useQuery({
     queryKey: ['asset-details'],
@@ -809,11 +810,11 @@ export function InventoryPage() {
                   },
                 }
               : {})}
-            {...(user?.role === 'ADMIN'
+            {...(canMergeModels
               ? {
-                onMergeCategory: (group: MaterialGroup) => {
-                  setActionError(null);
-                  setMergeCategory(group);
+                  onMergeCategory: (group: MaterialGroup) => {
+                    setActionError(null);
+                    setMergeCategory(group);
                     setMergeModelIds([]);
                     setCanonicalModelName('');
                     setMergeStep(1);
@@ -1868,7 +1869,7 @@ function GroupedMaterialRows({
               <span>Total: {group.totalQuantity}</span>
               <span>Available: {group.availableQuantity}</span>
               <span>Issued: {group.issuedQuantity}</span>
-              {canAdd ? (
+              {canAdd || onMergeCategory ? (
                 <details className="relative" onClick={(event) => event.stopPropagation()}>
                   <summary
                     aria-label={`Actions for ${group.category}`}
@@ -1877,14 +1878,16 @@ function GroupedMaterialRows({
                     <MoreVertical aria-hidden="true" size={17} />
                   </summary>
                   <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-[12px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
-                    <button
-                      className="menu-item w-full"
-                      onClick={() => onAddCategory(group)}
-                      type="button"
-                    >
-                      <PackagePlus aria-hidden="true" size={17} />
-                      Add material
-                    </button>
+                    {canAdd ? (
+                      <button
+                        className="menu-item w-full"
+                        onClick={() => onAddCategory(group)}
+                        type="button"
+                      >
+                        <PackagePlus aria-hidden="true" size={17} />
+                        Add material
+                      </button>
+                    ) : null}
                     {onMergeCategory ? (
                       <button
                         className="menu-item w-full"

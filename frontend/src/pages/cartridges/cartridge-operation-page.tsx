@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router';
 import { AppCard, Button, ErrorSummary, PageHeader, TextField } from '../../components/ui';
-import { issueCartridge, returnCartridge } from '../../lib/cartridges-api';
+import { getCartridges, issueCartridge, returnCartridge } from '../../lib/cartridges-api';
 export function IssueCartridgePage() {
   const preset = new URLSearchParams(useLocation().search).get('serial') ?? '';
+  const queryClient = useQueryClient();
   const [form, setForm] = useState({
     serialNumber: preset,
     employeeName: '',
@@ -14,9 +15,18 @@ export function IssueCartridgePage() {
     remarks: '',
   });
   const [done, setDone] = useState(false);
+  const availableQuery = useQuery({
+    queryKey: ['cartridges', { status: 'FILLED_AVAILABLE', page: 1, pageSize: 100 }],
+    queryFn: () => getCartridges({ status: 'FILLED_AVAILABLE', page: 1, pageSize: 100 }),
+  });
+  const availableCartridges = availableQuery.data?.data ?? [];
   const mutation = useMutation({
     mutationFn: () => issueCartridge(form),
-    onSuccess: () => setDone(true),
+    onSuccess: async () => {
+      setDone(true);
+      await queryClient.invalidateQueries({ queryKey: ['cartridges'] });
+      await queryClient.invalidateQueries({ queryKey: ['cartridge-dashboard'] });
+    },
   });
   return (
     <Operation
@@ -25,13 +35,39 @@ export function IssueCartridgePage() {
       error={mutation.error}
       done={done}
       pending={mutation.isPending}
+      submitDisabled={availableQuery.isPending || !form.serialNumber}
       submit={() => mutation.mutate()}
     >
-      <TextField
-        label="Cartridge serial number"
-        value={form.serialNumber}
-        onChange={(e) => setForm({ ...form, serialNumber: e.target.value })}
-      />
+      <label className="space-y-1.5">
+        <span className="field-label">Cartridge serial number</span>
+        <select
+          className="field-input"
+          disabled={availableQuery.isPending || availableCartridges.length === 0}
+          onChange={(event) => setForm({ ...form, serialNumber: event.target.value })}
+          value={form.serialNumber}
+        >
+          <option value="">
+            {availableQuery.isPending
+              ? 'Loading available serial numbers...'
+              : availableCartridges.length === 0
+                ? 'No filled cartridges available'
+                : 'Select serial number'}
+          </option>
+          {preset && !availableCartridges.some((item) => item.serialNumber === preset) ? (
+            <option value={preset}>{preset}</option>
+          ) : null}
+          {availableCartridges.map((item) => (
+            <option key={item.id} value={item.serialNumber}>
+              {item.serialNumber} - {item.model} - {item.location}
+            </option>
+          ))}
+        </select>
+      </label>
+      {availableQuery.isError ? (
+        <p className="text-sm font-bold text-[var(--color-danger)]">
+          Serial numbers could not be loaded.
+        </p>
+      ) : null}
       <TextField
         label="Employee name"
         value={form.employeeName}
@@ -121,6 +157,7 @@ function Operation({
   error,
   done,
   pending,
+  submitDisabled = false,
   submit,
   children,
 }: {
@@ -129,6 +166,7 @@ function Operation({
   error: Error | null;
   done: boolean;
   pending: boolean;
+  submitDisabled?: boolean;
   submit: () => void;
   children: React.ReactNode;
 }) {
@@ -151,7 +189,7 @@ function Operation({
             <AppCard className="grid gap-4 md:grid-cols-2">
               {children}
               <div className="md:col-span-2 flex justify-end">
-                <Button loading={pending} type="submit">
+                <Button disabled={submitDisabled} loading={pending} type="submit">
                   Save transaction
                 </Button>
               </div>

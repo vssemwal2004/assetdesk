@@ -114,6 +114,12 @@ export const permissionDefinitions: PermissionDefinition[] = [
     description: 'View category models and register official model names in Model Master.',
   },
   {
+    permission: 'INVENTORY_MODELS_MERGE',
+    group: 'Inventory',
+    label: 'Merge inventory models',
+    description: 'Merge duplicate model names inside an inventory category.',
+  },
+  {
     permission: 'ASSET_TYPES_ADD',
     group: 'Inventory',
     label: 'Add asset types',

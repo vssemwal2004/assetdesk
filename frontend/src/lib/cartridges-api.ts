@@ -6,10 +6,11 @@ import {
 } from '@assetdesk/contracts';
 import { apiRequest } from './api-client';
 export async function getCartridges(
-  filters: { page?: number; search?: string; status?: string } = {},
+  filters: { page?: number; pageSize?: number; search?: string; status?: string } = {},
 ) {
   const query = new URLSearchParams();
   query.set('page', String(filters.page ?? 1));
+  query.set('pageSize', String(filters.pageSize ?? 20));
   if (filters.search) query.set('search', filters.search);
   if (filters.status) query.set('status', filters.status);
   return CartridgeListResponseSchema.parse(await apiRequest(`/api/v1/cartridges?${query}`));

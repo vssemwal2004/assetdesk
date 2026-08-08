@@ -12,7 +12,13 @@ import { getActiveSession, validateCsrfToken } from './session.service.js';
 import { verifyAccessToken } from './tokens.js';
 
 const permissionFallbacks: Partial<Record<WorkerPermission, WorkerPermission[]>> = {
-  ASSET_TYPES_MANAGE: ['ASSET_TYPES_ADD', 'ASSET_TYPES_DELETE', 'INVENTORY_MODELS_ADD'],
+  ASSET_TYPES_MANAGE: [
+    'ASSET_TYPES_ADD',
+    'ASSET_TYPES_DELETE',
+    'INVENTORY_MODELS_ADD',
+    'INVENTORY_MODELS_MERGE',
+  ],
+  INVENTORY_MODELS_MERGE: ['ASSET_TYPES_MANAGE'],
 };
 
 export function hasServerPermission(
