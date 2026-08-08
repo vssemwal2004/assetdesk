@@ -89,8 +89,8 @@ export function InventoryImportReviewPage() {
     },
   });
 
-  if (query.isPending) return <LoadingPanel label="Loading upload review" />;
-  if (query.isError || !preview) {
+  if (query.isPending && !preview) return <LoadingPanel label="Loading upload review" />;
+  if (!preview) {
     return (
       <ErrorState
         message="This upload review could not be loaded. It may have expired."
@@ -111,6 +111,17 @@ export function InventoryImportReviewPage() {
         description={`${preview.fileName} · ${preview.mode === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'}`}
         title={result ? 'Bulk upload result' : 'Bulk upload review'}
       />
+
+      {query.isError ? (
+        <ErrorSummary
+          message={
+            isApiError(query.error)
+              ? query.error.message
+              : 'The saved upload review could not be refreshed.'
+          }
+          title="Review refresh failed"
+        />
+      ) : null}
 
       {actionError ? <ErrorSummary message={actionError} title="Upload failed" /> : null}
 

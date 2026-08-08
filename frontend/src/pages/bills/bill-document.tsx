@@ -26,6 +26,10 @@ function generatedAt(): string {
   return formatIstDateTime(new Date());
 }
 
+function roleLabel(role: string): string {
+  return role === 'WORKER' ? 'Employee' : role === 'ADMIN' ? 'Admin' : role.replaceAll('_', ' ');
+}
+
 export function BillDocument({
   issue,
   returnEvent = null,
@@ -89,7 +93,7 @@ export function BillDocument({
           <dl className="bill-detail-list">
             <BillRow label="Name" value={issue.issuedBy.name} />
             <BillRow label="Employee ID" value={issue.issuedBy.workerId} />
-            <BillRow label="Role" value={issue.issuedBy.role} />
+            <BillRow label="Role" value={roleLabel(issue.issuedBy.role)} />
             <BillRow label="Purpose" value={issuePurpose(issue)} />
             <BillRow label="Notes" value={issueNotes(issue)} />
           </dl>
@@ -241,7 +245,7 @@ function ReturnBillDocument({
           <dl className="bill-detail-list">
             <BillRow label="Name" value={returnEvent.performedBy.name} />
             <BillRow label="Employee ID" value={returnEvent.performedBy.workerId} />
-            <BillRow label="Role" value={returnEvent.performedBy.role} />
+            <BillRow label="Role" value={roleLabel(returnEvent.performedBy.role)} />
             <BillRow label="Notes" value={optional(returnEvent.notes)} />
           </dl>
         </div>
