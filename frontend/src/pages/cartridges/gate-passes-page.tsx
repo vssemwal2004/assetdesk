@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { MoreVertical, Plus, Printer } from 'lucide-react';
 import {
@@ -13,10 +13,20 @@ import {
 import {
   createGatePass,
   gatePassAction,
+  getCartridges,
   getGatePass,
   getGatePasses,
   recordGateIn,
 } from '../../lib/cartridges-api';
+
+const gatePassEligibleStatuses = ['EMPTY', 'DEFECTIVE', 'REFILL_FAILED'] as const;
+
+const gatePassEligibleLabels: Record<(typeof gatePassEligibleStatuses)[number], string> = {
+  EMPTY: 'Empty',
+  DEFECTIVE: 'Defective',
+  REFILL_FAILED: 'Refill failed',
+};
+
 export function GatePassesPage() {
   const query = useQuery({ queryKey: ['cartridge-gate-passes'], queryFn: getGatePasses });
   return (
@@ -75,26 +85,52 @@ export function GatePassesPage() {
 }
 export function CreateGatePassPage() {
   const navigate = useNavigate();
+  const client = useQueryClient();
   const [form, setForm] = useState({
     vendorName: '',
     personTakingMaterial: '',
-    serials: '',
+    serials: [] as string[],
     remarks: '',
     submitForVerification: true,
   });
+  const eligibleQueries = useQueries({
+    queries: gatePassEligibleStatuses.map((status) => ({
+      queryKey: ['cartridges', { status, page: 1, pageSize: 100 }],
+      queryFn: () => getCartridges({ status, page: 1, pageSize: 100 }),
+    })),
+  });
+  const eligibleCartridges = eligibleQueries
+    .flatMap((query) => query.data?.data ?? [])
+    .sort((left, right) => left.serialNumber.localeCompare(right.serialNumber));
+  const eligibleLoading = eligibleQueries.some((query) => query.isPending);
+  const eligibleError = eligibleQueries.some((query) => query.isError);
+
+  function setSerial(serialNumber: string, checked: boolean) {
+    setForm((current) => ({
+      ...current,
+      serials: checked
+        ? [...new Set([...current.serials, serialNumber])]
+        : current.serials.filter((item) => item !== serialNumber),
+    }));
+  }
+
   const mutation = useMutation({
     mutationFn: () =>
       createGatePass({
         vendorName: form.vendorName,
         personTakingMaterial: form.personTakingMaterial,
-        cartridgeSerialNumbers: form.serials
-          .split(/\r?\n|,/)
-          .map((x) => x.trim())
-          .filter(Boolean),
+        cartridgeSerialNumbers: form.serials,
         remarks: form.remarks,
         submitForVerification: form.submitForVerification,
       }),
-    onSuccess: (r) => navigate(`/cartridges/gate-passes/${r.data._id}`),
+    onSuccess: async (r) => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['cartridges'] }),
+        client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
+        client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
+      ]);
+      navigate(`/cartridges/gate-passes/${r.data._id}`);
+    },
   });
   return (
     <div className="space-y-6">
@@ -124,12 +160,51 @@ export function CreateGatePassPage() {
           </div>
           <label className="block space-y-1.5">
             <span className="field-label">Cartridge serial numbers</span>
-            <textarea
-              className="field-input min-h-44"
-              placeholder="One serial number per line"
-              value={form.serials}
-              onChange={(e) => setForm({ ...form, serials: e.target.value })}
-            />
+            <div className="rounded-[8px] border border-[var(--color-border)]">
+              <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-tint)] px-3 py-2 text-sm font-bold text-[var(--color-text-muted)]">
+                {eligibleLoading
+                  ? 'Loading eligible serial numbers...'
+                  : `${form.serials.length} selected from ${eligibleCartridges.length} eligible cartridges`}
+              </div>
+              {eligibleError ? (
+                <p className="p-3 text-sm font-bold text-[var(--color-danger)]">
+                  Eligible serial numbers could not be loaded.
+                </p>
+              ) : eligibleCartridges.length === 0 && !eligibleLoading ? (
+                <p className="p-3 text-sm font-bold text-[var(--color-text-muted)]">
+                  No cartridges are ready for Gate Pass. Issue a filled cartridge first, then record
+                  it as Empty, Defective, or Refill failed when it returns.
+                </p>
+              ) : (
+                <div className="max-h-72 overflow-auto p-2">
+                  {eligibleCartridges.map((item) => (
+                    <label
+                      className="flex cursor-pointer items-start gap-3 rounded-[8px] px-3 py-2 hover:bg-[var(--color-surface-tint)]"
+                      key={item.id}
+                    >
+                      <input
+                        checked={form.serials.includes(item.serialNumber)}
+                        className="mt-1"
+                        onChange={(event) => setSerial(item.serialNumber, event.target.checked)}
+                        type="checkbox"
+                      />
+                      <span>
+                        <span className="block font-extrabold text-[var(--color-text-strong)]">
+                          {item.serialNumber}
+                        </span>
+                        <span className="block text-xs font-bold text-[var(--color-text-muted)]">
+                          {item.model} ·{' '}
+                          {gatePassEligibleLabels[
+                            item.status as keyof typeof gatePassEligibleLabels
+                          ]}{' '}
+                          · {item.location}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
           </label>
           <label className="flex items-center gap-2 text-sm font-bold">
             <input
@@ -140,7 +215,12 @@ export function CreateGatePassPage() {
             Send for verification immediately
           </label>
           <div className="flex justify-end">
-            <Button loading={mutation.isPending}>Create Gate Pass</Button>
+            <Button
+              disabled={form.serials.length === 0 || eligibleLoading}
+              loading={mutation.isPending}
+            >
+              Create Gate Pass
+            </Button>
           </div>
         </AppCard>
       </form>
