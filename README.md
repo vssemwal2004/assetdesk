@@ -98,6 +98,29 @@ npm run test
 npm run format:check
 ```
 
+Production build installs must include optional native packages. Vite,
+Tailwind, Rolldown, and Lightning CSS load platform-specific packages on Linux,
+so do a clean install on the server instead of copying `node_modules` from
+another machine:
+
+```text
+rm -rf node_modules frontend/node_modules backend/node_modules packages/*/node_modules
+npm ci --include=optional
+npm run build
+```
+
+If production fails with `Cannot find module '../lightningcss.linux-x64-gnu.node'`,
+the Linux optional package was pruned or never installed. Run the clean install
+commands above from the repository root, then restart the service.
+
+## Database backups
+
+Run `npm run backup` to create a compressed MongoDB backup in the ignored
+`backups/` directory. Successful runs automatically delete backup archives older
+than 2 days. Run `npm run backup:install` once on Windows to install the daily
+2:00 AM Scheduled Task; when the user is not logged on at that time, it runs as
+soon as possible after the next logon.
+
 Before the first sign-in, configure `ASSETDESK_ADMIN_ID`,
 `ASSETDESK_ADMIN_NAME`, `ASSETDESK_ADMIN_EMAIL`, and
 `ASSETDESK_ADMIN_PASSWORD` in the ignored root `.env`, then run:

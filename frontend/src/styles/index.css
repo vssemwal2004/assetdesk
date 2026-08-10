@@ -636,7 +636,7 @@ dialog::backdrop {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 8mm 8mm 8mm 38mm;
   }
 
   html,
@@ -672,7 +672,7 @@ dialog::backdrop {
   }
 
   .bill-sheet h1 {
-    font-size: 18pt;
+    font-size: 16pt;
     line-height: 1.15;
   }
 
@@ -685,7 +685,7 @@ dialog::backdrop {
   }
 
   .bill-header {
-    grid-template-columns: 174px minmax(0, 1fr) 196px;
+    grid-template-columns: 154px minmax(0, 1fr) 172px;
     gap: 8px;
     padding-bottom: 8px;
   }

@@ -6,7 +6,11 @@ import { AppError } from '../../middleware/error-handler.js';
 import { AssetDetailModel } from './asset-detail.model.js';
 import { InventoryModelModel, type InventoryModelRecord } from './inventory-model.model.js';
 import { InventoryImportModel } from './inventory-import.model.js';
-import { buildMaterialIdentity, materialDisplayName } from './inventory-identity.js';
+import {
+  buildMaterialIdentity,
+  buildMaterialScopedIdentity,
+  materialDisplayName,
+} from './inventory-identity.js';
 import { MaterialModel } from './material.model.js';
 
 function normalized(value: string): string {
@@ -180,6 +184,7 @@ async function relinkModelMaterials(
   const name = materialDisplayName(category, canonical);
   const updates = materials.map((material) => ({
     id: material._id,
+    materialCode: material.materialCode,
     identityKey: buildMaterialIdentity(
       material.trackingMode,
       name,
@@ -189,27 +194,39 @@ async function relinkModelMaterials(
       material.configuration,
     ),
   }));
-  if (new Set(updates.map((update) => update.identityKey)).size !== updates.length) {
-    throw new AppError(
-      409,
-      'INVENTORY_MODEL_MERGE_MATERIAL_CONFLICT',
-      'These models have duplicate inventory records at the same location and cannot be merged. Consolidate the duplicate stock first.',
-    );
-  }
-  const conflict = await MaterialModel.exists({
+  const conflictingExistingMaterials = await MaterialModel.find({
     _id: { $nin: updates.map((update) => update.id) },
     identityKey: { $in: updates.map((update) => update.identityKey) },
-  }).session(session ?? null);
-  if (conflict) {
+  })
+    .select({ identityKey: 1 })
+    .session(session ?? null)
+    .lean();
+  const existingIdentityKeys = new Set(
+    conflictingExistingMaterials
+      .map((material) => material.identityKey)
+      .filter((identityKey): identityKey is string => Boolean(identityKey)),
+  );
+
+  const usedIdentityKeys = new Set(existingIdentityKeys);
+  const resolvedUpdates = updates.map((update) => {
+    if (!usedIdentityKeys.has(update.identityKey)) {
+      usedIdentityKeys.add(update.identityKey);
+      return update;
+    }
+    const scopedIdentityKey = buildMaterialScopedIdentity(update.identityKey, update.materialCode);
+    usedIdentityKeys.add(scopedIdentityKey);
+    return { ...update, identityKey: scopedIdentityKey };
+  });
+  if (resolvedUpdates.length !== new Set(resolvedUpdates.map((update) => update.identityKey)).size) {
     throw new AppError(
       409,
       'INVENTORY_MODEL_MERGE_MATERIAL_CONFLICT',
-      'The renamed model would duplicate an existing inventory record. Consolidate the duplicate stock first.',
+      'The renamed model would duplicate an existing inventory record. Try the merge again.',
     );
   }
 
   let modifiedCount = 0;
-  for (const update of updates) {
+  for (const update of resolvedUpdates) {
     const result = await MaterialModel.updateOne(
       { _id: update.id },
       { $set: { typeModelName: canonical, name, identityKey: update.identityKey } },

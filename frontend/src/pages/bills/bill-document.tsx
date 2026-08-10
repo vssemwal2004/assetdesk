@@ -30,6 +30,12 @@ function roleLabel(role: string): string {
   return role === 'WORKER' ? 'Employee' : role === 'ADMIN' ? 'Admin' : role.replaceAll('_', ' ');
 }
 
+function receiptMaterialLabel(issue: BillIssue): 'IT ASSET' | 'IT CONSUMABLE' | 'MATERIAL' {
+  const types = new Set(issue.lines.map((line) => line.material.trackingMode));
+  if (types.size > 1) return 'MATERIAL';
+  return types.has('SERIALIZED') ? 'IT ASSET' : 'IT CONSUMABLE';
+}
+
 export function BillDocument({
   issue,
   returnEvent = null,
@@ -42,7 +48,7 @@ export function BillDocument({
   return (
     <article className="bill-sheet" aria-label={`Issue/return receipt for ${issue.issueId}`}>
       <ReceiptHeader
-        documentLabel="IT ASSET ISSUE RECEIPT"
+        documentLabel={`${receiptMaterialLabel(issue)} ISSUE RECEIPT`}
         documentNumberLabel="Receipt / Issue No."
         documentNumber={issue.issueId}
         note="Graphic Era Deemed to be University"
@@ -212,7 +218,7 @@ function ReturnBillDocument({
   return (
     <article className="bill-sheet" aria-label={`Return receipt for ${issue.issueId}`}>
       <ReceiptHeader
-        documentLabel="IT ASSET RETURN RECEIPT"
+        documentLabel={`${receiptMaterialLabel(issue)} RETURN RECEIPT`}
         documentNumberLabel="Receipt / Issue No."
         documentNumber={issue.issueId}
         note="Graphic Era Deemed to be University"

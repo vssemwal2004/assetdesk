@@ -35,3 +35,9 @@ export function buildMaterialIdentity(
   if (identity.length <= MAX_STORED_IDENTITY_LENGTH) return identity;
   return `SHA256:${createHash('sha256').update(identity).digest('hex').toLocaleUpperCase('en-US')}`;
 }
+
+export function buildMaterialScopedIdentity(baseIdentity: string, materialCode: string): string {
+  const identity = `${baseIdentity}|MATERIAL:${normalizeIdentityPart(materialCode)}`;
+  if (identity.length <= MAX_STORED_IDENTITY_LENGTH) return identity;
+  return `SHA256:${createHash('sha256').update(identity).digest('hex').toLocaleUpperCase('en-US')}`;
+}
