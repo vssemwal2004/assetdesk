@@ -336,6 +336,21 @@ export interface InventoryImportPreview {
     status?: string;
     valid: boolean;
     errors: string[];
+    duplicates?: Array<{
+      source: 'UPLOAD_FILE' | 'EXISTING_INVENTORY';
+      matchedField: 'serialNumber';
+      uploadedValue: string;
+      otherRowNumbers?: number[];
+      assetTag?: string;
+      materialCode?: string;
+      name?: string;
+      category?: string;
+      typeModelName?: string;
+      configuration?: string;
+      location?: string;
+      block?: string;
+      status?: string;
+    }>;
   }>;
   expiresAt: string;
 }

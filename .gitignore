@@ -15,6 +15,7 @@ logs/
 tmp/
 temp/
 backups/
+.npm-task-cache/
 
 # Editor and operating-system files
 .DS_Store

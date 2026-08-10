@@ -18,6 +18,23 @@ export interface InventoryImportPreviewRow {
   status?: string;
   valid: boolean;
   errors: string[];
+  duplicates?: InventoryImportDuplicate[];
+}
+
+export interface InventoryImportDuplicate {
+  source: 'UPLOAD_FILE' | 'EXISTING_INVENTORY';
+  matchedField: 'serialNumber';
+  uploadedValue: string;
+  otherRowNumbers?: number[];
+  assetTag?: string;
+  materialCode?: string;
+  name?: string;
+  category?: string;
+  typeModelName?: string;
+  configuration?: string;
+  location?: string;
+  block?: string;
+  status?: string;
 }
 
 export interface InventoryImportInput {
@@ -70,6 +87,29 @@ const PreviewRowSchema = new Schema<InventoryImportPreviewRow>(
     status: { type: String },
     valid: { type: Boolean, required: true },
     errors: { type: [String], required: true, default: [] },
+    duplicates: {
+      type: [
+        new Schema<InventoryImportDuplicate>(
+          {
+            source: { type: String, enum: ['UPLOAD_FILE', 'EXISTING_INVENTORY'], required: true },
+            matchedField: { type: String, enum: ['serialNumber'], required: true },
+            uploadedValue: { type: String, required: true },
+            otherRowNumbers: { type: [Number] },
+            assetTag: { type: String },
+            materialCode: { type: String },
+            name: { type: String },
+            category: { type: String },
+            typeModelName: { type: String },
+            configuration: { type: String },
+            location: { type: String },
+            block: { type: String },
+            status: { type: String },
+          },
+          { _id: false },
+        ),
+      ],
+      default: undefined,
+    },
   },
   { _id: false, suppressReservedKeysWarning: true },
 );

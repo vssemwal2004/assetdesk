@@ -17,6 +17,7 @@ import { AssetTypeModel } from './asset-type.model.js';
 import {
   InventoryImportModel,
   type InventoryImportInput,
+  type InventoryImportDuplicate,
   type InventoryImportPreviewRow,
 } from './inventory-import.model.js';
 import {
@@ -427,7 +428,63 @@ export async function previewInventoryImport(
     ]),
   );
   const inputs: InventoryImportInput[] = [];
-  const fileSerials = new Set<string>();
+  const serialRows = new Map<string, number[]>();
+  if (mode === 'SERIALIZED') {
+    rows.forEach((row) => {
+      const normalized = row.values.serialNumber.trim().toLocaleUpperCase('en-US');
+      if (!normalized) return;
+      const rowNumbers = serialRows.get(normalized) ?? [];
+      rowNumbers.push(row.rowNumber);
+      serialRows.set(normalized, rowNumbers);
+    });
+  }
+  const existingUnits =
+    mode === 'SERIALIZED'
+      ? await AssetUnitModel.find({ serialNumberNormalized: { $in: [...serialRows.keys()] } }).lean()
+      : [];
+  const existingMaterials = await MaterialModel.find({
+    materialCode: { $in: existingUnits.map((unit) => unit.materialCode) },
+  }).lean();
+  const materialsByCode = new Map(existingMaterials.map((material) => [material.materialCode, material]));
+  const existingBySerial = new Map(
+    existingUnits.map((unit) => [unit.serialNumberNormalized ?? '', unit] as const),
+  );
+  if (mode === 'SERIALIZED') {
+    rows.forEach((row) => {
+      const normalized = row.values.serialNumber.trim().toLocaleUpperCase('en-US');
+      if (!normalized) return;
+      const duplicates: InventoryImportDuplicate[] = [];
+      const matchingRows = serialRows.get(normalized) ?? [];
+      if (matchingRows.length > 1) {
+        duplicates.push({
+          source: 'UPLOAD_FILE',
+          matchedField: 'serialNumber',
+          uploadedValue: row.values.serialNumber,
+          otherRowNumbers: matchingRows.filter((rowNumber) => rowNumber !== row.rowNumber),
+        });
+      }
+      const unit = existingBySerial.get(normalized);
+      if (unit) {
+        const material = materialsByCode.get(unit.materialCode);
+        duplicates.push({
+          source: 'EXISTING_INVENTORY',
+          matchedField: 'serialNumber',
+          uploadedValue: row.values.serialNumber,
+          assetTag: unit.assetTag,
+          materialCode: unit.materialCode,
+          ...(material?.name ? { name: material.name } : {}),
+          ...(material?.category ? { category: material.category } : {}),
+          ...(material?.typeModelName ? { typeModelName: material.typeModelName } : {}),
+          ...(material?.configuration ? { configuration: material.configuration } : {}),
+          ...(material?.location ? { location: material.location } : {}),
+          ...(material?.block ? { block: material.block } : {}),
+          ...(material?.status ? { status: material.status } : {}),
+        });
+      }
+      const preview = previewRows.get(row.rowNumber);
+      if (preview && duplicates.length) preview.duplicates = duplicates;
+    });
+  }
   const categoryDetailKind = categoryKind(mode);
   const categoryEntries = await Promise.all(
     [...new Set(rows.map((row) => row.values.category))].map(
@@ -505,19 +562,21 @@ export async function previewInventoryImport(
       const locationBlock = `${location} / ${block}`;
       let draft: CreateMaterialRequest;
       if (mode === 'SERIALIZED') {
-        const serialNumbers = group.map((row) => row.values.serialNumber);
-        const unique = new Set(serialNumbers.map((value) => value.toUpperCase()));
-        if (unique.size !== serialNumbers.length)
-          throw new Error('Duplicate serial number in file.');
-        for (const serialNumber of serialNumbers) {
-          const normalized = serialNumber.toUpperCase();
-          if (fileSerials.has(normalized)) throw new Error('Duplicate serial number in file.');
-          fileSerials.add(normalized);
-        }
-        const existingSerial = await AssetUnitModel.exists({
-          serialNumberNormalized: { $in: serialNumbers.map((value) => value.toUpperCase()) },
+        const uploadableRows = group.filter((row) => {
+          const preview = previewRows.get(row.rowNumber);
+          const duplicates = preview?.duplicates ?? [];
+          if (!duplicates.length) return true;
+          preview!.valid = false;
+          if (duplicates.some((duplicate) => duplicate.source === 'EXISTING_INVENTORY')) {
+            preview!.errors.push('This serial number already exists in inventory.');
+          }
+          if (duplicates.some((duplicate) => duplicate.source === 'UPLOAD_FILE')) {
+            preview!.errors.push('This serial number is repeated in the uploaded file.');
+          }
+          return false;
         });
-        if (existingSerial) throw new Error('A serial number in this material already exists.');
+        if (!uploadableRows.length) continue;
+        const serialNumbers = uploadableRows.map((row) => row.values.serialNumber);
         draft = CreateMaterialRequestSchema.parse({
           name: displayName,
           category,

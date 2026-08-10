@@ -1,7 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, Search, Upload, XCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  Files,
+  Search,
+  Upload,
+  X,
+  XCircle,
+} from 'lucide-react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
+import writeExcelFile, { type SheetData } from 'write-excel-file/browser';
 
 import {
   AppCard,
@@ -22,6 +32,99 @@ import {
 import { inventoryStatusLabel } from '../../lib/inventory-status';
 
 type ReviewFilter = 'ALL' | 'READY' | 'FAILED';
+type PreviewRow = InventoryImportPreview['rows'][number];
+
+function reportName(fileName: string, suffix: string): string {
+  const base = fileName.replace(/\.[^.]+$/, '').replace(/[^a-z0-9_-]+/gi, '-');
+  return `${base || 'inventory-upload'}-${suffix}.xlsx`;
+}
+
+async function saveWorkbook(
+  rows: Record<string, string | number>[],
+  sheetName: string,
+  fileName: string,
+) {
+  const headings = Object.keys(rows[0] ?? {});
+  const sheetData: SheetData = [
+    headings.map((heading) => ({
+      value: heading,
+      fontWeight: 'bold',
+      backgroundColor: '#EDE9FE',
+      color: '#3B0764',
+      wrap: true,
+    })),
+    ...rows.map((row) =>
+      headings.map((heading) => ({
+        value: row[heading] ?? '',
+        wrap: true,
+        alignVertical: 'top' as const,
+      })),
+    ),
+  ];
+  await writeExcelFile(
+    [
+      {
+        data: sheetData,
+        sheet: sheetName,
+        columns: headings.map((heading) => ({
+          width: Math.min(45, Math.max(15, heading.length + 3)),
+        })),
+      },
+    ],
+  ).toFile(fileName);
+}
+
+function downloadErrorReport(preview: InventoryImportPreview) {
+  const failed = preview.rows.filter((row) => !row.valid);
+  void saveWorkbook(
+    failed.map((row) => ({
+      'Excel row': row.rowNumber,
+      'Validation status': 'FAILED',
+      'Why it failed': row.errors.join(' '),
+      'Recommended action': row.duplicates?.length
+        ? 'Review the duplicate comparison and remove or correct the repeated value.'
+        : 'Correct the highlighted source data, then upload the file again.',
+      'Type/model name': row.name,
+      Category: row.category,
+      Configuration: row.configuration ?? '',
+      'Serial number': row.serialNumber ?? '',
+      Quantity: row.quantity ?? '',
+      Unit: row.unitLabel ?? '',
+      Location: row.location ?? '',
+      Block: row.block ?? '',
+      Vendor: row.vendorName ?? '',
+      'Inventory status': row.status ?? '',
+    })),
+    'Failed rows',
+    reportName(preview.fileName, 'error-report'),
+  );
+}
+
+function duplicateReportRows(rows: PreviewRow[]): Record<string, string | number>[] {
+  return rows.flatMap((row) =>
+    (row.duplicates ?? []).map((duplicate) => ({
+      'Excel row': row.rowNumber,
+      'Matched field': duplicate.matchedField === 'serialNumber' ? 'Serial number' : duplicate.matchedField,
+      'Uploaded value': duplicate.uploadedValue,
+      'Duplicate source':
+        duplicate.source === 'EXISTING_INVENTORY' ? 'Existing inventory' : 'Same upload file',
+      'Other Excel rows': duplicate.otherRowNumbers?.join(', ') ?? '',
+      'Existing asset tag': duplicate.assetTag ?? '',
+      'Existing material code': duplicate.materialCode ?? '',
+      'Existing material': duplicate.name ?? '',
+      'Existing category': duplicate.category ?? '',
+      'Existing model': duplicate.typeModelName ?? '',
+      'Existing configuration': duplicate.configuration ?? '',
+      'Existing location': duplicate.location ?? '',
+      'Existing block': duplicate.block ?? '',
+      'Existing status': duplicate.status ?? '',
+      Resolution:
+        duplicate.source === 'EXISTING_INVENTORY'
+          ? 'Do not upload this serial again. Verify the existing asset or correct the Excel serial number.'
+          : 'Keep one correct row and remove or correct the repeated serial number.',
+    })),
+  );
+}
 
 function statePreview(value: unknown): InventoryImportPreview | undefined {
   if (!value || typeof value !== 'object' || !('preview' in value)) return undefined;
@@ -38,6 +141,7 @@ export function InventoryImportReviewPage() {
   const [searchDraft, setSearchDraft] = useState('');
   const [result, setResult] = useState<InventoryImportResult | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false);
 
   const query = useQuery({
     queryKey: ['inventory-import-review', importId],
@@ -47,6 +151,10 @@ export function InventoryImportReviewPage() {
   });
 
   const preview = query.data;
+  const duplicateRows = useMemo(
+    () => (preview?.rows ?? []).filter((row) => (row.duplicates?.length ?? 0) > 0),
+    [preview?.rows],
+  );
   const rows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
     return (preview?.rows ?? []).filter((row) => {
@@ -133,7 +241,7 @@ export function InventoryImportReviewPage() {
       </div>
 
       {result ? (
-        <UploadResult result={result} />
+        <UploadResult preview={preview} result={result} />
       ) : (
         <AppCard className="max-w-none">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -186,9 +294,28 @@ export function InventoryImportReviewPage() {
           </div>
 
           {preview.invalidRows > 0 ? (
-            <p className="mt-4 rounded-[8px] bg-[var(--color-danger-soft)] p-3 text-sm font-bold text-[var(--color-danger)]">
-              Failed rows will stay out of inventory. Only rows marked Ready are uploaded.
-            </p>
+            <div className="mt-4 flex flex-col gap-3 rounded-[8px] border border-[var(--color-danger-border)] bg-[var(--color-danger-soft)] p-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-extrabold text-[var(--color-danger)]">
+                  {preview.invalidRows} rows need attention
+                </p>
+                <p className="mt-0.5 text-xs font-semibold text-[var(--color-text-muted)]">
+                  Failed rows stay out of inventory. Download the report for row-by-row corrections.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {duplicateRows.length > 0 ? (
+                  <Button onClick={() => setDuplicatesOpen(true)} type="button" variant="secondary">
+                    <Files aria-hidden="true" size={17} />
+                    Compare duplicates ({duplicateRows.length})
+                  </Button>
+                ) : null}
+                <Button onClick={() => downloadErrorReport(preview)} type="button" variant="secondary">
+                  <Download aria-hidden="true" size={17} />
+                  Download error report
+                </Button>
+              </div>
+            </div>
           ) : null}
 
           {rows.length === 0 ? (
@@ -198,7 +325,128 @@ export function InventoryImportReviewPage() {
           )}
         </AppCard>
       )}
+      {duplicatesOpen ? (
+        <DuplicateComparisonDialog
+          fileName={preview.fileName}
+          onClose={() => setDuplicatesOpen(false)}
+          rows={duplicateRows}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function Dialog({ children, label, onClose }: { children: ReactNode; label: string; onClose: () => void }) {
+  const reference = useRef<HTMLDialogElement>(null);
+  useEffect(() => reference.current?.showModal(), []);
+  return (
+    <dialog
+      aria-label={label}
+      className="relative m-auto max-h-[90vh] w-[min(96vw,1180px)] overflow-hidden rounded-[12px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/45"
+      onCancel={onClose}
+      onClose={onClose}
+      ref={reference}
+    >
+      <button
+        aria-label="Close"
+        className="absolute right-4 top-4 z-20 grid size-9 place-items-center rounded-full border border-[var(--color-border)] bg-white text-[var(--color-text-muted)] shadow-sm hover:text-[var(--color-primary)]"
+        onClick={onClose}
+        type="button"
+      >
+        <X aria-hidden="true" size={18} />
+      </button>
+      {children}
+    </dialog>
+  );
+}
+
+function DuplicateComparisonDialog({
+  fileName,
+  onClose,
+  rows,
+}: {
+  fileName: string;
+  onClose: () => void;
+  rows: PreviewRow[];
+}) {
+  const reportRows = duplicateReportRows(rows);
+  return (
+    <Dialog label="Duplicate comparison" onClose={onClose}>
+      <div className="border-b border-[var(--color-border)] px-6 py-5 pr-16">
+        <p className="text-lg font-extrabold">Duplicate comparison</p>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+          Uploaded values are matched against this file and existing inventory records.
+        </p>
+      </div>
+      <div className="max-h-[calc(90vh-150px)] overflow-auto p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-bold text-[var(--color-text-muted)]">
+            {rows.length} affected Excel rows · {reportRows.length} duplicate matches
+          </p>
+          <Button
+            onClick={() =>
+              void saveWorkbook(reportRows, 'Duplicate comparison', reportName(fileName, 'duplicates'))
+            }
+            type="button"
+            variant="secondary"
+          >
+            <Download aria-hidden="true" size={17} />
+            Download duplicate report
+          </Button>
+        </div>
+        <div className="overflow-auto rounded-[8px] border border-[var(--color-border)]">
+          <table className="w-full min-w-[1050px] table-fixed text-left text-sm">
+            <thead className="sticky top-0 bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
+              <tr>
+                <th className="w-20 p-3">Row</th>
+                <th className="w-44 p-3">Matched value</th>
+                <th className="w-40 p-3">Duplicate found in</th>
+                <th className="w-48 p-3">Asset / material code</th>
+                <th className="w-56 p-3">Existing material</th>
+                <th className="w-44 p-3">Location</th>
+                <th className="p-3">What to do</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)]">
+              {rows.flatMap((row) =>
+                (row.duplicates ?? []).map((duplicate, index) => (
+                  <tr key={`${row.rowNumber}-${duplicate.source}-${index}`} className="align-top hover:bg-[var(--color-surface-tint)]">
+                    <td className="p-3 font-extrabold">{row.rowNumber}</td>
+                    <td className="break-words p-3">
+                      <span className="block text-xs font-bold text-[var(--color-text-muted)]">Serial number</span>
+                      <span className="font-extrabold">{duplicate.uploadedValue}</span>
+                    </td>
+                    <td className="p-3 font-bold">
+                      {duplicate.source === 'EXISTING_INVENTORY'
+                        ? 'Existing inventory'
+                        : `Excel row ${duplicate.otherRowNumbers?.join(', ')}`}
+                    </td>
+                    <td className="break-words p-3">
+                      <span className="block font-bold">{duplicate.assetTag ?? 'Not created'}</span>
+                      <span className="text-xs text-[var(--color-text-muted)]">{duplicate.materialCode ?? 'Same upload file'}</span>
+                    </td>
+                    <td className="break-words p-3">
+                      <span className="block font-bold">{duplicate.name ?? row.name}</span>
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        {[duplicate.category, duplicate.typeModelName, duplicate.configuration].filter(Boolean).join(' · ') || 'Uploaded row'}
+                      </span>
+                    </td>
+                    <td className="break-words p-3">
+                      {[duplicate.location, duplicate.block].filter(Boolean).join(' / ') || 'Same upload file'}
+                    </td>
+                    <td className="break-words p-3 text-xs font-semibold">
+                      {duplicate.source === 'EXISTING_INVENTORY'
+                        ? 'Verify the existing asset. Correct the Excel serial if this is a different item.'
+                        : 'Keep one correct row and remove or correct the repeated serial.'}
+                    </td>
+                  </tr>
+                )),
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
@@ -319,7 +567,13 @@ function ReviewTable({
   );
 }
 
-function UploadResult({ result }: { result: InventoryImportResult }) {
+function UploadResult({
+  preview,
+  result,
+}: {
+  preview: InventoryImportPreview;
+  result: InventoryImportResult;
+}) {
   return (
     <AppCard className="max-w-none">
       <div className="grid gap-3 md:grid-cols-2">
@@ -327,7 +581,40 @@ function UploadResult({ result }: { result: InventoryImportResult }) {
         <MetricCard label="Rows failed or skipped" tone="danger" value={result.failed.length} />
       </div>
       {result.failed.length > 0 ? (
-        <div className="mt-5 max-h-[520px] overflow-auto rounded-[8px] border border-[var(--color-border)]">
+        <>
+          <div className="mt-5 flex justify-end">
+            <Button
+              onClick={() =>
+                void saveWorkbook(
+                  result.failed.map((failure) => {
+                    const source = preview.rows.find((row) => row.rowNumber === failure.rowNumber);
+                    return {
+                      'Excel row': failure.rowNumber,
+                      'Validation status': 'FAILED',
+                      'Why it failed': failure.reason,
+                      'Recommended action':
+                        'Correct this row using the reason shown, then upload the file again.',
+                      'Type/model name': failure.name,
+                      Category: source?.category ?? '',
+                      Configuration: source?.configuration ?? '',
+                      'Serial number': source?.serialNumber ?? '',
+                      Quantity: source?.quantity ?? '',
+                      Location: source?.location ?? '',
+                      Block: source?.block ?? '',
+                    };
+                  }),
+                  'Upload failures',
+                  reportName(preview.fileName, 'upload-failures'),
+                )
+              }
+              type="button"
+              variant="secondary"
+            >
+              <Download aria-hidden="true" size={17} />
+              Download failure report
+            </Button>
+          </div>
+          <div className="mt-3 max-h-[520px] overflow-auto rounded-[8px] border border-[var(--color-border)]">
           <table className="w-full min-w-[760px] table-fixed text-left text-sm">
             <thead className="sticky top-0 bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
               <tr>
@@ -348,7 +635,8 @@ function UploadResult({ result }: { result: InventoryImportResult }) {
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       ) : null}
       <Link className="button-secondary mt-5" to="/inventory">
         View Inventory
