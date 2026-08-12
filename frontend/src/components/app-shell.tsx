@@ -171,6 +171,49 @@ const cartridgeNavigation: NavigationItem[] = [
   },
 ];
 
+const cartridgeNavigationSections: Array<{
+  label: string;
+  icon: LucideIcon;
+  items: NavigationItem[];
+  activePath: (pathname: string, search: string) => boolean;
+}> = [
+  {
+    label: 'Overview',
+    icon: Gauge,
+    items: cartridgeNavigation.slice(0, 3),
+    activePath: (pathname) =>
+      pathname === '/cartridges/dashboard' ||
+      pathname === '/cartridges' ||
+      pathname === '/cartridges/new',
+  },
+  {
+    label: 'Issue / Return',
+    icon: RotateCcw,
+    items: cartridgeNavigation.slice(3, 7),
+    activePath: (pathname, search) =>
+      pathname.startsWith('/cartridges/issues') ||
+      pathname.startsWith('/cartridges/returns') ||
+      (pathname === '/cartridges' && search.includes('status=ISSUED')) ||
+      (pathname === '/cartridges/activity' && search.includes('type=RETURNED')),
+  },
+  {
+    label: 'Gate Pass',
+    icon: ReceiptText,
+    items: cartridgeNavigation.slice(7, 11),
+    activePath: (pathname, search) =>
+      pathname.startsWith('/cartridges/gate-passes') ||
+      pathname === '/cartridges/gate-in' ||
+      (pathname === '/cartridges/activity' &&
+        (search.includes('type=GATE_OUT') || search.includes('type=GATE_IN'))),
+  },
+  {
+    label: 'Logs',
+    icon: FileClock,
+    items: cartridgeNavigation.slice(11),
+    activePath: (pathname, search) => pathname === '/cartridges/activity' && !search,
+  },
+];
+
 const mobileNavigation: NavigationItem[] = [
   { label: 'Home', to: '/dashboard', icon: Home, end: true },
   { label: 'Issues', to: '/issues', icon: ClipboardList, end: true, permission: 'ISSUES_VIEW' },
@@ -477,17 +520,79 @@ function CartridgeNavigationGroup({
   compact?: boolean;
   onClick?: () => void;
 }) {
+  const auth = useAuth();
+  const location = useLocation();
+  const active = location.pathname.startsWith('/cartridges');
+  const visibleSections = cartridgeNavigationSections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => canShowItem(auth.user, item)),
+    }))
+    .filter((section) => section.items.length > 0);
+
   return (
-    <NavigationGroupMenu
-      compact={compact}
-      group={{
-        label: 'Cartridges',
-        icon: Printer,
-        items: cartridgeNavigation,
-        activePath: (pathname) => pathname.startsWith('/cartridges'),
-      }}
-      {...(onClick ? { onClick } : {})}
-    />
+    <details className="group" open={active}>
+      <summary
+        className={cn(
+          'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
+          compact ? 'px-2.5' : 'px-3',
+          active
+            ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]'
+            : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-tint)] hover:text-[var(--color-primary)]',
+        )}
+      >
+        <Printer aria-hidden="true" className="shrink-0" size={20} />
+        <span className={compact ? 'sidebar-label min-w-0 flex-1 truncate' : 'min-w-0 flex-1'}>
+          Cartridges
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className="shrink-0 transition-transform group-open:rotate-180"
+          size={16}
+        />
+      </summary>
+      <div className={cn('sidebar-subnav mt-1 space-y-1', compact ? 'pl-0' : 'pl-4')}>
+        {visibleSections.map((section) => {
+          const SectionIcon = section.icon;
+          const sectionActive = section.activePath(location.pathname, location.search);
+          return (
+            <details className="group/cartridge" key={section.label} open={sectionActive}>
+              <summary
+                className={cn(
+                  'sidebar-nav-link flex min-h-10 cursor-pointer list-none items-center gap-3 rounded-[10px] text-xs font-extrabold uppercase tracking-[0.02em] transition-colors [&::-webkit-details-marker]:hidden',
+                  compact ? 'px-2.5' : 'px-3',
+                  sectionActive
+                    ? 'bg-white/15 text-white'
+                    : 'text-white/75 hover:bg-white/10 hover:text-white',
+                )}
+              >
+                <SectionIcon aria-hidden="true" className="shrink-0" size={17} />
+                <span
+                  className={compact ? 'sidebar-label min-w-0 flex-1 truncate' : 'min-w-0 flex-1'}
+                >
+                  {section.label}
+                </span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className="shrink-0 transition-transform group-open/cartridge:rotate-180"
+                  size={14}
+                />
+              </summary>
+              <div className={cn('mt-1 space-y-1', compact ? 'pl-3' : 'pl-4')}>
+                {section.items.map((item) => (
+                  <NavigationLink
+                    compact={compact}
+                    item={item}
+                    key={item.to}
+                    {...(onClick ? { onClick } : {})}
+                  />
+                ))}
+              </div>
+            </details>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 
