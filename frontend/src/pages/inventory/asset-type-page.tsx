@@ -1162,7 +1162,7 @@ export function AssetTypePage() {
                       {(assetType.models?.length ?? 0).toLocaleString('en-IN')}
                     </span>
                     {canDeleteAssetTypes ? (
-                      <details className="relative">
+                      <details className="relative" data-action-menu>
                         <summary
                           aria-label={`Actions for ${assetType.name}`}
                           className="icon-button list-none marker:hidden"

@@ -33,6 +33,7 @@ import {
 } from '../pages/cartridges/gate-passes-page';
 import { CartridgeDetailPage } from '../pages/cartridges/cartridge-detail-page';
 import { CartridgeQcPage } from '../pages/cartridges/cartridge-qc-page';
+import { CartridgeActivityPage } from '../pages/cartridges/cartridge-activity-page';
 
 const WorkersPage = lazy(() =>
   import('../pages/workers/workers-page').then((module) => ({ default: module.WorkersPage })),
@@ -175,6 +176,7 @@ export function App() {
                 <Route element={<PermissionRoute permission="CARTRIDGES_VIEW" />}>
                   <Route element={<CartridgeDashboardPage />} path="/cartridges/dashboard" />
                   <Route element={<CartridgesPage />} path="/cartridges" />
+                  <Route element={<CartridgeActivityPage />} path="/cartridges/activity" />
                   <Route element={<GatePassesPage />} path="/cartridges/gate-passes" />
                   <Route
                     element={<GatePassDetailPage />}

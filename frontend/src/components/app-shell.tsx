@@ -26,6 +26,7 @@ import type { WorkerPermission } from '@assetdesk/contracts';
 
 import { useAuth } from '../auth/auth-context';
 import { hasPermission } from '../auth/permissions';
+import { DismissibleActionMenus } from './dismissible-action-menus';
 import { Brand, cn } from './ui';
 
 interface NavigationItem {
@@ -109,6 +110,12 @@ const cartridgeNavigation: NavigationItem[] = [
     permission: 'CARTRIDGES_VIEW',
   },
   {
+    label: 'Activity log',
+    to: '/cartridges/activity',
+    icon: FileClock,
+    permission: 'CARTRIDGES_VIEW',
+  },
+  {
     label: 'Add cartridges',
     to: '/cartridges/new',
     icon: PackagePlus,
@@ -162,6 +169,7 @@ const adminMobileNavigation: NavigationItem[] = [
 
 function pageTitle(pathname: string): string {
   if (pathname === '/cartridges/dashboard') return 'Cartridge Dashboard';
+  if (pathname === '/cartridges/activity') return 'Cartridge Activity Log';
   if (pathname === '/cartridges/new') return 'Add Cartridges';
   if (pathname === '/cartridges/issues/new') return 'Issue Cartridge';
   if (pathname === '/cartridges/returns/new') return 'Return Cartridge';
@@ -241,7 +249,7 @@ function IssueNavigationGroup({
           size={16}
         />
       </summary>
-      <div className={cn('mt-1 space-y-1', compact ? 'pl-0' : 'pl-4')}>
+      <div className={cn('sidebar-subnav mt-1 space-y-1', compact ? 'pl-0' : 'pl-4')}>
         {children.map((item) => (
           <NavigationLink
             compact={compact}
@@ -291,7 +299,7 @@ function NavigationGroupMenu({
           size={16}
         />
       </summary>
-      <div className={cn('mt-1 space-y-1', compact ? 'pl-0' : 'pl-4')}>
+      <div className={cn('sidebar-subnav mt-1 space-y-1', compact ? 'pl-0' : 'pl-4')}>
         {children.map((item) => (
           <NavigationLink
             compact={compact}
@@ -470,6 +478,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-dvh bg-[var(--color-background)] text-[var(--color-text)]">
+      <DismissibleActionMenus />
       <a
         className="fixed left-3 top-3 z-[70] -translate-y-20 rounded-[10px] bg-white px-4 py-3 font-bold text-[var(--color-primary)] shadow-lg focus:translate-y-0"
         href="#main-content"
@@ -478,7 +487,7 @@ export function AppShell() {
       </a>
 
       <aside
-        className="app-sidebar fixed inset-y-0 left-0 z-40 hidden border-r border-[var(--color-border)] bg-white/98 px-3 py-4 shadow-[6px_0_24px_rgba(44,37,52,.06)] backdrop-blur min-[600px]:flex min-[600px]:flex-col"
+        className="app-sidebar fixed inset-y-0 left-0 z-40 hidden px-3 py-4 min-[600px]:flex min-[600px]:flex-col"
         onMouseLeave={(event) => {
           const focused = document.activeElement;
           if (focused instanceof HTMLElement && event.currentTarget.contains(focused))
@@ -525,7 +534,7 @@ export function AppShell() {
             <CartridgeNavigationGroup compact />
           ) : null}
         </nav>
-        <div className="sidebar-user mt-auto rounded-[10px] bg-[var(--color-surface-tint)] p-2.5">
+        <div className="sidebar-user mt-auto rounded-[10px] p-2.5">
           <p className="sidebar-label text-[10px] font-extrabold uppercase tracking-[0.02em] text-[var(--color-primary-strong)]">
             Signed in
           </p>

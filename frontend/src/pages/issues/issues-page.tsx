@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 
 import type {
+  AssignmentType,
   AuthUser,
   IssuePeriod,
   IssueReturnState,
@@ -59,6 +60,10 @@ function issueReturnState(value: string): IssueReturnState | undefined {
   return ['PENDING', 'DUE_TODAY'].includes(value) ? (value as IssueReturnState) : undefined;
 }
 
+function assignmentType(value: string): AssignmentType | undefined {
+  return ['LONG_TERM', 'SHORT_TERM'].includes(value) ? (value as AssignmentType) : undefined;
+}
+
 export function IssuesPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -72,8 +77,12 @@ export function IssuesPage() {
   const status = issueStatus(parameters.get('status') ?? '');
   const period = issuePeriod(parameters.get('period') ?? '');
   const returnState = issueReturnState(parameters.get('returnState') ?? '');
+  const issueAssignmentType = assignmentType(parameters.get('assignmentType') ?? '');
   const query = useQuery({
-    queryKey: ['issues', { page, search, status, period, returnState }],
+    queryKey: [
+      'issues',
+      { page, search, status, period, returnState, assignmentType: issueAssignmentType },
+    ],
     queryFn: ({ signal }) =>
       getIssues(
         {
@@ -82,6 +91,7 @@ export function IssuesPage() {
           ...(status ? { status } : {}),
           ...(period ? { period } : {}),
           ...(returnState ? { returnState } : {}),
+          ...(issueAssignmentType ? { assignmentType: issueAssignmentType } : {}),
         },
         signal,
       ),
@@ -99,7 +109,7 @@ export function IssuesPage() {
   }
 
   const issues = query.data?.data ?? [];
-  const filtered = Boolean(search || status || period || returnState);
+  const filtered = Boolean(search || status || period || returnState || issueAssignmentType);
   const admin = user?.role === 'ADMIN';
   const canCreateIssue = hasPermission(user, 'ASSIGNMENTS_CREATE');
   const deleteMutation = useMutation({
@@ -164,8 +174,10 @@ export function IssuesPage() {
             value={search}
           />
           <FilterPopover
-            activeCount={[status, period, returnState].filter(Boolean).length}
-            onClear={() => updateParameters({ status: '', period: '', returnState: '' })}
+            activeCount={[status, period, returnState, issueAssignmentType].filter(Boolean).length}
+            onClear={() =>
+              updateParameters({ status: '', period: '', returnState: '', assignmentType: '' })
+            }
           >
             <FilterField label="Issue status">
               <select
@@ -200,6 +212,17 @@ export function IssuesPage() {
                 <option value="">Any return state</option>
                 <option value="PENDING">Pending return</option>
                 <option value="DUE_TODAY">Due today</option>
+              </select>
+            </FilterField>
+            <FilterField label="Assignment type">
+              <select
+                className="field-input"
+                onChange={(event) => updateParameters({ assignmentType: event.target.value })}
+                value={issueAssignmentType ?? ''}
+              >
+                <option value="">All assignment types</option>
+                <option value="SHORT_TERM">Return by date</option>
+                <option value="LONG_TERM">Permanent</option>
               </select>
             </FilterField>
           </FilterPopover>
@@ -469,7 +492,7 @@ function IssueActionsMenu({
   const canExtend = admin && hasPermission(user, 'RETURN_DATES_EXTEND');
   const canDelete = hasPermission(user, 'ISSUES_DELETE');
   return (
-    <details className="group relative inline-flex">
+    <details className="group relative inline-flex" data-action-menu>
       <summary
         aria-label={`Open actions for ${issue.issueId}`}
         className="grid size-10 cursor-pointer list-none place-items-center rounded-[10px] border border-[var(--color-border)] bg-white text-[var(--color-text-muted)] transition hover:border-[var(--color-primary-border)] hover:text-[var(--color-primary)] [&::-webkit-details-marker]:hidden"

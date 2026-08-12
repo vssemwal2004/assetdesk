@@ -8,6 +8,7 @@ import {
   ReturnEventsListResponseSchema,
   ReturnSearchResponseSchema,
   type CreateIssueRequest,
+  type AssignmentType,
   type CreateIssueResponse,
   type CreateReturnRequest,
   type CreateReturnResponse,
@@ -34,6 +35,7 @@ export interface IssueFilters {
   status?: IssueStatus;
   period?: IssuePeriod;
   returnState?: IssueReturnState;
+  assignmentType?: AssignmentType;
 }
 
 export async function getIssues(
@@ -48,6 +50,7 @@ export async function getIssues(
   if (filters.status) parameters.set('status', filters.status);
   if (filters.period) parameters.set('period', filters.period);
   if (filters.returnState) parameters.set('returnState', filters.returnState);
+  if (filters.assignmentType) parameters.set('assignmentType', filters.assignmentType);
   const payload = await apiRequest<unknown>(`/api/v1/issues?${parameters.toString()}`, {
     ...(signal ? { signal } : {}),
   });

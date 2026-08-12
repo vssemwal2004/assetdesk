@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
+import { RotateCcw, Send } from 'lucide-react';
 import { AppCard, ErrorSummary, LoadingPanel, PageHeader } from '../../components/ui';
 import { getCartridge } from '../../lib/cartridges-api';
 export function CartridgeDetailPage() {
@@ -19,18 +20,24 @@ export function CartridgeDetailPage() {
         description={`${cartridge.model} · ${cartridge.colour}`}
         actions={
           <>
-            <Link
-              className="button-secondary"
-              to={`/cartridges/issues/new?serial=${encodeURIComponent(cartridge.serialNumber)}`}
-            >
-              Issue
-            </Link>
-            <Link
-              className="button-secondary"
-              to={`/cartridges/returns/new?serial=${encodeURIComponent(cartridge.serialNumber)}`}
-            >
-              Return
-            </Link>
+            {cartridge.status === 'FILLED_AVAILABLE' ? (
+              <Link
+                className="button-secondary"
+                to={`/cartridges/issues/new?serial=${encodeURIComponent(cartridge.serialNumber)}`}
+              >
+                <Send aria-hidden="true" size={17} />
+                Issue
+              </Link>
+            ) : null}
+            {cartridge.status === 'ISSUED' ? (
+              <Link
+                className="button-secondary"
+                to={`/cartridges/returns/new?serial=${encodeURIComponent(cartridge.serialNumber)}`}
+              >
+                <RotateCcw aria-hidden="true" size={17} />
+                Return
+              </Link>
+            ) : null}
           </>
         }
       />

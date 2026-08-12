@@ -329,7 +329,7 @@ function WorkerActionsMenu({
   onDelete: (worker: Worker) => void;
 }) {
   return (
-    <details className="relative inline-block text-left">
+    <details className="relative inline-block text-left" data-action-menu>
       <summary
         aria-label={`Actions for ${worker.name}`}
         className="icon-button list-none marker:hidden"

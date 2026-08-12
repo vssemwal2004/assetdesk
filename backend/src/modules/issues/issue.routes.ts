@@ -2,6 +2,7 @@ import { Router, type Request } from 'express';
 import { z } from 'zod';
 
 import {
+  AssignmentTypeSchema,
   CreateIssueRequestSchema,
   IssueIdSchema,
   IssuePeriodSchema,
@@ -54,6 +55,10 @@ const IssueListQuerySchema = z
     returnState: z.preprocess(
       (value) => (value === '' ? undefined : value),
       IssueReturnStateSchema.optional(),
+    ),
+    assignmentType: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      AssignmentTypeSchema.optional(),
     ),
   })
   .strict();
@@ -112,6 +117,7 @@ export function createIssuesRouter(): Router {
           ...(input.status ? { status: input.status } : {}),
           ...(input.period ? { period: input.period } : {}),
           ...(input.returnState ? { returnState: input.returnState } : {}),
+          ...(input.assignmentType ? { assignmentType: input.assignmentType } : {}),
         });
         response.json({ data: result.issues, meta: pageMeta(result) });
       } catch (error) {

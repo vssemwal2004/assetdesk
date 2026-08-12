@@ -18,6 +18,7 @@ import {
   requireTrustedOrigin,
 } from '../auth/auth.middleware.js';
 import {
+  cancelGatePass,
   cartridgeDashboard,
   createCartridges,
   createGatePass,
@@ -26,6 +27,7 @@ import {
   getCartridge,
   getGatePass,
   issueCartridge,
+  listCartridgeActivity,
   listCartridges,
   listGatePasses,
   recordQc,
@@ -38,6 +40,12 @@ const ListQuery = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().trim().max(120).optional(),
   status: CartridgeStatusSchema.optional(),
+});
+const ActivityQuery = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  search: z.string().trim().max(120).optional(),
+  type: z.string().trim().max(40).optional(),
 });
 function actor(request: Request) {
   if (!request.auth) throw new AppError(401, 'AUTH_REQUIRED', 'Sign in to continue.');
@@ -72,6 +80,13 @@ export function createCartridgeRouter(): Router {
       next(e);
     }
   });
+  router.get('/activity', requirePermission('CARTRIDGES_VIEW'), async (req, res, next) => {
+    try {
+      res.json(await listCartridgeActivity(ActivityQuery.parse(req.query), actor(req)));
+    } catch (e) {
+      next(e);
+    }
+  });
   router.post(
     '/',
     requirePermission('CARTRIDGES_ADD'),
@@ -79,11 +94,9 @@ export function createCartridgeRouter(): Router {
     requireCsrf,
     async (req, res, next) => {
       try {
-        res
-          .status(201)
-          .json({
-            data: await createCartridges(CreateCartridgesRequestSchema.parse(req.body), actor(req)),
-          });
+        res.status(201).json({
+          data: await createCartridges(CreateCartridgesRequestSchema.parse(req.body), actor(req)),
+        });
       } catch (e) {
         next(e);
       }
@@ -96,11 +109,9 @@ export function createCartridgeRouter(): Router {
     requireCsrf,
     async (req, res, next) => {
       try {
-        res
-          .status(201)
-          .json({
-            data: await issueCartridge(IssueCartridgeRequestSchema.parse(req.body), actor(req)),
-          });
+        res.status(201).json({
+          data: await issueCartridge(IssueCartridgeRequestSchema.parse(req.body), actor(req)),
+        });
       } catch (e) {
         next(e);
       }
@@ -113,11 +124,9 @@ export function createCartridgeRouter(): Router {
     requireCsrf,
     async (req, res, next) => {
       try {
-        res
-          .status(201)
-          .json({
-            data: await returnCartridge(ReturnCartridgeRequestSchema.parse(req.body), actor(req)),
-          });
+        res.status(201).json({
+          data: await returnCartridge(ReturnCartridgeRequestSchema.parse(req.body), actor(req)),
+        });
       } catch (e) {
         next(e);
       }
@@ -141,11 +150,9 @@ export function createCartridgeRouter(): Router {
     requireCsrf,
     async (req, res, next) => {
       try {
-        res
-          .status(201)
-          .json({
-            data: await createGatePass(CreateGatePassRequestSchema.parse(req.body), actor(req)),
-          });
+        res.status(201).json({
+          data: await createGatePass(CreateGatePassRequestSchema.parse(req.body), actor(req)),
+        });
       } catch (e) {
         next(e);
       }
@@ -183,6 +190,19 @@ export function createCartridgeRouter(): Router {
     async (req, res, next) => {
       try {
         res.json({ data: await gateOut(String(req.params.id), actor(req)) });
+      } catch (e) {
+        next(e);
+      }
+    },
+  );
+  router.post(
+    '/gate-passes/:id/cancel',
+    requirePermission('CARTRIDGE_GATE_PASSES_CREATE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (req, res, next) => {
+      try {
+        res.json({ data: await cancelGatePass(String(req.params.id), actor(req)) });
       } catch (e) {
         next(e);
       }

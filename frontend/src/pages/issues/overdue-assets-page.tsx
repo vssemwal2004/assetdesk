@@ -233,7 +233,7 @@ function OverdueActions({
   onView: (issue: OverdueIssue) => void;
 }) {
   return (
-    <details className="group relative inline-flex">
+    <details className="group relative inline-flex" data-action-menu>
       <summary
         aria-label={`Open actions for ${issue.issueId}`}
         className="grid size-10 cursor-pointer list-none place-items-center rounded-[10px] border border-[var(--color-border)] bg-white text-[var(--color-text-muted)] hover:text-[var(--color-primary)] [&::-webkit-details-marker]:hidden"

@@ -58,6 +58,30 @@ async function movement(
     ...extra,
   });
 }
+
+async function movements(
+  cartridges: CartridgeDocument[],
+  type: string,
+  fromStatuses: Map<string, string | undefined>,
+  actor: CartridgeActor,
+  extra: Record<string, unknown> = {},
+) {
+  if (cartridges.length === 0) return;
+  await CartridgeMovementModel.insertMany(
+    cartridges.map((cartridge) => ({
+      cartridgeId: cartridge._id,
+      serialNumber: cartridge.serialNumber,
+      type,
+      ...(fromStatuses.get(cartridge._id.toString())
+        ? { fromStatus: fromStatuses.get(cartridge._id.toString()) }
+        : {}),
+      toStatus: cartridge.status,
+      actorUserId: new Types.ObjectId(actor.userId),
+      actorWorkerId: actor.workerId,
+      ...extra,
+    })),
+  );
+}
 export async function createCartridges(input: CreateCartridgesRequest, actor: CartridgeActor) {
   const [savedLocation, savedDepartment] = await Promise.all([
     AssetDetailModel.findOne({
@@ -152,6 +176,64 @@ export async function listCartridges(
     },
   };
 }
+export async function listCartridgeActivity(
+  input: {
+    page: number;
+    pageSize: number;
+    search?: string | undefined;
+    type?: string | undefined;
+  },
+  actor: CartridgeActor,
+) {
+  const filter: Record<string, unknown> = {};
+  if (actor.dataScope === 'OWN') filter.actorUserId = new Types.ObjectId(actor.userId);
+  if (input.type) filter.type = input.type;
+  if (input.search) {
+    const regex = new RegExp(input.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    filter.$or = [
+      { serialNumber: regex },
+      { type: regex },
+      { fromStatus: regex },
+      { toStatus: regex },
+      { employeeName: regex },
+      { employeeId: regex },
+      { department: regex },
+      { remarks: regex },
+      { actorWorkerId: regex },
+    ];
+  }
+  const [docs, total] = await Promise.all([
+    CartridgeMovementModel.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((input.page - 1) * input.pageSize)
+      .limit(input.pageSize)
+      .lean(),
+    CartridgeMovementModel.countDocuments(filter),
+  ]);
+  return {
+    data: docs.map((item) => ({
+      id: item._id.toString(),
+      cartridgeId: item.cartridgeId.toString(),
+      serialNumber: item.serialNumber,
+      type: item.type,
+      fromStatus: item.fromStatus ?? null,
+      toStatus: item.toStatus,
+      employeeName: item.employeeName ?? null,
+      employeeId: item.employeeId ?? null,
+      department: item.department ?? null,
+      defectReason: item.defectReason ?? null,
+      remarks: item.remarks ?? null,
+      actorWorkerId: item.actorWorkerId,
+      createdAt: item.createdAt.toISOString(),
+    })),
+    meta: {
+      page: input.page,
+      pageSize: input.pageSize,
+      total,
+      totalPages: Math.ceil(total / input.pageSize),
+    },
+  };
+}
 async function findCartridge(serialNumber: string) {
   const item = await CartridgeModel.findOne({ serialNumberNormalized: normalize(serialNumber) });
   if (!item) throw new AppError(404, 'CARTRIDGE_NOT_FOUND', 'Cartridge was not found.');
@@ -210,6 +292,8 @@ export async function returnCartridge(
   actor: CartridgeActor,
 ) {
   const item = await findCartridge(input.serialNumber);
+  if (item.status !== 'ISSUED')
+    throw new AppError(409, 'CARTRIDGE_NOT_ISSUED', 'Only an issued cartridge can be returned.');
   const from = item.status;
   item.status =
     input.condition === 'EMPTY'
@@ -268,10 +352,15 @@ export async function createGatePass(
     ...(input.expectedReturnDate ? { expectedReturnDate: new Date(input.expectedReturnDate) } : {}),
     ...(input.remarks ? { remarks: input.remarks } : {}),
   });
+  const fromStatuses = new Map(cartridges.map((item) => [item._id.toString(), item.status]));
   await CartridgeModel.updateMany(
     { _id: { $in: pass.cartridgeIds } },
     { $set: { status: 'READY_FOR_GATE_OUT' } },
   );
+  const updatedCartridges = await CartridgeModel.find({ _id: { $in: pass.cartridgeIds } });
+  await movements(updatedCartridges, 'GATE_PASS_CREATED', fromStatuses, actor, {
+    remarks: `Added to Gate Pass ${pass.gatePassNumber}.`,
+  });
   return pass;
 }
 export async function listGatePasses(actor: CartridgeActor) {
@@ -301,6 +390,11 @@ export async function verifyGatePass(id: string, actor: CartridgeActor) {
   pass.verifiedByName = await actorName(actor);
   pass.verifiedAt = new Date();
   await pass.save();
+  const cartridges = await CartridgeModel.find({ _id: { $in: pass.cartridgeIds } });
+  const fromStatuses = new Map(cartridges.map((item) => [item._id.toString(), item.status]));
+  await movements(cartridges, 'GATE_PASS_VERIFIED', fromStatuses, actor, {
+    remarks: `Gate Pass ${pass.gatePassNumber} verified.`,
+  });
   return pass;
 }
 export async function gateOut(id: string, actor: CartridgeActor) {
@@ -308,6 +402,8 @@ export async function gateOut(id: string, actor: CartridgeActor) {
   if (!pass) throw new AppError(404, 'GATE_PASS_NOT_FOUND', 'Gate Pass was not found.');
   if (pass.status !== 'VERIFIED')
     throw new AppError(409, 'GATE_PASS_NOT_VERIFIED', 'Verify the Gate Pass before Gate Out.');
+  const cartridges = await CartridgeModel.find({ _id: { $in: pass.cartridgeIds } });
+  const fromStatuses = new Map(cartridges.map((item) => [item._id.toString(), item.status]));
   pass.status = 'GATE_OUT';
   pass.gateOutAt = new Date();
   pass.gateOutByName = await actorName(actor);
@@ -316,6 +412,50 @@ export async function gateOut(id: string, actor: CartridgeActor) {
     { _id: { $in: pass.cartridgeIds } },
     { $set: { status: 'WITH_VENDOR' } },
   );
+  const updatedCartridges = await CartridgeModel.find({ _id: { $in: pass.cartridgeIds } });
+  await movements(updatedCartridges, 'GATE_OUT', fromStatuses, actor, {
+    remarks: `Gate Out recorded on ${pass.gatePassNumber}.`,
+  });
+  return pass;
+}
+export async function cancelGatePass(id: string, actor: CartridgeActor) {
+  const pass = await GatePassModel.findById(id);
+  if (!pass) throw new AppError(404, 'GATE_PASS_NOT_FOUND', 'Gate Pass was not found.');
+  if (!['DRAFT', 'AWAITING_VERIFICATION', 'VERIFIED'].includes(pass.status))
+    throw new AppError(
+      409,
+      'INVALID_GATE_PASS_STATE',
+      'Only a Gate Pass before Gate Out can be cancelled.',
+    );
+  const cartridges = await CartridgeModel.find({ _id: { $in: pass.cartridgeIds } });
+  const fromStatuses = new Map(cartridges.map((item) => [item._id.toString(), item.status]));
+  const setupMovements = await CartridgeMovementModel.find({
+    cartridgeId: { $in: pass.cartridgeIds },
+    type: 'GATE_PASS_CREATED',
+    toStatus: 'READY_FOR_GATE_OUT',
+    remarks: `Added to Gate Pass ${pass.gatePassNumber}.`,
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+  const rollbackStatuses = new Map(
+    setupMovements
+      .filter((entry) => entry.fromStatus)
+      .map((entry) => [entry.cartridgeId.toString(), entry.fromStatus as string]),
+  );
+  await Promise.all(
+    cartridges.map(async (cartridge) => {
+      cartridge.status =
+        (rollbackStatuses.get(cartridge._id.toString()) as typeof cartridge.status | undefined) ??
+        'EMPTY';
+      await cartridge.save();
+    }),
+  );
+  pass.status = 'CANCELLED';
+  await pass.save();
+  const updatedCartridges = await CartridgeModel.find({ _id: { $in: pass.cartridgeIds } });
+  await movements(updatedCartridges, 'GATE_PASS_CANCELLED', fromStatuses, actor, {
+    remarks: `Gate Pass ${pass.gatePassNumber} cancelled.`,
+  });
   return pass;
 }
 export async function gateIn(
@@ -362,10 +502,18 @@ export async function gateIn(
   const returned = already.size + normalized.length;
   pass.status = returned === pass.quantity ? 'QC_PENDING' : 'PARTIALLY_RETURNED';
   await pass.save();
+  const cartridges = await CartridgeModel.find({ serialNumberNormalized: { $in: normalized } });
+  const fromStatuses = new Map(cartridges.map((item) => [item._id.toString(), item.status]));
   await CartridgeModel.updateMany(
     { serialNumberNormalized: { $in: normalized } },
     { $set: { status: 'QC_PENDING' } },
   );
+  const updatedCartridges = await CartridgeModel.find({
+    serialNumberNormalized: { $in: normalized },
+  });
+  await movements(updatedCartridges, 'GATE_IN', fromStatuses, actor, {
+    remarks: `Gate In recorded on ${pass.gatePassNumber}.`,
+  });
   return pass;
 }
 export async function cartridgeDashboard(actor: CartridgeActor) {

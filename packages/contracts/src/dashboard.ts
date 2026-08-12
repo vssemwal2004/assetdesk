@@ -2,6 +2,16 @@ import { z } from 'zod';
 
 import { IssueSummarySchema } from './issues.js';
 
+export const DashboardRangeSchema = z.enum(['7D', '30D', '90D']);
+
+export const DashboardTrendPointSchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    issued: z.number().int().nonnegative(),
+    returned: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export const DashboardInventoryCountSchema = z
   .object({
     trackingMode: z.enum(['SERIALIZED', 'QUANTITY']),
@@ -45,6 +55,9 @@ export const AdminDashboardResponseSchema = z
         inventory: DashboardInventorySchema,
         attentionIssues: z.array(IssueSummarySchema).max(5),
         recentIssues: z.array(IssueSummarySchema).max(5),
+        range: DashboardRangeSchema.default('30D'),
+        scope: z.enum(['ORGANIZATION', 'ASSIGNED']).default('ORGANIZATION'),
+        trend: z.array(DashboardTrendPointSchema).max(90).default([]),
         generatedAt: z.string().datetime({ offset: true }),
       })
       .strict(),
@@ -53,4 +66,6 @@ export const AdminDashboardResponseSchema = z
 
 export type AdminDashboardStats = z.infer<typeof AdminDashboardStatsSchema>;
 export type DashboardInventory = z.infer<typeof DashboardInventorySchema>;
+export type DashboardRange = z.infer<typeof DashboardRangeSchema>;
+export type DashboardTrendPoint = z.infer<typeof DashboardTrendPointSchema>;
 export type AdminDashboardResponse = z.infer<typeof AdminDashboardResponseSchema>;

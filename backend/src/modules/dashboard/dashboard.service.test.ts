@@ -30,7 +30,7 @@ vi.mock('../issues/issue.mapper.js', () => ({
   toIssueSummary: vi.fn((record: unknown) => record),
 }));
 
-import { getAdminDashboard } from './dashboard.service.js';
+import { getAdminDashboard, getWorkerDashboard } from './dashboard.service.js';
 
 function findQuery(records: unknown[] = []) {
   return {
@@ -91,10 +91,11 @@ describe('Admin dashboard service', () => {
   it('guards dashboard aggregation against legacy issue rows with missing arrays or counts', async () => {
     await getAdminDashboard(new Date('2026-07-23T06:30:00.000Z'));
 
-    expect(models.aggregate).toHaveBeenCalledOnce();
+    expect(models.aggregate).toHaveBeenCalledTimes(2);
     const pipeline = models.aggregate.mock.calls[0]?.[0];
     expect(JSON.stringify(pipeline)).toContain('"$ifNull":["$returnEvents",[]]');
     expect(JSON.stringify(pipeline)).toContain('"$ifNull":["$totalOutstandingQuantity",0]');
+    expect(JSON.stringify(models.aggregate.mock.calls[1]?.[0])).toContain('"$facet"');
   });
 
   it('returns empty dashboard stats when no issue documents exist', async () => {
@@ -112,5 +113,25 @@ describe('Admin dashboard service', () => {
       outstandingItems: 0,
       activeWorkers: 4,
     });
+  });
+
+  it('applies employee ownership to issue, return trend, and inventory aggregation', async () => {
+    await getWorkerDashboard(
+      {
+        userId: '507f1f77bcf86cd799439011',
+        permissions: ['DASHBOARD', 'ISSUES_VIEW', 'INVENTORY_VIEW'],
+        dataAccess: { issues: 'OWN', inventory: 'OWN', cartridges: 'OWN' },
+      },
+      '7D',
+      new Date('2026-07-23T06:30:00.000Z'),
+    );
+
+    const statsPipeline = JSON.stringify(models.aggregate.mock.calls[0]?.[0]);
+    const trendPipeline = JSON.stringify(models.aggregate.mock.calls[1]?.[0]);
+    const inventoryPipeline = JSON.stringify(models.materialAggregate.mock.calls[0]?.[0]);
+    expect(statsPipeline).toContain('createdByUserId');
+    expect(statsPipeline).toContain('returnEvents.performedBy.userId');
+    expect(trendPipeline).toContain('returnEvents.performedBy.userId');
+    expect(inventoryPipeline).toContain('createdBy');
   });
 });

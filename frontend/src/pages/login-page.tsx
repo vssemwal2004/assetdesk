@@ -1,9 +1,9 @@
-import { LockKeyhole, ShieldCheck, UserRoundCheck } from 'lucide-react';
+import { Building2, LockKeyhole, LogIn, ShieldCheck } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 import { useAuth } from '../auth/auth-context';
-import { Brand, Button, ErrorSummary, PasswordField, TextField } from '../components/ui';
+import { Button, ErrorSummary, PasswordField, TextField } from '../components/ui';
 import { isApiError } from '../lib/api-client';
 
 export function LoginPage() {
@@ -48,40 +48,67 @@ export function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-dvh bg-[var(--color-background)] lg:grid-cols-[minmax(0,0.9fr)_minmax(500px,1.1fr)]">
-      <section className="hidden bg-[linear-gradient(145deg,#4c1d95_0%,#6d28d9_58%,#7c3aed_100%)] p-10 text-white lg:flex lg:flex-col lg:justify-between xl:p-14">
-        <BrandOnPurple />
-        <div className="max-w-lg">
-          <p className="text-sm font-bold text-purple-100">University material control</p>
-          <h1 className="mt-3 text-4xl font-extrabold leading-[1.12]">
-            Issue and return records in one secure workspace.
-          </h1>
-          <div className="mt-8 grid gap-3">
-            <Feature icon={UserRoundCheck} text="Role-based access for Admins and Employees" />
-            <Feature icon={ShieldCheck} text="Protected university account sessions" />
-            <Feature icon={LockKeyhole} text="Mandatory password change for new accounts" />
+    <main className="crm-auth-page">
+      <aside aria-label="AssetDesk" className="crm-auth-brand">
+        <div aria-hidden="true" className="crm-auth-structure">
+          <span />
+          <span />
+          <span />
+        </div>
+
+        <div className="crm-auth-brand-top">
+          <div className="crm-auth-university-logo">
+            <img alt="Graphic Era Deemed to be University" src="/graphic-era-university.png" />
           </div>
         </div>
-        <p className="text-xs font-semibold text-purple-100">AssetDesk · University operations</p>
-      </section>
 
-      <section className="flex min-h-dvh items-center justify-center px-4 py-8 sm:px-8">
-        <div className="w-full max-w-[440px]">
-          <div className="mb-8 lg:hidden">
-            <Brand />
+        <div className="crm-auth-brand-center">
+          <span className="crm-auth-product-mark">
+            <Building2 aria-hidden="true" size={26} />
+          </span>
+          <p className="crm-auth-brand-kicker">University asset operations</p>
+          <p className="crm-auth-brand-name">AssetDesk</p>
+          <p className="crm-auth-brand-description">
+            <span>Graphic Era Asset</span>
+            <span>Management System</span>
+          </p>
+
+          <div className="crm-auth-security-note">
+            <ShieldCheck aria-hidden="true" size={21} />
+            <span>
+              <strong>Controlled access</strong>
+              <span>Authorized university accounts only</span>
+            </span>
           </div>
-          <div className="rounded-[18px] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-card)] sm:p-8">
-            <div className="grid size-11 place-items-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
-              <LockKeyhole aria-hidden="true" size={22} />
-            </div>
-            <h1 className="mt-4 text-2xl font-extrabold text-[var(--color-primary-strong)]">
-              Sign in to AssetDesk
-            </h1>
-            <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
-              Use your Employee ID or Admin email.
+        </div>
+
+        <footer className="crm-auth-brand-footer">
+          <span>
+            <span aria-hidden="true" className="crm-auth-status-dot" />
+            Secure workspace
+          </span>
+          <span>Dehradun</span>
+        </footer>
+      </aside>
+
+      <section aria-labelledby="login-title" className="crm-auth-workspace">
+        <header className="crm-auth-workspace-header">
+          <span className="crm-auth-workspace-label">Asset management system</span>
+          <span className="crm-auth-access-status">
+            <ShieldCheck aria-hidden="true" size={17} />
+            Authorized access
+          </span>
+        </header>
+
+        <div className="crm-auth-form-region">
+          <div className="crm-auth-form-shell">
+            <p className="crm-auth-overline">Welcome back</p>
+            <h1 id="login-title">Sign in to AssetDesk</h1>
+            <p className="crm-auth-form-intro">
+              Enter your assigned university credentials to continue.
             </p>
 
-            <form className="mt-6 space-y-5" noValidate onSubmit={(event) => void submit(event)}>
+            <form className="crm-auth-form" noValidate onSubmit={(event) => void submit(event)}>
               {error ? <ErrorSummary message={error} title="Sign in failed" /> : null}
               <TextField
                 autoCapitalize="none"
@@ -92,7 +119,7 @@ export function LoginPage() {
                 }
                 label="Employee ID or Admin email"
                 onChange={(event) => setIdentifier(event.target.value)}
-                placeholder="GEU-CC-ANITASHARMA or admin@university.edu"
+                placeholder="Employee ID or university email"
                 ref={identifierRef}
                 spellCheck={false}
                 value={identifier}
@@ -104,44 +131,30 @@ export function LoginPage() {
                 onChange={(event) => setPassword(event.target.value)}
                 value={password}
               />
-              <Button className="w-full" loading={submitting} type="submit">
-                {submitting ? 'Signing in…' : 'Sign in'}
+              <Button className="crm-auth-submit w-full" loading={submitting} type="submit">
+                {!submitting ? <LogIn aria-hidden="true" size={18} /> : null}
+                {submitting ? 'Signing in...' : 'Sign in'}
               </Button>
             </form>
 
-            <div className="mt-6 rounded-[12px] bg-[var(--color-surface-tint)] p-3.5">
-              <p className="text-xs leading-5 text-[var(--color-text-muted)]">
-                New Employee accounts must create a permanent password after their first sign-in.
+            <div className="crm-auth-first-signin">
+              <span className="crm-auth-first-signin-icon">
+                <LockKeyhole aria-hidden="true" size={19} />
+              </span>
+              <p>
+                <strong>First time signing in?</strong>
+                <span>New employee accounts create a permanent password after sign-in.</span>
               </p>
             </div>
           </div>
         </div>
+
+        <footer className="crm-auth-workspace-footer">
+          <span>Graphic Era Deemed to be University</span>
+          <span aria-hidden="true">|</span>
+          <span>Graphic Era Asset Management System</span>
+        </footer>
       </section>
     </main>
-  );
-}
-
-function BrandOnPurple() {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="grid size-14 place-items-center rounded-xl bg-white/95 p-1 shadow-lg">
-        <img alt="AssetDesk logo" className="block size-full object-contain" src="/logo.webp" />
-      </span>
-      <span>
-        <span className="block text-2xl font-extrabold leading-6">AssetDesk</span>
-        <span className="mt-1 block text-[10px] font-extrabold uppercase leading-3 text-purple-100">
-          Graphic Era Asset Management System
-        </span>
-      </span>
-    </div>
-  );
-}
-
-function Feature({ icon: Icon, text }: { icon: typeof ShieldCheck; text: string }) {
-  return (
-    <div className="flex items-center gap-3 rounded-[12px] bg-white/10 px-4 py-3 backdrop-blur-sm">
-      <Icon aria-hidden="true" className="shrink-0 text-purple-100" size={20} />
-      <p className="text-sm font-semibold">{text}</p>
-    </div>
   );
 }

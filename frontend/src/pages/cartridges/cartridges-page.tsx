@@ -115,7 +115,7 @@ export function CartridgesPage() {
                   <td className="px-4 py-4 text-sm">{item.currentHolderName ?? item.location}</td>
                   <td className="px-4 py-4 text-sm">{item.refillCount}</td>
                   <td className="px-4 py-4">
-                    <RowActions serial={item.serialNumber} />
+                    <RowActions serial={item.serialNumber} status={item.status} />
                   </td>
                 </tr>
               ))}
@@ -131,9 +131,9 @@ export function CartridgesPage() {
     </div>
   );
 }
-function RowActions({ serial }: { serial: string }) {
+function RowActions({ serial, status }: { serial: string; status: string }) {
   return (
-    <details className="relative">
+    <details className="relative" data-action-menu>
       <summary
         aria-label={`Actions for ${serial}`}
         className="button-quiet cursor-pointer list-none p-2"
@@ -145,27 +145,31 @@ function RowActions({ serial }: { serial: string }) {
           <Eye size={16} />
           View details
         </Link>
-        <Link
-          className="menu-item"
-          to={`/cartridges/issues/new?serial=${encodeURIComponent(serial)}`}
-        >
-          <Send size={16} />
-          Issue cartridge
-        </Link>
-        <Link
-          className="menu-item"
-          to={`/cartridges/returns/new?serial=${encodeURIComponent(serial)}`}
-        >
-          <RotateCcw size={16} />
-          Record return
-        </Link>
+        {status === 'FILLED_AVAILABLE' ? (
+          <Link
+            className="menu-item"
+            to={`/cartridges/issues/new?serial=${encodeURIComponent(serial)}`}
+          >
+            <Send size={16} />
+            Issue cartridge
+          </Link>
+        ) : null}
+        {status === 'ISSUED' ? (
+          <Link
+            className="menu-item"
+            to={`/cartridges/returns/new?serial=${encodeURIComponent(serial)}`}
+          >
+            <RotateCcw size={16} />
+            Record return
+          </Link>
+        ) : null}
       </div>
     </details>
   );
 }
 function GlobalActions() {
   return (
-    <details className="relative">
+    <details className="relative" data-action-menu>
       <summary
         aria-label="Cartridge page actions"
         className="button-secondary cursor-pointer list-none"

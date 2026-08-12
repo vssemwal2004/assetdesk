@@ -86,11 +86,17 @@ describe('Issue routes', () => {
     expect(response.body.meta).toEqual({ page: 1, pageSize: 20, total: 0, totalPages: 0 });
   });
 
-  it('passes exact dashboard date and Return filters to the list service', async () => {
-    await request(testApp()).get('/api/v1/issues?period=TODAY&returnState=DUE_TODAY').expect(200);
+  it('passes exact dashboard drill-down filters to the list service', async () => {
+    await request(testApp())
+      .get('/api/v1/issues?period=TODAY&returnState=DUE_TODAY&assignmentType=LONG_TERM')
+      .expect(200);
 
     expect(service.listIssues).toHaveBeenCalledWith(
-      expect.objectContaining({ period: 'TODAY', returnState: 'DUE_TODAY' }),
+      expect.objectContaining({
+        period: 'TODAY',
+        returnState: 'DUE_TODAY',
+        assignmentType: 'LONG_TERM',
+      }),
     );
   });
 

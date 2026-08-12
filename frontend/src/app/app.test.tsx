@@ -172,7 +172,66 @@ describe('AssetDesk application routes', () => {
     expect(screen.getByText('19 material items outside')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Needs attention' })).toBeInTheDocument();
     expect(screen.queryByText('anita.sharma@university.edu')).not.toBeInTheDocument();
-  });
+  }, 10_000);
+
+  it('renders a scoped CRM workspace for an active employee', async () => {
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const path = String(input);
+      if (path.includes('/api/v1/auth/me')) {
+        return Promise.resolve(json({ data: { user: activeWorker } }));
+      }
+      if (path.includes('/api/v1/dashboard/worker')) {
+        return Promise.resolve(
+          json({
+            data: {
+              stats: {
+                todayIssued: 2,
+                totalIssues: 9,
+                permanentIssues: 1,
+                pendingReturns: 3,
+                overdueReturns: 1,
+                dueToday: 1,
+                returnedToday: 2,
+                outstandingItems: 4,
+                activeWorkers: 0,
+              },
+              inventory: {
+                materialCount: 2,
+                totalQuantity: 8,
+                availableQuantity: 6,
+                issuedQuantity: 2,
+                breakdown: [],
+              },
+              attentionIssues: [issueSummary],
+              recentIssues: [issueSummary],
+              range: '30D',
+              scope: 'ASSIGNED',
+              trend: [
+                { date: '2026-07-15', issued: 2, returned: 1 },
+                { date: '2026-07-16', issued: 0, returned: 1 },
+              ],
+              generatedAt: '2026-07-16T09:30:00.000Z',
+            },
+          }),
+        );
+      }
+      return Promise.resolve(problem(404));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Good to see you, Ravi Mehta' }),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Issued today: 2' })).toHaveAttribute(
+      'href',
+      '/issues?period=TODAY',
+    );
+    expect(screen.getByRole('heading', { name: 'Access overview' })).toBeInTheDocument();
+    expect(screen.getAllByText('Own data').length).toBeGreaterThan(0);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('/api/v1/dashboard/worker?range=30D');
+  }, 10_000);
 
   it('forces an invited Worker to create a password before the app shell opens', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ data: { user: worker } })));
@@ -292,6 +351,7 @@ describe('AssetDesk application routes', () => {
 
     render(<App />);
 
+    fireEvent.click(await screen.findByRole('button', { name: /IT Asset/i }));
     expect((await screen.findAllByText('Core switch')).length).toBeGreaterThan(0);
     expect(screen.getByRole('link', { name: 'Add material' })).toHaveAttribute(
       'href',
@@ -321,7 +381,10 @@ describe('AssetDesk application routes', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'No material added' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: /IT Asset/i }));
+    expect(
+      await screen.findByRole('heading', { name: 'No IT Asset matches these filters' }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Add material' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Inventory' }).length).toBeGreaterThan(0);
   });

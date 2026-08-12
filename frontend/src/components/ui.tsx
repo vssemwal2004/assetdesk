@@ -149,15 +149,20 @@ export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className="brand-lockup flex min-w-0 items-center gap-3">
       <span className="brand-mark grid shrink-0 place-items-center">
-        <img alt="AssetDesk logo" className="block size-full object-contain" src="/logo.webp" />
+        <img
+          alt="Graphic Era University crest"
+          className="block size-full object-contain"
+          src="/graphic-era-mark.png"
+        />
       </span>
       {!compact ? (
         <span className="brand-copy min-w-0">
           <span className="brand-title block truncate font-extrabold leading-none text-[var(--color-primary-strong)]">
             AssetDesk
           </span>
-          <span className="brand-tagline block truncate font-extrabold uppercase text-[var(--color-text-muted)]">
-            Graphic Era Asset Management System
+          <span className="brand-tagline block font-bold text-[var(--color-text-muted)]">
+            <span className="brand-tagline-line block">Graphic Era Asset</span>
+            <span className="brand-tagline-line block">Management System</span>
           </span>
         </span>
       ) : null}

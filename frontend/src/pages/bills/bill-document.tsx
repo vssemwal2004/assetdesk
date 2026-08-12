@@ -340,7 +340,7 @@ function ReceiptHeader({
   return (
     <header className="bill-header">
       <div className="bill-brand-block">
-        <img alt="AssetDesk logo" className="bill-logo" src="/logo.webp" />
+        <img alt="Graphic Era University crest" className="bill-logo" src="/graphic-era-mark.png" />
         <div className="bill-brand-text">
           <p className="bill-brand-name">AssetDesk</p>
           <p className="bill-brand-tagline">Graphic Era Deemed to be University</p>

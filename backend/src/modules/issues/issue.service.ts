@@ -5,6 +5,7 @@ import mongoose, { Types, type ClientSession, type QueryFilter } from 'mongoose'
 import {
   AssetTagSchema,
   IssueIdSchema,
+  type AssignmentType,
   type CreateCatalogIssueRequest,
   type CreateIssueRequest,
   type Issue,
@@ -59,6 +60,7 @@ export interface IssueListInput {
   status?: IssueStatus;
   period?: IssuePeriod;
   returnState?: IssueReturnState;
+  assignmentType?: AssignmentType;
 }
 
 export interface IssueListResult {
@@ -576,6 +578,7 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
     });
   }
   if (input.status) filter.status = input.status;
+  if (input.assignmentType) filter.assignmentType = input.assignmentType;
   if (input.period === 'TODAY') {
     filter.issuedAt = { $gte: today.start, $lt: today.end };
   }

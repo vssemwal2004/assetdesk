@@ -3,9 +3,12 @@ import {
   Download,
   FileSpreadsheet,
   ChevronDown,
+  CheckCircle2,
   Eye,
+  MonitorCog,
   MoreVertical,
   Minus,
+  Package,
   PackagePlus,
   PackageSearch,
   Pencil,
@@ -39,6 +42,7 @@ import {
   PageHeader,
   SearchForm,
   TextField,
+  cn,
 } from '../../components/ui';
 import {
   adjustMaterialQuantity,
@@ -200,6 +204,57 @@ function assetDetailOptions(
   return values;
 }
 
+function InventoryTypeCard({
+  title,
+  description,
+  icon,
+  active,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={cn(
+        'relative flex min-h-32 items-start gap-4 rounded-[10px] border bg-white p-4 text-left shadow-sm transition',
+        'hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-card)]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]',
+        active &&
+          'border-[var(--color-primary)] bg-[var(--color-primary-soft)] shadow-[var(--shadow-card)]',
+      )}
+      onClick={onClick}
+      type="button"
+    >
+      <span
+        className={cn(
+          'grid size-11 shrink-0 place-items-center rounded-[10px] bg-[var(--color-surface-tint)] text-[var(--color-primary)]',
+          active && 'bg-white text-[var(--color-primary-strong)]',
+        )}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-extrabold text-[var(--color-primary-strong)]">{title}</span>
+        <span className="mt-1 block text-sm leading-6 text-[var(--color-text-muted)]">
+          {description}
+        </span>
+      </span>
+      {active ? (
+        <CheckCircle2
+          aria-hidden="true"
+          className="absolute right-4 top-4 text-[var(--color-primary)]"
+          size={20}
+        />
+      ) : null}
+    </button>
+  );
+}
+
 export function InventoryPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -301,12 +356,7 @@ export function InventoryPage() {
       { includeStock: true },
     ],
     queryFn: ({ signal }) =>
-      getInventoryModels(
-        mergeCategory?.category,
-        mergeCategory?.trackingMode,
-        signal,
-        true,
-      ),
+      getInventoryModels(mergeCategory?.category, mergeCategory?.trackingMode, signal, true),
     enabled: Boolean(mergeCategory),
   });
   const mergeModelsMutation = useMutation({
@@ -395,6 +445,9 @@ export function InventoryPage() {
   const departmentOptions = assetDetailOptions(assetDetails, 'DEPARTMENT', department);
   const materialGroups = groupMaterials(materials);
   const summary = inventorySummary(materials);
+  const selectedInventoryType = mode ?? null;
+  const selectedInventoryLabel =
+    selectedInventoryType === 'QUANTITY' ? 'IT Consumable' : 'IT Asset';
   const filtered = Boolean(
     search ||
     category ||
@@ -460,6 +513,14 @@ export function InventoryPage() {
     }
   }
 
+  function chooseInventoryType(value: TrackingMode) {
+    updateParameters({
+      trackingMode: value,
+      category: '',
+      returnPolicy: '',
+    });
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -492,338 +553,376 @@ export function InventoryPage() {
       />
       {actionError ? <ErrorSummary message={actionError} title="Action failed" /> : null}
 
-      <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)]">
-        <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <SearchForm
-            id="inventory-search"
-            key={search}
-            label="Search Inventory"
-            onSearch={(value) => updateParameters({ search: value })}
-            placeholder="IT asset, code, asset type, location or description"
-            value={search}
-          />
-          <FilterPopover
-            activeCount={
-              [
-                category,
-                location,
-                block,
-                department,
-                vendorName,
-                createdFrom,
-                createdTo,
-                status,
-                mode,
-                policy,
-                stock,
-              ].filter(Boolean).length
-            }
-            onClear={() =>
-              updateParameters({
-                category: '',
-                location: '',
-                block: '',
-                department: '',
-                vendorName: '',
-                createdFrom: '',
-                createdTo: '',
-                status: '',
-                trackingMode: '',
-                returnPolicy: '',
-                stockState: '',
-              })
-            }
-            panelClassName="w-[min(94vw,720px)] p-5"
-          >
-            <div className="rounded-[8px] bg-[var(--color-surface-tint)] p-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <FilterField label="Material type">
-                  <FilterSelect
-                    id="inventory-mode-filter"
-                    label="Filter by material type"
-                    onChange={(value) => updateParameters({ trackingMode: value })}
-                    value={mode ?? ''}
-                  >
-                    <option value="">Any material type</option>
-                    <option value="SERIALIZED">IT Assets</option>
-                    <option value="QUANTITY">IT Consumables</option>
-                  </FilterSelect>
-                </FilterField>
-                <FilterField label="Asset type">
-                  <FilterSelect
-                    id="inventory-category-filter"
-                    label="Filter by asset type"
-                    onChange={(value) => updateParameters({ category: value })}
-                    value={category}
-                  >
-                    <option value="">Any asset type</option>
-                    {categoryOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </FilterSelect>
-                </FilterField>
-                <FilterField label="Location">
-                  <FilterSelect
-                    id="inventory-location-filter"
-                    label="Filter by location"
-                    onChange={(value) => updateParameters({ location: value })}
-                    value={location}
-                  >
-                    <option value="">Any location</option>
-                    {locationOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </FilterSelect>
-                </FilterField>
-                <FilterField label="Block">
-                  <FilterSelect
-                    id="inventory-block-filter"
-                    label="Filter by block"
-                    onChange={(value) => updateParameters({ block: value })}
-                    value={block}
-                  >
-                    <option value="">Any block</option>
-                    {blockOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </FilterSelect>
-                </FilterField>
-                <FilterField label="Department">
-                  <FilterSelect
-                    id="inventory-department-filter"
-                    label="Filter by department"
-                    onChange={(value) => updateParameters({ department: value })}
-                    value={department}
-                  >
-                    <option value="">Any department</option>
-                    {departmentOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </FilterSelect>
-                </FilterField>
-                <FilterField label="Vendor">
-                  <SearchForm
-                    id="inventory-vendor-filter"
-                    label="Filter by vendor"
-                    onSearch={(value) => updateParameters({ vendorName: value })}
-                    placeholder="Any vendor"
-                    value={vendorName}
-                  />
-                </FilterField>
-                <FilterField label="Added date">
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <input
-                      aria-label="Created from date"
-                      className="field-input"
-                      onChange={(event) => updateParameters({ createdFrom: event.target.value })}
-                      type="date"
-                      value={createdFrom}
-                    />
-                    <input
-                      aria-label="Created to date"
-                      className="field-input"
-                      onChange={(event) => updateParameters({ createdTo: event.target.value })}
-                      type="date"
-                      value={createdTo}
-                    />
-                  </div>
-                </FilterField>
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {user?.role === 'ADMIN' ? (
-                <FilterField label="Status">
-                  <FilterSelect
-                    id="inventory-status-filter"
-                    label="Filter by status"
-                    onChange={(value) => updateParameters({ status: value })}
-                    value={status ?? ''}
-                  >
-                    <option value="">Any status</option>
-                    <option value="ACTIVE">{inventoryStatusLabel('ACTIVE')}</option>
-                    <option value="UNDER_MAINTENANCE">
-                      {inventoryStatusLabel('UNDER_MAINTENANCE')}
-                    </option>
-                    <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
-                    <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
-                    <option value="ARCHIVED">Archived</option>
-                  </FilterSelect>
-                </FilterField>
-              ) : null}
-              <FilterField label="Stats">
-                <FilterSelect
-                  id="inventory-stock-filter"
-                  label="Filter by stats"
-                  onChange={(value) => updateParameters({ stockState: value })}
-                  value={stock ?? ''}
-                >
-                  <option value="">Any stats</option>
-                  <option value="AVAILABLE">Available stock</option>
-                  <option value="LOW_STOCK">Low stock</option>
-                  <option value="OUT_OF_STOCK">Out of stock</option>
-                  <option value="ISSUED">Issued stock</option>
-                  <option value="FULLY_ISSUED">Fully issued</option>
-                </FilterSelect>
-              </FilterField>
-              <FilterField label="Return policy">
-                <FilterSelect
-                  id="inventory-policy-filter"
-                  label="Filter by return policy"
-                  onChange={(value) => updateParameters({ returnPolicy: value })}
-                  value={policy ?? ''}
-                >
-                  <option value="">Any return policy</option>
-                  <option value="REUSABLE">Reusable</option>
-                  <option value="CONSUMABLE">Consumable</option>
-                </FilterSelect>
-              </FilterField>
-            </div>
-          </FilterPopover>
+      <section className="rounded-[14px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 shadow-[var(--shadow-card)] sm:p-4">
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+              Inventory layer
+            </p>
+            <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+              Select inventory type
+            </h2>
+          </div>
+          <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+            Categories will open according to your selection.
+          </p>
         </div>
-        {query.data ? <PageCount count={query.data.meta.total} noun="IT asset" /> : null}
+        <div className="grid gap-3 md:grid-cols-2">
+          <InventoryTypeCard
+            active={selectedInventoryType === 'SERIALIZED'}
+            description="View serialized categories such as CPU, laptop, printer, UPS, monitor, and access point."
+            icon={<MonitorCog aria-hidden="true" size={22} />}
+            onClick={() => chooseInventoryType('SERIALIZED')}
+            title="IT Asset"
+          />
+          <InventoryTypeCard
+            active={selectedInventoryType === 'QUANTITY'}
+            description="View quantity categories such as cable, cartridge, connector, lead, adapter, and stock items."
+            icon={<Package aria-hidden="true" size={22} />}
+            onClick={() => chooseInventoryType('QUANTITY')}
+            title="IT Consumable"
+          />
+        </div>
       </section>
 
-      {query.data ? (
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <SummaryCard label="Listed quantity" value={summary.total} />
-          <SummaryCard label="Available" value={summary.available} />
-          <SummaryCard label="Issued" value={summary.issued} />
-          <SummaryCard label={inventoryStatusLabel('SCRAP')} tone="danger" value={summary.scrap} />
-          <SummaryCard
-            label={inventoryStatusLabel('NOT_IN_USE')}
-            tone="warning"
-            value={summary.notInUse}
-          />
-          <SummaryCard
-            label={inventoryStatusLabel('UNDER_MAINTENANCE')}
-            tone="warning"
-            value={summary.underMaintenance}
-          />
-        </section>
-      ) : null}
-
-      {actionNotice ? (
-        <div
-          className="rounded-[12px] border border-emerald-200 bg-[var(--color-success-soft)] p-4 text-sm font-bold text-[var(--color-success)]"
-          role="status"
-        >
-          {actionNotice}
-        </div>
-      ) : null}
-      {query.isPending ? (
-        <LoadingPanel label="Loading inventory" />
-      ) : query.isError ? (
-        <ErrorState message="Inventory could not be loaded." onRetry={() => void query.refetch()} />
-      ) : materials.length === 0 ? (
-        <EmptyState
-          action={
-            filtered ? (
-              <Button onClick={() => setParameters({})} variant="secondary">
-                Clear filters
-              </Button>
-            ) : canAddInventory ? (
-              <Link className="button-primary" to="/inventory/new">
-                <PackagePlus aria-hidden="true" size={18} />
-                Add material
-              </Link>
-            ) : undefined
-          }
-          message={
-            filtered
-              ? 'Try a different IT asset, asset type or filter.'
-              : 'No catalog material is available. New Issues can be entered directly.'
-          }
-          title={filtered ? 'No IT asset matches these filters' : 'No material added'}
-        />
-      ) : (
+      {selectedInventoryType ? (
         <>
-          <div className="space-y-3 min-[840px]:hidden">
-            {materialGroups.map((group) => (
-              <details
-                className="group space-y-2"
-                key={materialGroupKey(group.category, group.trackingMode)}
+          <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)]">
+            <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <SearchForm
+                id="inventory-search"
+                key={search}
+                label="Search Inventory"
+                onSearch={(value) => updateParameters({ search: value })}
+                placeholder={`${selectedInventoryLabel}, code, category, location or description`}
+                value={search}
+              />
+              <FilterPopover
+                activeCount={
+                  [
+                    category,
+                    location,
+                    block,
+                    department,
+                    vendorName,
+                    createdFrom,
+                    createdTo,
+                    status,
+                    policy,
+                    stock,
+                  ].filter(Boolean).length
+                }
+                onClear={() =>
+                  updateParameters({
+                    category: '',
+                    location: '',
+                    block: '',
+                    department: '',
+                    vendorName: '',
+                    createdFrom: '',
+                    createdTo: '',
+                    status: '',
+                    returnPolicy: '',
+                    stockState: '',
+                  })
+                }
+                panelClassName="w-[min(94vw,720px)] p-5"
               >
-                <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <ChevronDown
-                        className="text-[var(--color-primary)] transition-transform group-open:rotate-180"
-                        size={18}
+                <div className="rounded-[8px] bg-[var(--color-surface-tint)] p-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <FilterField label={selectedInventoryLabel}>
+                      <FilterSelect
+                        id="inventory-category-filter"
+                        label={`Filter by ${selectedInventoryLabel}`}
+                        onChange={(value) => updateParameters({ category: value })}
+                        value={category}
+                      >
+                        <option value="">Any {selectedInventoryLabel}</option>
+                        {categoryOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </FilterSelect>
+                    </FilterField>
+                    <FilterField label="Location">
+                      <FilterSelect
+                        id="inventory-location-filter"
+                        label="Filter by location"
+                        onChange={(value) => updateParameters({ location: value })}
+                        value={location}
+                      >
+                        <option value="">Any location</option>
+                        {locationOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </FilterSelect>
+                    </FilterField>
+                    <FilterField label="Block">
+                      <FilterSelect
+                        id="inventory-block-filter"
+                        label="Filter by block"
+                        onChange={(value) => updateParameters({ block: value })}
+                        value={block}
+                      >
+                        <option value="">Any block</option>
+                        {blockOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </FilterSelect>
+                    </FilterField>
+                    <FilterField label="Department">
+                      <FilterSelect
+                        id="inventory-department-filter"
+                        label="Filter by department"
+                        onChange={(value) => updateParameters({ department: value })}
+                        value={department}
+                      >
+                        <option value="">Any department</option>
+                        {departmentOptions.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </FilterSelect>
+                    </FilterField>
+                    <FilterField label="Vendor">
+                      <SearchForm
+                        id="inventory-vendor-filter"
+                        label="Filter by vendor"
+                        onSearch={(value) => updateParameters({ vendorName: value })}
+                        placeholder="Any vendor"
+                        value={vendorName}
                       />
-                      <div>
-                        <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-                          {group.category}
-                        </h2>
-                        <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                          {humanizeCatalogValue(group.trackingMode)} · {group.materials.length} model
-                          {group.materials.length === 1 ? '' : 's'}
+                    </FilterField>
+                    <FilterField label="Added date">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <input
+                          aria-label="Created from date"
+                          className="field-input"
+                          onChange={(event) =>
+                            updateParameters({ createdFrom: event.target.value })
+                          }
+                          type="date"
+                          value={createdFrom}
+                        />
+                        <input
+                          aria-label="Created to date"
+                          className="field-input"
+                          onChange={(event) => updateParameters({ createdTo: event.target.value })}
+                          type="date"
+                          value={createdTo}
+                        />
+                      </div>
+                    </FilterField>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {user?.role === 'ADMIN' ? (
+                    <FilterField label="Status">
+                      <FilterSelect
+                        id="inventory-status-filter"
+                        label="Filter by status"
+                        onChange={(value) => updateParameters({ status: value })}
+                        value={status ?? ''}
+                      >
+                        <option value="">Any status</option>
+                        <option value="ACTIVE">{inventoryStatusLabel('ACTIVE')}</option>
+                        <option value="UNDER_MAINTENANCE">
+                          {inventoryStatusLabel('UNDER_MAINTENANCE')}
+                        </option>
+                        <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
+                        <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
+                        <option value="ARCHIVED">Archived</option>
+                      </FilterSelect>
+                    </FilterField>
+                  ) : null}
+                  <FilterField label="Stats">
+                    <FilterSelect
+                      id="inventory-stock-filter"
+                      label="Filter by stats"
+                      onChange={(value) => updateParameters({ stockState: value })}
+                      value={stock ?? ''}
+                    >
+                      <option value="">Any stats</option>
+                      <option value="AVAILABLE">Available stock</option>
+                      <option value="LOW_STOCK">Low stock</option>
+                      <option value="OUT_OF_STOCK">Out of stock</option>
+                      <option value="ISSUED">Issued stock</option>
+                      <option value="FULLY_ISSUED">Fully issued</option>
+                    </FilterSelect>
+                  </FilterField>
+                  <FilterField label="Return policy">
+                    <FilterSelect
+                      id="inventory-policy-filter"
+                      label="Filter by return policy"
+                      onChange={(value) => updateParameters({ returnPolicy: value })}
+                      value={policy ?? ''}
+                    >
+                      <option value="">Any return policy</option>
+                      <option value="REUSABLE">Reusable</option>
+                      <option value="CONSUMABLE">Consumable</option>
+                    </FilterSelect>
+                  </FilterField>
+                </div>
+              </FilterPopover>
+            </div>
+            {query.data ? (
+              <PageCount count={query.data.meta.total} noun={selectedInventoryLabel} />
+            ) : null}
+          </section>
+
+          {query.data ? (
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              <SummaryCard label="Listed quantity" value={summary.total} />
+              <SummaryCard label="Available" value={summary.available} />
+              <SummaryCard label="Issued" value={summary.issued} />
+              <SummaryCard
+                label={inventoryStatusLabel('SCRAP')}
+                tone="danger"
+                value={summary.scrap}
+              />
+              <SummaryCard
+                label={inventoryStatusLabel('NOT_IN_USE')}
+                tone="warning"
+                value={summary.notInUse}
+              />
+              <SummaryCard
+                label={inventoryStatusLabel('UNDER_MAINTENANCE')}
+                tone="warning"
+                value={summary.underMaintenance}
+              />
+            </section>
+          ) : null}
+
+          {actionNotice ? (
+            <div
+              className="rounded-[12px] border border-emerald-200 bg-[var(--color-success-soft)] p-4 text-sm font-bold text-[var(--color-success)]"
+              role="status"
+            >
+              {actionNotice}
+            </div>
+          ) : null}
+          {query.isPending ? (
+            <LoadingPanel label="Loading inventory" />
+          ) : query.isError ? (
+            <ErrorState
+              message="Inventory could not be loaded."
+              onRetry={() => void query.refetch()}
+            />
+          ) : materials.length === 0 ? (
+            <EmptyState
+              action={
+                filtered ? (
+                  <Button onClick={() => setParameters({})} variant="secondary">
+                    Clear filters
+                  </Button>
+                ) : canAddInventory ? (
+                  <Link className="button-primary" to="/inventory/new">
+                    <PackagePlus aria-hidden="true" size={18} />
+                    Add material
+                  </Link>
+                ) : undefined
+              }
+              message={
+                filtered
+                  ? `Try a different ${selectedInventoryLabel}, category or filter.`
+                  : 'No catalog material is available. New Issues can be entered directly.'
+              }
+              title={
+                filtered
+                  ? `No ${selectedInventoryLabel} matches these filters`
+                  : 'No material added'
+              }
+            />
+          ) : (
+            <>
+              <div className="space-y-3 min-[840px]:hidden">
+                {materialGroups.map((group) => (
+                  <details
+                    className="group space-y-2"
+                    key={materialGroupKey(group.category, group.trackingMode)}
+                  >
+                    <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <ChevronDown
+                            className="text-[var(--color-primary)] transition-transform group-open:rotate-180"
+                            size={18}
+                          />
+                          <div>
+                            <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+                              {group.category}
+                            </h2>
+                            <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                              {humanizeCatalogValue(group.trackingMode)} · {group.materials.length}{' '}
+                              model
+                              {group.materials.length === 1 ? '' : 's'}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-right text-xs font-bold text-[var(--color-text-muted)]">
+                          {group.availableQuantity} / {group.totalQuantity} available
                         </p>
                       </div>
-                    </div>
-                    <p className="text-right text-xs font-bold text-[var(--color-text-muted)]">
-                      {group.availableQuantity} / {group.totalQuantity} available
-                    </p>
-                  </div>
-                </summary>
-                {group.materials.map((material) => (
-                  <MaterialCard
-                    canAdjustQuantity={canAdjustQuantity}
-                    canDelete={canDeleteInventory}
-                    canEdit={canEditInventory}
-                    key={material.materialCode}
-                    material={material}
-                    onDelete={confirmDelete}
-                    onAdjustQuantity={setQuantityTarget}
-                  />
+                    </summary>
+                    {group.materials.map((material) => (
+                      <MaterialCard
+                        canAdjustQuantity={canAdjustQuantity}
+                        canDelete={canDeleteInventory}
+                        canEdit={canEditInventory}
+                        key={material.materialCode}
+                        material={material}
+                        onDelete={confirmDelete}
+                        onAdjustQuantity={setQuantityTarget}
+                      />
+                    ))}
+                  </details>
                 ))}
-              </details>
-            ))}
-          </div>
-          <MaterialTable
-            canAdd={canAddInventory}
-            canAdjustQuantity={canAdjustQuantity}
-            canDelete={canDeleteInventory}
-            canEdit={canEditInventory}
-            materials={materials}
-            onDelete={confirmDelete}
-            onAdjustQuantity={setQuantityTarget}
-            onAddCategory={setAddCategory}
-            onView={setViewMaterial}
-            {...(user?.role === 'ADMIN'
-              ? {
-                  onModelCrud: (target: {
-                    category: string;
-                    name: string;
-                    trackingMode: TrackingMode;
-                    action: 'EDIT' | 'DELETE';
-                  }) => {
-                    setModelCrud(target);
-                    setEditedModelName(target.name);
-                  },
-                }
-              : {})}
-            {...(canMergeModels
-              ? {
-                  onMergeCategory: (group: MaterialGroup) => {
-                    setActionError(null);
-                    setMergeCategory(group);
-                    setMergeModelIds([]);
-                    setCanonicalModelName('');
-                    setMergeStep(1);
-                  },
-                }
-              : {})}
-          />
+              </div>
+              <MaterialTable
+                canAdd={canAddInventory}
+                canAdjustQuantity={canAdjustQuantity}
+                canDelete={canDeleteInventory}
+                canEdit={canEditInventory}
+                materials={materials}
+                onDelete={confirmDelete}
+                onAdjustQuantity={setQuantityTarget}
+                onAddCategory={setAddCategory}
+                onView={setViewMaterial}
+                {...(user?.role === 'ADMIN'
+                  ? {
+                      onModelCrud: (target: {
+                        category: string;
+                        name: string;
+                        trackingMode: TrackingMode;
+                        action: 'EDIT' | 'DELETE';
+                      }) => {
+                        setModelCrud(target);
+                        setEditedModelName(target.name);
+                      },
+                    }
+                  : {})}
+                {...(canMergeModels
+                  ? {
+                      onMergeCategory: (group: MaterialGroup) => {
+                        setActionError(null);
+                        setMergeCategory(group);
+                        setMergeModelIds([]);
+                        setCanonicalModelName('');
+                        setMergeStep(1);
+                      },
+                    }
+                  : {})}
+              />
+            </>
+          )}
         </>
-      )}
+      ) : null}
       {deleteTarget ? (
         <DeleteMaterialDialog
           loading={deleteMutation.isPending}
@@ -1604,7 +1703,7 @@ function MaterialActions({
     };
   }, []);
   return (
-    <details className="relative inline-block text-left" ref={detailsRef}>
+    <details className="relative inline-block text-left" data-action-menu ref={detailsRef}>
       <summary
         aria-label={`Actions for ${material.name}`}
         className="icon-button list-none marker:hidden"
@@ -1860,8 +1959,8 @@ function GroupedMaterialRows({
                 </p>
                 <p className="text-xs font-semibold text-[var(--color-text-muted)]">
                   {humanizeCatalogValue(group.trackingMode)} · {modelGroups.length} model
-                  {modelGroups.length === 1 ? '' : 's'} ·{' '}
-                  {group.materials.length} stock variant{group.materials.length === 1 ? '' : 's'}
+                  {modelGroups.length === 1 ? '' : 's'} · {group.materials.length} stock variant
+                  {group.materials.length === 1 ? '' : 's'}
                 </p>
               </div>
             </div>
@@ -1870,7 +1969,11 @@ function GroupedMaterialRows({
               <span>Available: {group.availableQuantity}</span>
               <span>Issued: {group.issuedQuantity}</span>
               {canAdd || onMergeCategory ? (
-                <details className="relative" onClick={(event) => event.stopPropagation()}>
+                <details
+                  className="relative"
+                  data-action-menu
+                  onClick={(event) => event.stopPropagation()}
+                >
                   <summary
                     aria-label={`Actions for ${group.category}`}
                     className="icon-button list-none marker:hidden"
@@ -1945,6 +2048,7 @@ function GroupedMaterialRows({
                         {canAdd || onModelCrud ? (
                           <details
                             className="relative"
+                            data-action-menu
                             onClick={(event) => event.stopPropagation()}
                           >
                             <summary

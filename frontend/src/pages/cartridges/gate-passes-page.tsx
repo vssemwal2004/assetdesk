@@ -40,7 +40,7 @@ export function GatePassesPage() {
               <Plus size={18} />
               Create Gate Pass
             </Link>
-            <details className="relative">
+            <details className="relative" data-action-menu>
               <summary className="button-secondary cursor-pointer list-none">
                 <MoreVertical size={18} />
               </summary>
@@ -194,9 +194,11 @@ export function CreateGatePassPage() {
                         </span>
                         <span className="block text-xs font-bold text-[var(--color-text-muted)]">
                           {item.model} ·{' '}
-                          {gatePassEligibleLabels[
-                            item.status as keyof typeof gatePassEligibleLabels
-                          ]}{' '}
+                          {
+                            gatePassEligibleLabels[
+                              item.status as keyof typeof gatePassEligibleLabels
+                            ]
+                          }{' '}
                           · {item.location}
                         </span>
                       </span>
@@ -236,8 +238,15 @@ export function GatePassDetailPage() {
   });
   const [gateInSerials, setGateInSerials] = useState('');
   const action = useMutation({
-    mutationFn: (name: 'verify' | 'gate-out') => gatePassAction(gatePassId, name),
-    onSuccess: () => client.invalidateQueries({ queryKey: ['cartridge-gate-pass', gatePassId] }),
+    mutationFn: (name: 'verify' | 'gate-out' | 'cancel') => gatePassAction(gatePassId, name),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['cartridge-gate-pass', gatePassId] }),
+        client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
+        client.invalidateQueries({ queryKey: ['cartridges'] }),
+        client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
+      ]);
+    },
   });
   const gateIn = useMutation({
     mutationFn: () =>
@@ -297,6 +306,15 @@ export function GatePassDetailPage() {
         {p.status === 'VERIFIED' ? (
           <Button loading={action.isPending} onClick={() => action.mutate('gate-out')}>
             Confirm Gate Out
+          </Button>
+        ) : null}
+        {['DRAFT', 'AWAITING_VERIFICATION', 'VERIFIED'].includes(p.status) ? (
+          <Button
+            loading={action.isPending}
+            onClick={() => action.mutate('cancel')}
+            variant="danger"
+          >
+            Cancel Gate Pass
           </Button>
         ) : null}
       </div>

@@ -15,6 +15,33 @@ export async function getCartridges(
   if (filters.status) query.set('status', filters.status);
   return CartridgeListResponseSchema.parse(await apiRequest(`/api/v1/cartridges?${query}`));
 }
+export async function getCartridgeActivity(
+  filters: { page?: number; pageSize?: number; search?: string; type?: string } = {},
+) {
+  const query = new URLSearchParams();
+  query.set('page', String(filters.page ?? 1));
+  query.set('pageSize', String(filters.pageSize ?? 50));
+  if (filters.search) query.set('search', filters.search);
+  if (filters.type) query.set('type', filters.type);
+  return apiRequest<{
+    data: Array<{
+      id: string;
+      cartridgeId: string;
+      serialNumber: string;
+      type: string;
+      fromStatus: string | null;
+      toStatus: string;
+      employeeName: string | null;
+      employeeId: string | null;
+      department: string | null;
+      defectReason: string | null;
+      remarks: string | null;
+      actorWorkerId: string;
+      createdAt: string;
+    }>;
+    meta: { page: number; pageSize: number; total: number; totalPages: number };
+  }>(`/api/v1/cartridges/activity?${query}`);
+}
 export async function addCartridges(input: CreateCartridgesRequest) {
   const result = await apiRequest<{ data: unknown[] }>('/api/v1/cartridges', {
     method: 'POST',
@@ -69,7 +96,11 @@ export async function getCartridge(serial: string) {
 export async function recordCartridgeQc(input: Record<string, unknown>) {
   return apiRequest<{ data: unknown }>('/api/v1/cartridges/qc', { method: 'POST', json: input });
 }
-export async function gatePassAction(id: string, action: 'verify' | 'gate-out', json?: unknown) {
+export async function gatePassAction(
+  id: string,
+  action: 'verify' | 'gate-out' | 'cancel',
+  json?: unknown,
+) {
   return apiRequest<{ data: GatePass }>(`/api/v1/cartridges/gate-passes/${id}/${action}`, {
     method: 'POST',
     json: json ?? {},
