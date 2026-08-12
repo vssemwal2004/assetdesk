@@ -105,6 +105,18 @@ function renderPasswordChanged(params: Record<string, unknown>): RenderedEmail {
   };
 }
 
+function renderPasswordResetOtp(params: Record<string, unknown>): RenderedEmail {
+  const name = text(params.name);
+  const otp = text(params.otp);
+  const expiresAt = text(params.expiresAt);
+  const body = `<p>Hello ${escapeHtml(name)},</p><p>Use this verification code to reset your AssetDesk password.</p><p style="margin:18px 0;padding:14px 18px;border:1px solid #d8c8f3;border-radius:12px;background:#f7f3ff;color:#43177b;font-size:28px;font-weight:bold;letter-spacing:6px;text-align:center">${escapeHtml(otp)}</p>${paragraph('Code expiry (IST)', expiresAt)}<p>If you did not request this reset, ignore this email and contact the university server-room administrator.</p>`;
+  return {
+    subject: '[AssetDesk] Password reset code',
+    html: layout('Password reset verification', body),
+    text: `Hello ${name},\n\nUse this verification code to reset your AssetDesk password: ${otp}\nCode expiry (IST): ${expiresAt}\n\nIf you did not request this reset, ignore this email and contact the university server-room administrator.`,
+  };
+}
+
 function renderReminder(params: Record<string, unknown>, receiverCopy: boolean): RenderedEmail {
   const issueId = text(params.issueId);
   const receiverName = text(params.receiverName);
@@ -144,5 +156,7 @@ export function renderEmail(
       return renderReminder(params, true);
     case 'RETURN_REMINDER_OPERATOR':
       return renderReminder(params, false);
+    case 'PASSWORD_RESET_OTP':
+      return renderPasswordResetOtp(params);
   }
 }

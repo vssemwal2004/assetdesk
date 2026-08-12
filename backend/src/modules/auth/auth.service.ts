@@ -1,3 +1,5 @@
+import { randomBytes, randomInt, randomUUID } from 'node:crypto';
+
 import { WorkerIdSchema, type AuthUser } from '@assetdesk/contracts';
 import mongoose from 'mongoose';
 
@@ -7,6 +9,7 @@ import { toAuthUser } from '../users/user.mapper.js';
 import { UserModel, type UserDocument, type UserRecord } from '../users/user.model.js';
 import { enqueuePasswordChanged } from '../notifications/notification.service.js';
 import { enforcePasswordPolicy, hashPassword, verifyPassword } from './password.js';
+import { PasswordResetModel } from './password-reset.model.js';
 import {
   createSession,
   revokeAllUserSessions,
@@ -25,7 +28,14 @@ interface AuthResult {
   bundle: SessionBundle;
 }
 
+export interface PasswordResetStartResult {
+  resetId: string;
+  expiresAt: Date;
+}
+
 const dummyHashPromise = hashPassword('AssetDesk dummy verification value 2026');
+const OTP_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const PASSWORD_RESET_TTL_MINUTES = 10;
 
 function normalizedIdentifier(identifier: string): { workerId?: string; emailNormalized?: string } {
   const value = identifier.trim();
@@ -33,6 +43,42 @@ function normalizedIdentifier(identifier: string): { workerId?: string; emailNor
   return WorkerIdSchema.safeParse(workerId).success
     ? { workerId }
     : { emailNormalized: value.toLowerCase() };
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function formatIst(value: Date): string {
+  return new Intl.DateTimeFormat('en-IN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Kolkata',
+  }).format(value);
+}
+
+function generateOtp(): string {
+  return Array.from(
+    { length: 5 },
+    () => OTP_ALPHABET[randomInt(0, OTP_ALPHABET.length)] ?? 'A',
+  ).join('');
+}
+
+function resetExpired(): AppError {
+  return new AppError(
+    400,
+    'PASSWORD_RESET_EXPIRED',
+    'The verification code has expired. Request a new code.',
+  );
+}
+
+function resetInvalid(): AppError {
+  return new AppError(
+    400,
+    'PASSWORD_RESET_INVALID',
+    'The verification code is incorrect. Check the code and try again.',
+    { otp: 'Enter the 5-character code sent to your email.' },
+  );
 }
 
 async function recordFailedLogin(user: Pick<UserRecord, '_id'>): Promise<void> {
@@ -227,6 +273,102 @@ export async function changePassword(
     });
   }
   return replacePasswordAndSession(user, newPassword, context, 'PASSWORD_CHANGED');
+}
+
+export async function startForgotPassword(email: string): Promise<PasswordResetStartResult> {
+  const emailNormalized = normalizeEmail(email);
+  const user = await UserModel.findOne({
+    emailNormalized,
+    status: { $in: ['ACTIVE', 'INVITED'] },
+  });
+  const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MINUTES * 60 * 1000);
+  const publicResetId = `rst_${randomBytes(18).toString('base64url')}`;
+
+  if (!user) {
+    return { resetId: publicResetId, expiresAt };
+  }
+
+  const otp = generateOtp();
+  const otpHash = await hashPassword(otp);
+  const reset = await PasswordResetModel.create({
+    resetId: publicResetId,
+    userId: user._id,
+    emailNormalized,
+    otpHash,
+    expiresAt,
+    attemptCount: 0,
+  });
+
+  const { EmailJobModel } = await import('../notifications/email-job.model.js');
+  await EmailJobModel.create({
+    eventKey: `password-reset:${reset.resetId}:${user.authVersion}`,
+    eventType: 'PASSWORD_RESET_OTP',
+    recipientRole: 'ACCOUNT_OWNER',
+    recipientId: user._id.toString(),
+    recipientEmailNormalized: user.emailNormalized,
+    recipientName: user.name,
+    templateKey: 'PASSWORD_RESET_OTP',
+    templateVersion: 1,
+    templateParams: {
+      name: user.name,
+      workerId: user.workerId,
+      otp,
+      expiresAt: formatIst(expiresAt),
+    },
+    status: 'QUEUED',
+    attemptCount: 0,
+    nextAttemptAt: new Date(),
+    idempotencyKey: `password-reset:${reset.resetId}`,
+  });
+
+  return { resetId: reset.resetId, expiresAt };
+}
+
+export async function verifyForgotPasswordOtp(resetId: string, otp: string): Promise<void> {
+  const reset = await PasswordResetModel.findOne({
+    resetId,
+    consumedAt: { $exists: false },
+  }).select('+otpHash');
+  if (!reset || reset.expiresAt <= new Date()) throw resetExpired();
+  if (reset.attemptCount >= 5) throw resetInvalid();
+  const valid = await verifyPassword(reset.otpHash, otp.toUpperCase());
+  if (!valid) {
+    reset.attemptCount += 1;
+    await reset.save();
+    throw resetInvalid();
+  }
+  if (!reset.verifiedAt) {
+    reset.verifiedAt = new Date();
+    await reset.save();
+  }
+}
+
+export async function completeForgotPassword(
+  resetId: string,
+  otp: string,
+  newPassword: string,
+  context: RequestContext,
+): Promise<AuthResult> {
+  const reset = await PasswordResetModel.findOne({
+    resetId,
+    consumedAt: { $exists: false },
+  }).select('+otpHash');
+  if (!reset || reset.expiresAt <= new Date()) throw resetExpired();
+  if (reset.attemptCount >= 5) throw resetInvalid();
+  if (!(await verifyPassword(reset.otpHash, otp.toUpperCase()))) {
+    reset.attemptCount += 1;
+    await reset.save();
+    throw resetInvalid();
+  }
+  const user = await UserModel.findById(reset.userId).select('+passwordHash');
+  if (!user || user.status === 'DISABLED') {
+    throw new AppError(403, 'ACCOUNT_DISABLED', 'This account is not available.');
+  }
+  const result = await replacePasswordAndSession(user, newPassword, context, 'PASSWORD_RESET');
+  reset.verifiedAt = reset.verifiedAt ?? new Date();
+  reset.consumedAt = new Date();
+  await reset.save();
+  return result;
 }
 
 export async function refresh(

@@ -4,6 +4,9 @@ import { rateLimit } from 'express-rate-limit';
 import {
   ChangeInitialPasswordRequestSchema,
   ChangePasswordRequestSchema,
+  ForgotPasswordCompleteRequestSchema,
+  ForgotPasswordStartRequestSchema,
+  ForgotPasswordVerifyRequestSchema,
   LoginRequestSchema,
 } from '@assetdesk/contracts';
 
@@ -11,10 +14,13 @@ import { appendAuditEvent } from '../audit/audit.service.js';
 import {
   changeInitialPassword,
   changePassword,
+  completeForgotPassword,
   getCurrentUser,
   login,
   logout,
   refresh,
+  startForgotPassword,
+  verifyForgotPasswordOtp,
 } from './auth.service.js';
 import {
   requireAuth,
@@ -85,6 +91,69 @@ export function createAuthRouter(): Router {
       next(error);
     }
   });
+
+  router.post(
+    '/forgot-password/start',
+    requireTrustedOrigin,
+    loginLimiter,
+    async (request, response, next) => {
+      try {
+        const input = ForgotPasswordStartRequestSchema.parse(request.body);
+        const result = await startForgotPassword(input.email);
+        response.json({
+          data: { resetId: result.resetId, expiresAt: result.expiresAt.toISOString() },
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    '/forgot-password/verify',
+    requireTrustedOrigin,
+    loginLimiter,
+    async (request, response, next) => {
+      try {
+        const input = ForgotPasswordVerifyRequestSchema.parse(request.body);
+        await verifyForgotPasswordOtp(input.resetId, input.otp);
+        response.json({ data: { verified: true } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    '/forgot-password/complete',
+    requireTrustedOrigin,
+    loginLimiter,
+    async (request, response, next) => {
+      try {
+        const input = ForgotPasswordCompleteRequestSchema.parse(request.body);
+        const result = await completeForgotPassword(
+          input.resetId,
+          input.otp,
+          input.newPassword,
+          context(request),
+        );
+        setSessionCookies(response, result.bundle);
+        await appendAuditEvent({
+          requestId: request.requestId,
+          actorUserId: result.user.id,
+          actorWorkerId: result.user.workerId,
+          actorRole: result.user.role,
+          action: 'AUTH_PASSWORD_RESET',
+          targetType: 'USER',
+          targetId: result.user.workerId,
+          result: 'SUCCESS',
+        });
+        response.json({ data: { user: result.user, csrfToken: result.bundle.csrfToken } });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.post('/refresh', async (request, response, next) => {
     try {

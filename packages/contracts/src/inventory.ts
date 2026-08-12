@@ -301,6 +301,7 @@ export const AssetDetailKindSchema = z.enum([
   'CONSUMABLE_TYPE',
   'LOCATION',
   'BLOCK',
+  'STORE',
   'DEPARTMENT',
 ]);
 export const AssetDetailSchema = z.object({

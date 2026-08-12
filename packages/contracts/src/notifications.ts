@@ -7,6 +7,7 @@ export const NotificationEventTypeSchema = z.enum([
   'MATERIAL_ISSUED',
   'MATERIAL_RETURNED',
   'RETURN_REMINDER',
+  'PASSWORD_RESET_OTP',
   'PASSWORD_CHANGED',
 ]);
 export type NotificationEventType = z.infer<typeof NotificationEventTypeSchema>;

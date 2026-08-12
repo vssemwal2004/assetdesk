@@ -1,5 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ClipboardCheck, PackagePlus, Plus, Printer, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  ChevronDown,
+  ClipboardCheck,
+  MapPin,
+  PackagePlus,
+  Plus,
+  Printer,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 
@@ -32,6 +42,7 @@ import { getAssetDetails, getAvailableAssetUnits, getInventory } from '../../lib
 import { createIssue } from '../../lib/issues-api';
 
 type DuePreset = NonNullable<CreateIssueRequest['due']>['preset'];
+type StoreFilter = 'ALL' | string;
 
 interface LineDraft {
   id: string;
@@ -70,6 +81,7 @@ export function CreateIssuePage() {
     email: '',
   });
   const [materialSearch, setMaterialSearch] = useState('');
+  const [storeFilter, setStoreFilter] = useState<StoreFilter>('ALL');
   const [lines, setLines] = useState<LineDraft[]>([blankLine()]);
   const [duePreset, setDuePreset] = useState<DuePreset>('ONE_WEEK');
   const [customReturnAt, setCustomReturnAt] = useState('');
@@ -79,14 +91,15 @@ export function CreateIssuePage() {
   const [created, setCreated] = useState<Issue | null>(null);
 
   const inventoryQuery = useQuery({
-    queryKey: ['inventory', { materialSearch, materialType, issueable: true }],
+    queryKey: ['inventory', { materialSearch, materialType, storeFilter, issueable: true }],
     queryFn: ({ signal }) =>
       getInventory(
         {
           page: 1,
-          pageSize: 100,
+          pageSize: 500,
           issueable: true,
           trackingMode: materialType,
+          ...(storeFilter !== 'ALL' ? { location: storeFilter } : {}),
           ...(materialSearch ? { search: materialSearch } : {}),
         },
         signal,
@@ -96,11 +109,42 @@ export function CreateIssuePage() {
     queryKey: ['asset-details', 'DEPARTMENT'],
     queryFn: ({ signal }) => getAssetDetails('DEPARTMENT', signal),
   });
+  const storeQuery = useQuery({
+    queryKey: ['asset-details', 'STORE'],
+    queryFn: ({ signal }) => getAssetDetails('STORE', signal),
+  });
   const departments = departmentQuery.data ?? [];
+  const storeNames = useMemo(
+    () => (storeQuery.data ?? []).map((store) => store.name),
+    [storeQuery.data],
+  );
+  const storeFilterOptions = useMemo(
+    () => [
+      { value: 'ALL' as const, label: 'All stores' },
+      ...storeNames.map((store) => ({ value: store, label: store })),
+    ],
+    [storeNames],
+  );
+  const selectedStoreLabel =
+    storeFilterOptions.find((store) => store.value === storeFilter)?.label ?? 'All stores';
 
   const materials = useMemo(
-    () => (inventoryQuery.data?.data ?? []).filter(isIssueableInventoryMaterial),
-    [inventoryQuery.data?.data],
+    () =>
+      (inventoryQuery.data?.data ?? [])
+        .filter((material) => isIssueableInventoryMaterial(material, storeFilter, storeNames))
+        .sort(compareIssueableMaterials),
+    [inventoryQuery.data?.data, storeFilter, storeNames],
+  );
+  const inventoryTotals = useMemo(
+    () =>
+      materials.reduce(
+        (total, material) => ({
+          variants: total.variants + 1,
+          available: total.available + material.availableQuantity,
+        }),
+        { variants: 0, available: 0 },
+      ),
+    [materials],
   );
   const materialByCode = useMemo(
     () => new Map(materials.map((material) => [material.materialCode, material])),
@@ -258,22 +302,53 @@ export function CreateIssuePage() {
       />
       {message ? <ErrorSummary message={message} /> : null}
 
-      <AppCard className="issue-panel">
-        <label className="block max-w-xl space-y-1.5">
-          <span className="field-label">Material type</span>
-          <select
-            className="field-input field-input-compact"
-            onChange={(event) => {
-              setMaterialType(event.target.value as TrackingMode);
-              setLines([blankLine()]);
-              setMessage(null);
-            }}
-            value={materialType}
-          >
-            <option value="SERIALIZED">IT Assets</option>
-            <option value="QUANTITY">IT Consumables</option>
-          </select>
-        </label>
+      <AppCard className="issue-panel issue-control-panel">
+        <div>
+          <p className="text-xs font-extrabold uppercase text-[var(--color-primary)]">
+            Source inventory
+          </p>
+          <h2 className="mt-1 text-lg font-extrabold text-[var(--color-text-strong)]">
+            Choose store stock for this assignment
+          </h2>
+        </div>
+        <div className="grid gap-3 md:grid-cols-[220px_220px_minmax(180px,1fr)]">
+          <label className="space-y-1.5">
+            <span className="field-label">Material type</span>
+            <select
+              className="field-input field-input-compact"
+              onChange={(event) => {
+                setMaterialType(event.target.value as TrackingMode);
+                setLines([blankLine()]);
+                setMessage(null);
+              }}
+              value={materialType}
+            >
+              <option value="SERIALIZED">IT Assets</option>
+              <option value="QUANTITY">IT Consumables</option>
+            </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="field-label">Store</span>
+            <select
+              className="field-input field-input-compact"
+              onChange={(event) => {
+                setStoreFilter(event.target.value as StoreFilter);
+                setLines([blankLine()]);
+              }}
+              value={storeFilter}
+            >
+              {storeFilterOptions.map((store) => (
+                <option key={store.value} value={store.value}>
+                  {store.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="issue-stock-summary">
+            <span>{inventoryTotals.variants} variants</span>
+            <strong>{inventoryTotals.available} available</strong>
+          </div>
+        </div>
       </AppCard>
 
       <AppCard className="issue-panel">
@@ -351,8 +426,23 @@ export function CreateIssuePage() {
             Add item
           </Button>
         </div>
-        <div className="mt-4 max-w-sm">
-          <Field label="Search inventory" onChange={setMaterialSearch} value={materialSearch} />
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+          <label className="space-y-1.5">
+            <span className="field-label">Search inventory</span>
+            <span className="search-shell">
+              <Search aria-hidden="true" className="search-shell-icon" size={17} />
+              <input
+                className="field-input field-input-compact field-input-search"
+                onChange={(event) => setMaterialSearch(event.target.value)}
+                placeholder="Search model, category, code"
+                value={materialSearch}
+              />
+            </span>
+          </label>
+          <div className="issue-store-chip">
+            <MapPin aria-hidden="true" size={17} />
+            <span>{selectedStoreLabel}</span>
+          </div>
         </div>
         {inventoryQuery.isPending ? <LoadingPanel label="Loading inventory" /> : null}
         {inventoryQuery.isError ? (
@@ -367,6 +457,9 @@ export function CreateIssuePage() {
         {!inventoryQuery.isPending && !inventoryQuery.isError && materials.length === 0 ? (
           <p className="mt-4 rounded-[10px] bg-[var(--color-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-warning)]">
             No issueable {materialType === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'} found.
+            {storeNames.length === 0
+              ? ' Add Store records from Asset details before issuing material.'
+              : null}
           </p>
         ) : null}
         <div className="mt-4 space-y-3">
@@ -491,12 +584,30 @@ function LineEditor({
   onRemove: () => void;
 }) {
   const availability = stockMessage(line, material);
+  const selectedMaterialCode = line.materialCode;
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const visibleMaterials = materials.slice(0, 50);
+  const hiddenMaterialCount = Math.max(materials.length - visibleMaterials.length, 0);
+
+  function selectMaterial(item: Material) {
+    onChange({
+      ...line,
+      materialCode: item.materialCode,
+      assetTags: [],
+      quantity: '1',
+    });
+    setMaterialPickerOpen(false);
+  }
+
   return (
-    <div className="rounded-[10px] border border-[var(--color-border)] p-3">
+    <div className="issue-line-card">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-extrabold text-[var(--color-primary-strong)]">
-          Item {index + 1}
-        </h3>
+        <div>
+          <p className="text-xs font-bold text-[var(--color-text-muted)]">Item {index + 1}</p>
+          <h3 className="text-sm font-extrabold text-[var(--color-primary-strong)]">
+            {material?.name ?? 'Select inventory material'}
+          </h3>
+        </div>
         {removable ? (
           <button
             aria-label={`Remove item ${index + 1}`}
@@ -508,33 +619,68 @@ function LineEditor({
           </button>
         ) : null}
       </div>
-      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
-        <label className="space-y-1.5">
-          <span className="field-label">Material</span>
-          <select
-            className="field-input field-input-compact"
-            onChange={(event) =>
-              onChange({ ...line, materialCode: event.target.value, assetTags: [], quantity: '1' })
-            }
-            value={line.materialCode}
+      <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
+        <div className="issue-material-picker">
+          <button
+            aria-expanded={materialPickerOpen}
+            className="issue-material-trigger"
+            onClick={() => setMaterialPickerOpen((current) => !current)}
+            type="button"
           >
-            <option value="">
-              {materials.length === 0 ? 'No issueable inventory found' : 'Choose inventory material'}
-            </option>
-            {materials.map((item) => (
-              <option
-                disabled={item.availableQuantity <= 0}
-                key={item.materialCode}
-                value={item.materialCode}
-              >
-                {item.name} ·{' '}
-                {item.availableQuantity > 0
-                  ? `${item.availableQuantity} available`
-                  : 'out of stock'}
-              </option>
-            ))}
-          </select>
-        </label>
+            <span className="min-w-0">
+              <strong>{material?.name ?? 'Choose inventory material'}</strong>
+              <span>
+                {material
+                  ? `${material.location ?? 'Store'} · ${material.materialCode}`
+                  : 'Click to view available store stock'}
+              </span>
+            </span>
+            <span className="issue-material-trigger-meta">
+              {material ? <em>{material.availableQuantity}</em> : null}
+              <ChevronDown aria-hidden="true" size={18} />
+            </span>
+          </button>
+          {materialPickerOpen ? (
+            <div className="issue-material-menu">
+              <div className="issue-material-menu-header">
+                <span>{materials.length} available options</span>
+                {hiddenMaterialCount > 0 ? <strong>Showing first 50</strong> : null}
+              </div>
+              {materials.length === 0 ? (
+                <p className="issue-material-empty">No available stock in the selected store.</p>
+              ) : (
+                visibleMaterials.map((item) => {
+                  const active = item.materialCode === selectedMaterialCode;
+                  return (
+                    <button
+                      className={cn(
+                        'issue-material-option',
+                        active && 'issue-material-option-active',
+                      )}
+                      key={item.materialCode}
+                      onClick={() => selectMaterial(item)}
+                      type="button"
+                    >
+                      <span className="min-w-0">
+                        <strong>{item.name}</strong>
+                        <span>
+                          {item.location ?? 'Store'} · {item.materialCode}
+                        </span>
+                      </span>
+                      <em>{item.availableQuantity}</em>
+                    </button>
+                  );
+                })
+              )}
+              {hiddenMaterialCount > 0 ? (
+                <p className="issue-material-more">
+                  {hiddenMaterialCount} more hidden. Use search to narrow by model, category, or
+                  code.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         {material?.trackingMode === 'QUANTITY' ? (
           <Field
             label="Quantity"
@@ -695,8 +841,37 @@ export function firstStockIssue(
   return null;
 }
 
-export function isIssueableInventoryMaterial(material: Material): boolean {
-  return material.status === 'ACTIVE' || material.status === 'NOT_IN_USE';
+export function isIssueableInventoryMaterial(
+  material: Material,
+  storeFilter: StoreFilter = 'ALL',
+  storeNames: string[] = [],
+): boolean {
+  const location = material.location ?? '';
+  const locationBlock =
+    material.locationBlock ?? [material.location, material.block].filter(Boolean).join(' / ');
+  const isConfiguredStore = storeNames.some((store) => {
+    const normalizedStore = store.toLowerCase();
+    return (
+      normalizedStore === location.toLowerCase() || normalizedStore === locationBlock.toLowerCase()
+    );
+  });
+  if (!(
+    (material.status === 'ACTIVE' || material.status === 'NOT_IN_USE') &&
+    material.availableQuantity > 0 &&
+    isConfiguredStore
+  )) {
+    return false;
+  }
+  return storeFilter === 'ALL' || material.location?.toLowerCase() === storeFilter.toLowerCase();
+}
+
+function compareIssueableMaterials(first: Material, second: Material): number {
+  return (
+    (first.location ?? '').localeCompare(second.location ?? '') ||
+    first.category.localeCompare(second.category) ||
+    first.name.localeCompare(second.name) ||
+    first.materialCode.localeCompare(second.materialCode)
+  );
 }
 
 function stockMessage(

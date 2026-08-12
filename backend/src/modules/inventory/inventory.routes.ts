@@ -104,7 +104,7 @@ const OptionalDateSchema = z.preprocess(
 const MaterialListQuerySchema = z
   .object({
     page: z.coerce.number().int().positive().default(1),
-    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    pageSize: z.coerce.number().int().min(1).max(500).default(20),
     search: OptionalQueryTextSchema,
     issueable: z.preprocess((value) => {
       if (value === 'true' || value === true) return true;
@@ -371,10 +371,17 @@ export function createInventoryRouter(): Router {
             authenticated(request).userId,
             session,
           );
-          await audit(request, 'INVENTORY_MODEL_CREATED', 'INVENTORY_MODEL', created.id, {
-            category: created.category,
-            name: created.name,
-          }, session);
+          await audit(
+            request,
+            'INVENTORY_MODEL_CREATED',
+            'INVENTORY_MODEL',
+            created.id,
+            {
+              category: created.category,
+              name: created.name,
+            },
+            session,
+          );
           return created;
         });
         response.status(201).json({ data: { model } });
@@ -443,11 +450,18 @@ export function createInventoryRouter(): Router {
             authenticated(request).userId,
             session,
           );
-          await audit(request, 'INVENTORY_MODELS_MERGED', 'INVENTORY_MODEL', merged.model.id, {
-            sourceModelIds: input.modelIds,
-            canonicalName: merged.model.name,
-            mergedMaterialCount: merged.mergedMaterialCount,
-          }, session);
+          await audit(
+            request,
+            'INVENTORY_MODELS_MERGED',
+            'INVENTORY_MODEL',
+            merged.model.id,
+            {
+              sourceModelIds: input.modelIds,
+              canonicalName: merged.model.name,
+              mergedMaterialCount: merged.mergedMaterialCount,
+            },
+            session,
+          );
           return merged;
         });
         response.json({ data: result });
@@ -471,9 +485,16 @@ export function createInventoryRouter(): Router {
             input.name,
             session,
           );
-          await audit(request, 'INVENTORY_MODEL_UPDATED', 'INVENTORY_MODEL', updated.id, {
-            name: updated.name,
-          }, session);
+          await audit(
+            request,
+            'INVENTORY_MODEL_UPDATED',
+            'INVENTORY_MODEL',
+            updated.id,
+            {
+              name: updated.name,
+            },
+            session,
+          );
           return updated;
         });
         response.json({ data: { model } });
@@ -493,7 +514,14 @@ export function createInventoryRouter(): Router {
         const modelId = String(request.params.modelId);
         await runInventoryTransaction(async (session) => {
           await deleteInventoryModel(modelId, session);
-          await audit(request, 'INVENTORY_MODEL_DELETED', 'INVENTORY_MODEL', modelId, undefined, session);
+          await audit(
+            request,
+            'INVENTORY_MODEL_DELETED',
+            'INVENTORY_MODEL',
+            modelId,
+            undefined,
+            session,
+          );
         });
         response.status(204).send();
       } catch (error) {
@@ -704,11 +732,18 @@ export function createInventoryRouter(): Router {
         const input = CreateMaterialRequestSchema.parse(request.body);
         const material = await runInventoryTransaction(async (session) => {
           const created = await createMaterial(input, authenticated(request).userId, session);
-          await audit(request, 'MATERIAL_CREATED', 'MATERIAL', created.materialCode, {
-            trackingMode: created.trackingMode,
-            returnPolicy: created.returnPolicy,
-            initialQuantity: created.totalQuantity,
-          }, session);
+          await audit(
+            request,
+            'MATERIAL_CREATED',
+            'MATERIAL',
+            created.materialCode,
+            {
+              trackingMode: created.trackingMode,
+              returnPolicy: created.returnPolicy,
+              initialQuantity: created.totalQuantity,
+            },
+            session,
+          );
           return created;
         });
         response.status(201).json({ data: { material } });
@@ -913,14 +948,21 @@ export function createInventoryRouter(): Router {
         const input = AdjustQuantityRequestSchema.parse(request.body);
         const result = await runInventoryTransaction(async (session) => {
           const adjusted = await adjustQuantity(code, input, session);
-          await audit(request, 'MATERIAL_QUANTITY_ADJUSTED', 'MATERIAL', code, {
-            quantityDelta: input.quantityDelta,
-            reason: input.reason,
-            previousTotalQuantity: adjusted.adjustment.previousTotalQuantity,
-            previousAvailableQuantity: adjusted.adjustment.previousAvailableQuantity,
-            totalQuantity: adjusted.material.totalQuantity,
-            availableQuantity: adjusted.material.availableQuantity,
-          }, session);
+          await audit(
+            request,
+            'MATERIAL_QUANTITY_ADJUSTED',
+            'MATERIAL',
+            code,
+            {
+              quantityDelta: input.quantityDelta,
+              reason: input.reason,
+              previousTotalQuantity: adjusted.adjustment.previousTotalQuantity,
+              previousAvailableQuantity: adjusted.adjustment.previousAvailableQuantity,
+              totalQuantity: adjusted.material.totalQuantity,
+              availableQuantity: adjusted.material.availableQuantity,
+            },
+            session,
+          );
           return adjusted;
         });
         response.json({ data: result });

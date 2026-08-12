@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import type {
   AuthUser,
@@ -25,6 +33,7 @@ interface AuthContextValue {
   login: (input: LoginRequest) => Promise<AuthUser>;
   changeInitialPassword: (input: ChangeInitialPasswordRequest) => Promise<AuthUser>;
   changePassword: (input: ChangePasswordRequest) => Promise<AuthUser>;
+  acceptAuthenticatedUser: (user: AuthUser) => void;
   logout: () => Promise<void>;
   reload: () => Promise<void>;
 }
@@ -189,6 +198,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return nextUser;
   }, []);
 
+  const acceptAuthenticatedUser = useCallback((nextUser: AuthUser) => {
+    markTabAuthenticated();
+    setUser(nextUser);
+    setStatus('authenticated');
+    setError(null);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await logoutRequest();
@@ -208,10 +224,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       changeInitialPassword,
       changePassword,
+      acceptAuthenticatedUser,
       logout,
       reload,
     }),
-    [status, user, error, login, changeInitialPassword, changePassword, logout, reload],
+    [
+      status,
+      user,
+      error,
+      login,
+      changeInitialPassword,
+      changePassword,
+      acceptAuthenticatedUser,
+      logout,
+      reload,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

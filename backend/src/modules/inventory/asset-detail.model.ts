@@ -19,7 +19,7 @@ const AssetDetailSchema = new Schema<AssetDetailRecord>(
   {
     kind: {
       type: String,
-      enum: ['ASSET_TYPE', 'CONSUMABLE_TYPE', 'LOCATION', 'BLOCK', 'DEPARTMENT'],
+      enum: ['ASSET_TYPE', 'CONSUMABLE_TYPE', 'LOCATION', 'BLOCK', 'STORE', 'DEPARTMENT'],
       required: true,
       immutable: true,
     },

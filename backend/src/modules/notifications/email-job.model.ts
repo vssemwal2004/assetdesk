@@ -14,6 +14,7 @@ export type EmailTemplateKey =
   | 'MATERIAL_RETURNED_OPERATOR'
   | 'RETURN_REMINDER_RECEIVER'
   | 'RETURN_REMINDER_OPERATOR'
+  | 'PASSWORD_RESET_OTP'
   | 'PASSWORD_CHANGED';
 
 export interface EmailJobRecord {
@@ -59,6 +60,7 @@ const EmailJobSchema = new Schema<EmailJobRecord>(
         'MATERIAL_ISSUED',
         'MATERIAL_RETURNED',
         'RETURN_REMINDER',
+        'PASSWORD_RESET_OTP',
         'PASSWORD_CHANGED',
       ],
       required: true,
@@ -90,6 +92,7 @@ const EmailJobSchema = new Schema<EmailJobRecord>(
         'MATERIAL_RETURNED_OPERATOR',
         'RETURN_REMINDER_RECEIVER',
         'RETURN_REMINDER_OPERATOR',
+        'PASSWORD_RESET_OTP',
         'PASSWORD_CHANGED',
       ],
       required: true,

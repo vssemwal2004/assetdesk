@@ -32,13 +32,16 @@ export function GatePassesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Cartridge Gate Passes"
-        description="One returnable document tracks both Gate Out and Gate In."
+        title="Gate Pass Out"
+        description="Create and manage outward Gate Passes for cartridges going to the vendor."
         actions={
           <>
             <Link className="button-primary" to="/cartridges/gate-passes/new">
               <Plus size={18} />
-              Create Gate Pass
+              Create Gate Pass Out
+            </Link>
+            <Link className="button-secondary" to="/cartridges/gate-in">
+              Gate Pass In
             </Link>
             <details className="relative" data-action-menu>
               <summary className="button-secondary cursor-pointer list-none">
@@ -59,26 +62,40 @@ export function GatePassesPage() {
       ) : query.isError ? (
         <ErrorSummary message="Gate Pass register could not be loaded." />
       ) : (
-        <div className="grid gap-3">
-          {query.data?.data.map((pass) => (
-            <Link key={pass._id} to={`/cartridges/gate-passes/${pass._id}`}>
-              <AppCard className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-extrabold text-[var(--color-primary-strong)]">
-                    {pass.gatePassNumber}
-                  </p>
-                  <p className="text-sm text-[var(--color-text-muted)]">
-                    {pass.vendorName} · {pass.quantity} cartridges · Prepared by{' '}
-                    {pass.preparedByName}
-                  </p>
+        <>
+          <AppCard className="grid gap-3 md:grid-cols-4">
+            {['Create Gate Pass', 'Confirm Gate Out', 'Record Gate In', 'Complete QC'].map(
+              (step, index) => (
+                <div
+                  className="rounded-[10px] bg-[var(--color-surface-tint)] px-3 py-2 text-sm font-bold text-[var(--color-primary-strong)]"
+                  key={step}
+                >
+                  {index + 1}. {step}
                 </div>
-                <span className="rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-bold text-[var(--color-primary)]">
-                  {pass.status.replaceAll('_', ' ')}
-                </span>
-              </AppCard>
-            </Link>
-          ))}
-        </div>
+              ),
+            )}
+          </AppCard>
+          <div className="grid gap-3">
+            {query.data?.data.map((pass) => (
+              <Link key={pass._id} to={`/cartridges/gate-passes/${pass._id}`}>
+                <AppCard className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-extrabold text-[var(--color-primary-strong)]">
+                      {pass.gatePassNumber}
+                    </p>
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                      {pass.vendorName} · {pass.quantity} cartridges · Prepared by{' '}
+                      {pass.preparedByName}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-bold text-[var(--color-primary)]">
+                    {pass.status.replaceAll('_', ' ')}
+                  </span>
+                </AppCard>
+              </Link>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -135,8 +152,8 @@ export function CreateGatePassPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Create Returnable Gate Pass"
-        description="Select eligible serialized cartridges. Quantity and Prepared By are filled automatically."
+        title="Create Gate Pass Out"
+        description="Select cartridges leaving the store for refill or vendor work. Gate In will happen against this same pass when they return."
       />
       {mutation.isError ? <ErrorSummary message={(mutation.error as Error).message} /> : null}
       <form
@@ -221,7 +238,7 @@ export function CreateGatePassPage() {
               disabled={form.serials.length === 0 || eligibleLoading}
               loading={mutation.isPending}
             >
-              Create Gate Pass
+              Create Gate Pass Out
             </Button>
           </div>
         </AppCard>
@@ -257,15 +274,36 @@ export function GatePassDetailPage() {
           .map((x) => x.trim())
           .filter(Boolean),
       ),
-    onSuccess: () => {
+    onSuccess: async () => {
       setGateInSerials('');
-      void client.invalidateQueries({ queryKey: ['cartridge-gate-pass', gatePassId] });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['cartridge-gate-pass', gatePassId] }),
+        client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
+        client.invalidateQueries({ queryKey: ['cartridges'] }),
+        client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
+      ]);
     },
   });
   if (query.isPending) return <LoadingPanel />;
   if (query.isError || !query.data)
     return <ErrorSummary message="Gate Pass could not be loaded." />;
   const p = query.data.data;
+  const gateInRecorded = new Set(
+    p.gateInEvents.flatMap((event) => event.serialNumbers.map((serial) => serial.toUpperCase())),
+  );
+  const pendingGateInSerials = p.cartridgeSerialNumbers.filter(
+    (serial) => !gateInRecorded.has(serial.toUpperCase()),
+  );
+  const selectedGateInSerials = gateInSerials
+    .split(/\r?\n|,/)
+    .map((serial) => serial.trim())
+    .filter(Boolean);
+  function toggleGateInSerial(serialNumber: string, checked: boolean) {
+    const selected = new Set(selectedGateInSerials);
+    if (checked) selected.add(serialNumber);
+    else selected.delete(serialNumber);
+    setGateInSerials(Array.from(selected).join('\n'));
+  }
   return (
     <div className="space-y-6">
       <PageHeader
@@ -305,7 +343,7 @@ export function GatePassDetailPage() {
         ) : null}
         {p.status === 'VERIFIED' ? (
           <Button loading={action.isPending} onClick={() => action.mutate('gate-out')}>
-            Confirm Gate Out
+            Confirm Gate Pass Out
           </Button>
         ) : null}
         {['DRAFT', 'AWAITING_VERIFICATION', 'VERIFIED'].includes(p.status) ? (
@@ -321,13 +359,34 @@ export function GatePassDetailPage() {
       {['GATE_OUT', 'PARTIALLY_RETURNED'].includes(p.status) ? (
         <AppCard className="space-y-3">
           <h2 className="font-extrabold">Record Gate In</h2>
-          <textarea
-            className="field-input min-h-28"
-            placeholder="Returned serial numbers, one per line"
-            value={gateInSerials}
-            onChange={(e) => setGateInSerials(e.target.value)}
-          />
-          <Button loading={gateIn.isPending} onClick={() => gateIn.mutate()}>
+          <p className="text-sm leading-6 text-[var(--color-text-muted)]">
+            Select only the cartridges physically returning from this Gate Pass.
+          </p>
+          <div className="grid max-h-72 gap-2 overflow-y-auto rounded-[8px] border border-[var(--color-border)] p-2 sm:grid-cols-2">
+            {pendingGateInSerials.map((serialNumber) => (
+              <label
+                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[8px] px-3 py-2 text-sm font-bold hover:bg-[var(--color-surface-tint)]"
+                key={serialNumber}
+              >
+                <input
+                  checked={selectedGateInSerials.includes(serialNumber)}
+                  onChange={(event) => toggleGateInSerial(serialNumber, event.target.checked)}
+                  type="checkbox"
+                />
+                {serialNumber}
+              </label>
+            ))}
+            {pendingGateInSerials.length === 0 ? (
+              <p className="px-3 py-2 text-sm font-bold text-[var(--color-success)]">
+                All Gate Out cartridges have been received.
+              </p>
+            ) : null}
+          </div>
+          <Button
+            disabled={selectedGateInSerials.length === 0}
+            loading={gateIn.isPending}
+            onClick={() => gateIn.mutate()}
+          >
             Save Gate In
           </Button>
         </AppCard>
@@ -361,6 +420,25 @@ export function GatePassPrintPage() {
         </Button>
       </div>
       <div className="border-2 border-black p-5">
+        <div className="mb-6 flex items-start justify-between gap-4 border-b-2 border-black pb-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <img
+              alt="Graphic Era University crest"
+              className="h-14 w-14 shrink-0 object-contain"
+              src="/graphic-era-mark.png"
+            />
+            <div className="min-w-0">
+              <p className="text-xl font-black leading-tight">AssetDesk</p>
+              <p className="mt-1 max-w-[220px] text-[11px] font-extrabold uppercase leading-snug">
+                Graphic Era Asset Management System
+              </p>
+            </div>
+          </div>
+          <div className="text-right text-xs font-bold leading-relaxed">
+            <p>Graphic Era Deemed to be University</p>
+            <p>Dehradun</p>
+          </div>
+        </div>
         <h1 className="text-center text-2xl font-extrabold">
           Toner Cartridge Refilling
           <br />

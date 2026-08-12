@@ -249,12 +249,8 @@ export function SearchForm({
       <label className="sr-only" htmlFor={id}>
         {label}
       </label>
-      <div className="relative">
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
-          size={18}
-        />
+      <div className="search-shell">
+        <Search aria-hidden="true" className="search-shell-icon" size={18} />
         <input
           aria-describedby={error ? errorId : undefined}
           aria-invalid={Boolean(error)}

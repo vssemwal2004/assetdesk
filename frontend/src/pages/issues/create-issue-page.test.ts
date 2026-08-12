@@ -4,13 +4,15 @@ import type { Material } from '@assetdesk/contracts';
 
 import { firstStockIssue, isIssueableInventoryMaterial } from './create-issue-page';
 
+const storeNames = ['Param Centre Store', 'Aryabhatt Store'];
+
 const assetMaterial: Material = {
   id: 'material-id',
   materialCode: 'GEU-MAT-000001',
   name: 'Dell Latitude',
   category: 'Laptops',
   typeModelName: null,
-  location: null,
+  location: 'Param Centre Store',
   block: null,
   department: null,
   vendorName: null,
@@ -31,16 +33,44 @@ const assetMaterial: Material = {
 describe('IT Asset issue selection', () => {
   it('allows outdated materials but excludes scrap materials from issue selection', () => {
     expect(
-      isIssueableInventoryMaterial({
-        ...assetMaterial,
-        status: 'NOT_IN_USE',
-      }),
+      isIssueableInventoryMaterial(
+        {
+          ...assetMaterial,
+          status: 'NOT_IN_USE',
+        },
+        'ALL',
+        storeNames,
+      ),
     ).toBe(true);
     expect(
-      isIssueableInventoryMaterial({
-        ...assetMaterial,
-        status: 'SCRAP',
-      }),
+      isIssueableInventoryMaterial(
+        {
+          ...assetMaterial,
+          status: 'SCRAP',
+        },
+        'ALL',
+        storeNames,
+      ),
+    ).toBe(false);
+    expect(
+      isIssueableInventoryMaterial(
+        {
+          ...assetMaterial,
+          location: 'Chandra Shekhar Azad Hostel',
+        },
+        'ALL',
+        storeNames,
+      ),
+    ).toBe(false);
+    expect(
+      isIssueableInventoryMaterial(
+        {
+          ...assetMaterial,
+          availableQuantity: 0,
+        },
+        'ALL',
+        storeNames,
+      ),
     ).toBe(false);
   });
 

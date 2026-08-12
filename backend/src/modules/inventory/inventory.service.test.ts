@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AppError } from '../../middleware/error-handler.js';
 import { buildMaterialIdentity, materialDisplayName } from './inventory-identity.js';
@@ -8,11 +8,27 @@ import {
   buildAssetUnitListFilter,
   buildAssetUnitMaterialFilter,
   buildMaterialListFilter,
+  buildMaterialListFilterAsync,
   calculateQuantityAdjustment,
   manualAvailabilityDelta,
   translateAssetUnitDuplicateError,
   translateMaterialDuplicateError,
 } from './inventory.service.js';
+
+vi.mock('./asset-detail.model.js', () => ({
+  AssetDetailModel: {
+    find: vi.fn(() => ({
+      select: vi.fn(() => ({
+        lean: vi.fn(() =>
+          Promise.resolve([{ name: 'Param Centre Store' }, { name: 'Aryabhatt Store' }]),
+        ),
+      })),
+      sort: vi.fn(() => Promise.resolve([])),
+    })),
+    findOne: vi.fn(),
+    exists: vi.fn(),
+  },
+}));
 
 function expectCode(run: () => unknown, code: string): void {
   try {
@@ -99,6 +115,21 @@ describe('inventory access filters', () => {
 
     expect(workerFilter.status).toEqual({ $in: ['ACTIVE', 'NOT_IN_USE'] });
     expect(adminFilter.status).toEqual({ $in: ['ACTIVE', 'NOT_IN_USE'] });
+    expect(workerFilter.availableQuantity).toEqual({ $gt: 0 });
+  });
+
+  it('keeps issue picker location locked to configured store stock', async () => {
+    const filter = await buildMaterialListFilterAsync({
+      page: 1,
+      pageSize: 20,
+      role: 'ADMIN',
+      issueable: true,
+      location: 'Aryabhatt Store',
+    });
+
+    expect(filter.status).toEqual({ $in: ['ACTIVE', 'NOT_IN_USE'] });
+    expect(filter.availableQuantity).toEqual({ $gt: 0 });
+    expect(filter.$and).toEqual([{ $or: [{ location: /^Aryabhatt Store$/i }] }]);
   });
 
   it('forces Worker unit reads to AVAILABLE while Admin filters remain selectable', () => {
@@ -170,9 +201,9 @@ describe('material identity', () => {
   });
 
   it('preserves the legacy plain identity format when it fits the database field', () => {
-    expect(
-      buildMaterialIdentity('QUANTITY', 'Paper A4', 'Paper', 'Store', 'A', undefined),
-    ).toBe('QUANTITY|PAPERA4|PAPER|STORE|A');
+    expect(buildMaterialIdentity('QUANTITY', 'Paper A4', 'Paper', 'Store', 'A', undefined)).toBe(
+      'QUANTITY|PAPERA4|PAPER|STORE|A',
+    );
   });
 });
 

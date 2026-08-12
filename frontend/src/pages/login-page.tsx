@@ -1,10 +1,17 @@
-import { Building2, LockKeyhole, LogIn, ShieldCheck } from 'lucide-react';
+import { Building2, KeyRound, LockKeyhole, LogIn, Mail, ShieldCheck } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 import { useAuth } from '../auth/auth-context';
 import { Button, ErrorSummary, PasswordField, TextField } from '../components/ui';
 import { isApiError } from '../lib/api-client';
+import {
+  completeForgotPassword,
+  startForgotPassword,
+  verifyForgotPasswordOtp,
+} from '../lib/auth-api';
+
+type ResetStep = 'email' | 'otp' | 'password' | 'done';
 
 export function LoginPage() {
   const auth = useAuth();
@@ -15,6 +22,16 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetStep, setResetStep] = useState<ResetStep>('email');
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetId, setResetId] = useState('');
+  const [resetOtp, setResetOtp] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetExpiresAt, setResetExpiresAt] = useState('');
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,6 +61,93 @@ export function LoginPage() {
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function closeReset() {
+    setResetOpen(false);
+    setResetStep('email');
+    setResetEmail('');
+    setResetId('');
+    setResetOtp('');
+    setResetPassword('');
+    setResetConfirmPassword('');
+    setResetError(null);
+    setResetExpiresAt('');
+  }
+
+  async function requestResetOtp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setResetError(null);
+    if (!resetEmail.trim()) {
+      setResetError('Enter your registered Employee or Admin email.');
+      return;
+    }
+    setResetSubmitting(true);
+    try {
+      const response = await startForgotPassword({ email: resetEmail.trim() });
+      setResetId(response.resetId);
+      setResetExpiresAt(response.expiresAt);
+      setResetStep('otp');
+    } catch (requestError) {
+      setResetError(
+        isApiError(requestError)
+          ? requestError.message
+          : 'The verification code could not be sent.',
+      );
+    } finally {
+      setResetSubmitting(false);
+    }
+  }
+
+  async function verifyResetOtp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setResetError(null);
+    if (!/^[A-Z0-9]{5}$/.test(resetOtp.trim().toUpperCase())) {
+      setResetError('Enter the 5-character OTP sent to your email.');
+      return;
+    }
+    setResetSubmitting(true);
+    try {
+      await verifyForgotPasswordOtp({ resetId, otp: resetOtp.trim().toUpperCase() });
+      setResetStep('password');
+    } catch (requestError) {
+      setResetError(
+        isApiError(requestError) ? requestError.message : 'The OTP could not be verified.',
+      );
+    } finally {
+      setResetSubmitting(false);
+    }
+  }
+
+  async function finishPasswordReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setResetError(null);
+    if (resetPassword !== resetConfirmPassword) {
+      setResetError('New password and confirm password must match.');
+      return;
+    }
+    setResetSubmitting(true);
+    try {
+      const user = await completeForgotPassword({
+        resetId,
+        otp: resetOtp.trim().toUpperCase(),
+        newPassword: resetPassword,
+      });
+      auth.acceptAuthenticatedUser(user);
+      setResetStep('done');
+      window.setTimeout(() => {
+        closeReset();
+        navigate(user.mustChangePassword ? '/change-initial-password' : '/dashboard', {
+          replace: true,
+        });
+      }, 450);
+    } catch (requestError) {
+      setResetError(
+        isApiError(requestError) ? requestError.message : 'The password could not be changed.',
+      );
+    } finally {
+      setResetSubmitting(false);
     }
   }
 
@@ -131,6 +235,16 @@ export function LoginPage() {
                 onChange={(event) => setPassword(event.target.value)}
                 value={password}
               />
+              <button
+                className="crm-auth-forgot-link"
+                onClick={() => {
+                  setResetOpen(true);
+                  setResetEmail(identifier.includes('@') ? identifier : '');
+                }}
+                type="button"
+              >
+                Forgot password?
+              </button>
               <Button className="crm-auth-submit w-full" loading={submitting} type="submit">
                 {!submitting ? <LogIn aria-hidden="true" size={18} /> : null}
                 {submitting ? 'Signing in...' : 'Sign in'}
@@ -155,6 +269,176 @@ export function LoginPage() {
           <span>Graphic Era Asset Management System</span>
         </footer>
       </section>
+      {resetOpen ? (
+        <PasswordResetDialog
+          confirmPassword={resetConfirmPassword}
+          email={resetEmail}
+          error={resetError}
+          expiresAt={resetExpiresAt}
+          newPassword={resetPassword}
+          onClose={closeReset}
+          onConfirmPasswordChange={setResetConfirmPassword}
+          onEmailChange={setResetEmail}
+          onNewPasswordChange={setResetPassword}
+          onOtpChange={(value) =>
+            setResetOtp(
+              value
+                .toUpperCase()
+                .replace(/[^A-Z0-9]/g, '')
+                .slice(0, 5),
+            )
+          }
+          onRequestOtp={requestResetOtp}
+          onResetPassword={finishPasswordReset}
+          onVerifyOtp={verifyResetOtp}
+          otp={resetOtp}
+          step={resetStep}
+          submitting={resetSubmitting}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function PasswordResetDialog({
+  step,
+  email,
+  otp,
+  newPassword,
+  confirmPassword,
+  expiresAt,
+  error,
+  submitting,
+  onEmailChange,
+  onOtpChange,
+  onNewPasswordChange,
+  onConfirmPasswordChange,
+  onRequestOtp,
+  onVerifyOtp,
+  onResetPassword,
+  onClose,
+}: {
+  step: ResetStep;
+  email: string;
+  otp: string;
+  newPassword: string;
+  confirmPassword: string;
+  expiresAt: string;
+  error: string | null;
+  submitting: boolean;
+  onEmailChange: (value: string) => void;
+  onOtpChange: (value: string) => void;
+  onNewPasswordChange: (value: string) => void;
+  onConfirmPasswordChange: (value: string) => void;
+  onRequestOtp: (event: FormEvent<HTMLFormElement>) => void;
+  onVerifyOtp: (event: FormEvent<HTMLFormElement>) => void;
+  onResetPassword: (event: FormEvent<HTMLFormElement>) => void;
+  onClose: () => void;
+}) {
+  const expiry = expiresAt
+    ? new Intl.DateTimeFormat('en-IN', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'Asia/Kolkata',
+      }).format(new Date(expiresAt))
+    : '';
+
+  return (
+    <div className="crm-reset-backdrop" role="presentation">
+      <section
+        aria-labelledby="reset-title"
+        aria-modal="true"
+        className="crm-reset-dialog"
+        role="dialog"
+      >
+        <header className="crm-reset-header">
+          <span className="crm-reset-icon">
+            {step === 'email' ? (
+              <Mail aria-hidden="true" size={22} />
+            ) : (
+              <KeyRound aria-hidden="true" size={22} />
+            )}
+          </span>
+          <div>
+            <p className="crm-reset-kicker">Account recovery</p>
+            <h2 id="reset-title">Reset your password</h2>
+          </div>
+          <button
+            aria-label="Close password reset"
+            className="crm-reset-close"
+            onClick={onClose}
+            type="button"
+          >
+            x
+          </button>
+        </header>
+
+        {error ? <ErrorSummary message={error} title="Recovery failed" /> : null}
+
+        {step === 'email' ? (
+          <form className="crm-reset-form" onSubmit={onRequestOtp}>
+            <TextField
+              autoComplete="email"
+              label="Registered email"
+              onChange={(event) => onEmailChange(event.target.value)}
+              placeholder="name@geu.ac.in"
+              type="email"
+              value={email}
+            />
+            <Button loading={submitting} type="submit">
+              Send OTP
+            </Button>
+          </form>
+        ) : null}
+
+        {step === 'otp' ? (
+          <form className="crm-reset-form" onSubmit={onVerifyOtp}>
+            <p className="crm-reset-copy">
+              Enter the 5-character alphanumeric OTP sent to <strong>{email}</strong>.
+              {expiry ? <span> It expires at {expiry}.</span> : null}
+            </p>
+            <TextField
+              autoComplete="one-time-code"
+              className="crm-reset-otp"
+              label="OTP"
+              maxLength={5}
+              onChange={(event) => onOtpChange(event.target.value)}
+              placeholder="A7K2P"
+              value={otp}
+            />
+            <Button loading={submitting} type="submit">
+              Verify OTP
+            </Button>
+          </form>
+        ) : null}
+
+        {step === 'password' ? (
+          <form className="crm-reset-form" onSubmit={onResetPassword}>
+            <PasswordField
+              autoComplete="new-password"
+              label="New password"
+              onChange={(event) => onNewPasswordChange(event.target.value)}
+              value={newPassword}
+            />
+            <PasswordField
+              autoComplete="new-password"
+              label="Confirm password"
+              onChange={(event) => onConfirmPasswordChange(event.target.value)}
+              value={confirmPassword}
+            />
+            <Button loading={submitting} type="submit">
+              Change password
+            </Button>
+          </form>
+        ) : null}
+
+        {step === 'done' ? (
+          <div className="crm-reset-done">
+            <ShieldCheck aria-hidden="true" size={28} />
+            <p>Password changed. Opening your account...</p>
+          </div>
+        ) : null}
+      </section>
+    </div>
   );
 }

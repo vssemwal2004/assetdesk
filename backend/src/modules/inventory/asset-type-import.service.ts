@@ -76,7 +76,8 @@ function parseAssetTypeRows(
   kindFilter?: AssetDetailKind,
 ): Array<{ rowNumber: number; kind: AssetDetailKind; name: string }> {
   const headerIndex = table.findIndex(hasValues);
-  if (headerIndex < 0) throw new AppError(400, 'ASSET_TYPE_IMPORT_EMPTY', 'The import file is empty.');
+  if (headerIndex < 0)
+    throw new AppError(400, 'ASSET_TYPE_IMPORT_EMPTY', 'The import file is empty.');
   const headings = table[headerIndex] ?? [];
   const assetTypeIndex = headings.findIndex((heading) =>
     ['asset type', 'assettype', 'it asset', 'itasset'].includes(normalizedHeader(heading)),
@@ -109,6 +110,9 @@ function parseAssetTypeRows(
   const blockIndex = headings.findIndex((heading) =>
     ['block', 'blocks'].includes(normalizedHeader(heading)),
   );
+  const storeIndex = headings.findIndex((heading) =>
+    ['store', 'stores', 'storelocation', 'storelocations'].includes(normalizedHeader(heading)),
+  );
   const departmentIndex = headings.findIndex((heading) =>
     ['department', 'departments', 'dept'].includes(normalizedHeader(heading)),
   );
@@ -117,6 +121,7 @@ function parseAssetTypeRows(
     CONSUMABLE_TYPE: consumableTypeIndex,
     LOCATION: locationIndex,
     BLOCK: blockIndex,
+    STORE: storeIndex,
     DEPARTMENT: departmentIndex,
   };
   if (kindFilter && columnByKind[kindFilter] < 0) {
@@ -132,12 +137,13 @@ function parseAssetTypeRows(
     consumableTypeIndex < 0 &&
     locationIndex < 0 &&
     blockIndex < 0 &&
+    storeIndex < 0 &&
     departmentIndex < 0
   ) {
     throw new AppError(
       400,
       'ASSET_TYPE_IMPORT_COLUMNS_MISSING',
-      'Add at least one column: IT Asset, IT Consumable, Location, Block, or Department.',
+      'Add at least one column: IT Asset, IT Consumable, Location, Block, Store, or Department.',
     );
   }
   const rows = table.slice(headerIndex + 1).flatMap((row, index) => {
@@ -146,19 +152,31 @@ function parseAssetTypeRows(
     if (kindFilter) {
       entries.push({ rowNumber, kind: kindFilter, name: text(row[columnByKind[kindFilter]]) });
     } else {
-      if (assetTypeIndex >= 0) entries.push({ rowNumber, kind: 'ASSET_TYPE', name: text(row[assetTypeIndex]) });
+      if (assetTypeIndex >= 0)
+        entries.push({ rowNumber, kind: 'ASSET_TYPE', name: text(row[assetTypeIndex]) });
       if (consumableTypeIndex >= 0)
         entries.push({ rowNumber, kind: 'CONSUMABLE_TYPE', name: text(row[consumableTypeIndex]) });
-      if (locationIndex >= 0) entries.push({ rowNumber, kind: 'LOCATION', name: text(row[locationIndex]) });
+      if (locationIndex >= 0)
+        entries.push({ rowNumber, kind: 'LOCATION', name: text(row[locationIndex]) });
       if (blockIndex >= 0) entries.push({ rowNumber, kind: 'BLOCK', name: text(row[blockIndex]) });
-      if (departmentIndex >= 0) entries.push({ rowNumber, kind: 'DEPARTMENT', name: text(row[departmentIndex]) });
+      if (storeIndex >= 0) entries.push({ rowNumber, kind: 'STORE', name: text(row[storeIndex]) });
+      if (departmentIndex >= 0)
+        entries.push({ rowNumber, kind: 'DEPARTMENT', name: text(row[departmentIndex]) });
     }
     return entries.filter((entry) => entry.name.length > 0);
   });
   if (!rows.length)
-    throw new AppError(400, 'ASSET_TYPE_IMPORT_NO_DATA', 'The import file contains no asset details.');
+    throw new AppError(
+      400,
+      'ASSET_TYPE_IMPORT_NO_DATA',
+      'The import file contains no asset details.',
+    );
   if (rows.length > MAX_ROWS)
-    throw new AppError(413, 'ASSET_TYPE_IMPORT_TOO_MANY_ROWS', `Upload no more than ${MAX_ROWS} rows.`);
+    throw new AppError(
+      413,
+      'ASSET_TYPE_IMPORT_TOO_MANY_ROWS',
+      `Upload no more than ${MAX_ROWS} rows.`,
+    );
   return rows;
 }
 
@@ -167,6 +185,7 @@ function kindLabel(kind: AssetDetailKind): string {
   if (kind === 'CONSUMABLE_TYPE') return 'IT Consumable';
   if (kind === 'LOCATION') return 'Location';
   if (kind === 'BLOCK') return 'Block';
+  if (kind === 'STORE') return 'Store';
   return 'Department';
 }
 
@@ -223,7 +242,13 @@ export async function previewAssetTypeImport(
         });
         continue;
       }
-      publicRows.push({ rowNumber: row.rowNumber, kind: row.kind, name: row.name, valid: true, errors: [] });
+      publicRows.push({
+        rowNumber: row.rowNumber,
+        kind: row.kind,
+        name: row.name,
+        valid: true,
+        errors: [],
+      });
       inputs.push({ kind: row.kind, name: row.name });
     } catch (error) {
       publicRows.push({
@@ -295,10 +320,13 @@ export async function commitAssetTypeImport(
         continue;
       }
       created.push(await createAssetDetail(kind, name, createdByUserId));
-      if (kind === 'ASSET_TYPE' || kind === 'CONSUMABLE_TYPE') await createAssetType(name, createdByUserId);
+      if (kind === 'ASSET_TYPE' || kind === 'CONSUMABLE_TYPE')
+        await createAssetType(name, createdByUserId);
     } catch (error) {
       const name = input.name;
-      const matchingRow = record.rows.find((row) => normalizeDetailName(row.name) === normalizeDetailName(name));
+      const matchingRow = record.rows.find(
+        (row) => normalizeDetailName(row.name) === normalizeDetailName(name),
+      );
       failed.push({
         rowNumber: matchingRow?.rowNumber ?? 1,
         name,

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation } from 'react-router';
 import { MoreVertical, Plus, Printer, Send, RotateCcw, Eye } from 'lucide-react';
@@ -29,6 +29,11 @@ export function CartridgesPage() {
   const location = useLocation();
   const [search, setSearch] = useState(new URLSearchParams(location.search).get('search') ?? '');
   const [status, setStatus] = useState(new URLSearchParams(location.search).get('status') ?? '');
+  useEffect(() => {
+    const next = new URLSearchParams(location.search);
+    setSearch(next.get('search') ?? '');
+    setStatus(next.get('status') ?? '');
+  }, [location.search]);
   const query = useQuery({
     queryKey: ['cartridges', { search, status }],
     queryFn: () => getCartridges({ search, status }),

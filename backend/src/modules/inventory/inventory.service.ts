@@ -156,6 +156,7 @@ function detailKindLabel(kind: AssetDetailKind): string {
   if (kind === 'CONSUMABLE_TYPE') return 'IT consumable type';
   if (kind === 'LOCATION') return 'Location';
   if (kind === 'BLOCK') return 'Block';
+  if (kind === 'STORE') return 'Store';
   return 'Department';
 }
 
@@ -219,6 +220,33 @@ export async function listAssetDetails(kind?: AssetDetailKind): Promise<AssetDet
   return { assetDetails: records.map((record) => toAssetDetail(record)) };
 }
 
+async function issueableStoreNames(): Promise<string[]> {
+  const stores = await AssetDetailModel.find({ kind: 'STORE' }).select({ name: 1 }).lean();
+  return stores.map((store) => store.name).filter(Boolean);
+}
+
+function storeMatches(
+  storeNames: string[],
+  selectedStore?: string,
+): Array<Record<string, unknown>> {
+  const names =
+    selectedStore &&
+    storeNames.some((store) => normalizeLookupValue(store) === normalizeLookupValue(selectedStore))
+      ? [selectedStore]
+      : storeNames;
+  return names.flatMap((name): Array<Record<string, unknown>> => {
+    const [location, block] = name.split('/').map((part) => part.trim());
+    const exactLocation = exactCaseInsensitive(location ?? name);
+    if (location && block) {
+      return [
+        { location: exactLocation, block: exactCaseInsensitive(block) },
+        { locationBlock: exactCaseInsensitive(name) },
+      ];
+    }
+    return [{ location: exactCaseInsensitive(name) }];
+  });
+}
+
 export async function createAssetDetail(
   kind: AssetDetailKind,
   name: string,
@@ -256,7 +284,7 @@ export async function deleteAssetDetail(assetDetailId: string): Promise<AssetDet
     detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE'
       ? await MaterialModel.exists({ category: exactCaseInsensitive(detail.name) })
       : await MaterialModel.exists({
-          [detail.kind === 'LOCATION'
+          [detail.kind === 'LOCATION' || detail.kind === 'STORE'
             ? 'location'
             : detail.kind === 'BLOCK'
               ? 'block'
@@ -297,7 +325,7 @@ export async function updateAssetDetail(assetDetailId: string, name: string): Pr
     detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE'
       ? await MaterialModel.exists({ category: exactCaseInsensitive(previousName) })
       : await MaterialModel.exists({
-          [detail.kind === 'LOCATION'
+          [detail.kind === 'LOCATION' || detail.kind === 'STORE'
             ? 'location'
             : detail.kind === 'BLOCK'
               ? 'block'
@@ -333,8 +361,9 @@ async function savedDetailName(
     const trackingMode = kind === 'ASSET_TYPE' ? 'SERIALIZED' : 'QUANTITY';
     const registeredCategory = await reconcileInventoryCategory(value, trackingMode, session);
     if (registeredCategory) return registeredCategory;
-    const assetType = await AssetTypeModel.findOne({ normalizedName: normalizeAssetType(value) })
-      .session(session ?? null);
+    const assetType = await AssetTypeModel.findOne({
+      normalizedName: normalizeAssetType(value),
+    }).session(session ?? null);
     return assetType?.name ?? null;
   }
   return null;
@@ -444,6 +473,9 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
   } else if (input.issueable) {
     filter.status = { $in: ['ACTIVE', 'NOT_IN_USE'] };
   } else if (input.status) filter.status = input.status;
+  if (input.issueable) {
+    filter.availableQuantity = { $gt: 0 };
+  }
   if (input.role === 'WORKER' && input.dataScope !== 'ALL' && input.actorUserId) {
     filter.createdBy = objectId(input.actorUserId);
   }
@@ -463,7 +495,7 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
     filter.$expr = { $eq: ['$issuedQuantity', '$totalQuantity'] };
   }
   if (input.category) filter.category = exactCaseInsensitive(input.category);
-  if (input.location) filter.location = exactCaseInsensitive(input.location);
+  if (input.location && !input.issueable) filter.location = exactCaseInsensitive(input.location);
   if (input.block) filter.block = exactCaseInsensitive(input.block);
   if (input.department) filter.department = exactCaseInsensitive(input.department);
   if (input.vendorName) filter.vendorName = exactCaseInsensitive(input.vendorName);
@@ -487,6 +519,20 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
       { department: search },
       { vendorName: search },
       { description: search },
+    ];
+  }
+  return filter;
+}
+
+export async function buildMaterialListFilterAsync(
+  input: MaterialListInput,
+): Promise<Record<string, unknown>> {
+  const filter = buildMaterialListFilter(input);
+  if (input.issueable) {
+    const stores = storeMatches(await issueableStoreNames(), input.location);
+    filter.$and = [
+      ...((filter.$and as Record<string, unknown>[] | undefined) ?? []),
+      { $or: stores },
     ];
   }
   return filter;
@@ -657,7 +703,7 @@ export async function createMaterial(
       await createdMaterial.save(session ? { session } : undefined);
       await createAssetType(category, createdByUserId, session);
 
-    if (input.trackingMode === 'SERIALIZED') {
+      if (input.trackingMode === 'SERIALIZED') {
         const material = createdMaterial;
         const unitDocuments = input.serialNumbers.map((serialNumber, index) => {
           const assetTag = assetTags[index];
@@ -734,7 +780,7 @@ async function requireRegisteredInventoryModel(
 }
 
 export async function listMaterials(input: MaterialListInput): Promise<MaterialListResult> {
-  const filter = buildMaterialListFilter(input);
+  const filter = await buildMaterialListFilterAsync(input);
 
   const skip = (input.page - 1) * input.pageSize;
   const [records, total] = await Promise.all([
@@ -757,7 +803,7 @@ function csvCell(value: string | number | null | undefined): string {
 }
 
 export async function exportMaterialsCsv(input: MaterialExportInput): Promise<string> {
-  const filter = buildMaterialListFilter({ ...input, page: 1, pageSize: 1 });
+  const filter = await buildMaterialListFilterAsync({ ...input, page: 1, pageSize: 1 });
   const records = await MaterialModel.find(filter).sort({ createdAt: -1, _id: -1 }).limit(10_000);
   const headers = [
     'Inventory Code',

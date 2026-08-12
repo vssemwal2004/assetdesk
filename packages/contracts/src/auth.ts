@@ -44,6 +44,48 @@ export const ChangePasswordRequestSchema = z
   })
   .strict();
 
+export const ForgotPasswordStartRequestSchema = z
+  .object({
+    email: z.string().trim().email().max(254),
+  })
+  .strict();
+
+export const ForgotPasswordVerifyRequestSchema = z
+  .object({
+    resetId: z.string().min(12).max(128),
+    otp: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9]{5}$/, 'Enter the 5-character OTP.'),
+  })
+  .strict();
+
+export const ForgotPasswordCompleteRequestSchema = z
+  .object({
+    resetId: z.string().min(12).max(128),
+    otp: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^[A-Z0-9]{5}$/, 'Enter the 5-character OTP.'),
+    newPassword: PasswordSchema,
+  })
+  .strict();
+
+export const ForgotPasswordStartResponseSchema = z.object({
+  data: z.object({
+    resetId: z.string().min(12),
+    expiresAt: z.string().datetime(),
+  }),
+});
+
+export const ForgotPasswordVerifyResponseSchema = z.object({
+  data: z.object({
+    verified: z.boolean(),
+  }),
+});
+
 export const AuthUserSchema = z.object({
   id: z.string().min(1),
   workerId: WorkerIdSchema,
@@ -74,6 +116,11 @@ export const MeResponseSchema = z.object({
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 export type ChangeInitialPasswordRequest = z.infer<typeof ChangeInitialPasswordRequestSchema>;
 export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequestSchema>;
+export type ForgotPasswordStartRequest = z.infer<typeof ForgotPasswordStartRequestSchema>;
+export type ForgotPasswordVerifyRequest = z.infer<typeof ForgotPasswordVerifyRequestSchema>;
+export type ForgotPasswordCompleteRequest = z.infer<typeof ForgotPasswordCompleteRequestSchema>;
+export type ForgotPasswordStartResponse = z.infer<typeof ForgotPasswordStartResponseSchema>;
+export type ForgotPasswordVerifyResponse = z.infer<typeof ForgotPasswordVerifyResponseSchema>;
 export type AuthUser = z.infer<typeof AuthUserSchema>;
 export type AuthResponse = z.infer<typeof AuthResponseSchema>;
 export type MeResponse = z.infer<typeof MeResponseSchema>;

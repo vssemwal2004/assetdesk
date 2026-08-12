@@ -63,6 +63,7 @@ const detailLabels: Record<AssetDetailKind, string> = {
   CONSUMABLE_TYPE: 'IT Consumable',
   LOCATION: 'Location',
   BLOCK: 'Block',
+  STORE: 'Store',
   DEPARTMENT: 'Department',
 };
 
@@ -71,6 +72,7 @@ const detailDescriptions: Record<AssetDetailKind, string> = {
   CONSUMABLE_TYPE: 'A quantity-based category such as Cable, Cartridge or Connector.',
   LOCATION: 'A reusable physical site or room used when recording inventory.',
   BLOCK: 'A building or campus block used to group locations.',
+  STORE: 'A controlled inventory store that can issue available stock.',
   DEPARTMENT: 'An organizational department that owns or uses inventory.',
 };
 
@@ -79,6 +81,7 @@ const detailPlaceholders: Record<AssetDetailKind, string> = {
   CONSUMABLE_TYPE: 'Example: Printer cartridges',
   LOCATION: 'Example: Computer Centre',
   BLOCK: 'Example: A Block',
+  STORE: 'Example: Param Centre Store',
   DEPARTMENT: 'Example: IT Department',
 };
 
@@ -99,6 +102,10 @@ const detailTemplates: Record<AssetDetailKind, { fileName: string; csv: string }
     fileName: 'assetdesk-blocks-template.csv',
     csv: 'Block\r\nA Block\r\nB Block\r\nC Block\r\n',
   },
+  STORE: {
+    fileName: 'assetdesk-stores-template.csv',
+    csv: 'Store\r\nParam Centre Store\r\nAryabhatt Store\r\n',
+  },
   DEPARTMENT: {
     fileName: 'assetdesk-departments-template.csv',
     csv: 'Department\r\nComputer Centre\r\nIT Department\r\nElectrical Department\r\n',
@@ -108,6 +115,7 @@ const detailTemplates: Record<AssetDetailKind, { fileName: string; csv: string }
 function detailLabel(value: string | undefined): string {
   return value === 'LOCATION' ||
     value === 'BLOCK' ||
+    value === 'STORE' ||
     value === 'ASSET_TYPE' ||
     value === 'CONSUMABLE_TYPE' ||
     value === 'DEPARTMENT'
@@ -127,6 +135,8 @@ export function AssetTypePage() {
   const [kind, setKind] = useState<AssetDetailKind>('ASSET_TYPE');
   const [bulkKind, setBulkKind] = useState<AssetDetailKind>('ASSET_TYPE');
   const [name, setName] = useState('');
+  const [storeLocation, setStoreLocation] = useState('');
+  const [storeBlock, setStoreBlock] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageIsSuccess, setMessageIsSuccess] = useState(false);
@@ -170,6 +180,14 @@ export function AssetTypePage() {
         ),
     [query.data, savedKind, savedSearch],
   );
+  const savedLocations = useMemo(
+    () => (query.data ?? []).filter((detail) => detail.kind === 'LOCATION'),
+    [query.data],
+  );
+  const savedBlocks = useMemo(
+    () => (query.data ?? []).filter((detail) => detail.kind === 'BLOCK'),
+    [query.data],
+  );
   const directoryPageSize = 60;
   const directoryPages = Math.max(1, Math.ceil(filteredDetails.length / directoryPageSize));
   const effectiveDirectoryPage = Math.min(directoryPage, directoryPages);
@@ -184,7 +202,7 @@ export function AssetTypePage() {
       assets: details.filter((detail) => detail.kind === 'ASSET_TYPE').length,
       consumables: details.filter((detail) => detail.kind === 'CONSUMABLE_TYPE').length,
       references: details.filter((detail) =>
-        ['LOCATION', 'BLOCK', 'DEPARTMENT'].includes(detail.kind),
+        ['LOCATION', 'BLOCK', 'STORE', 'DEPARTMENT'].includes(detail.kind),
       ).length,
       models: details.reduce((count, detail) => count + (detail.models?.length ?? 0), 0),
     };
@@ -275,6 +293,8 @@ export function AssetTypePage() {
       if (detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE')
         await createAssetType(detail.name);
       setName('');
+      setStoreLocation('');
+      setStoreBlock('');
       setMessageIsSuccess(true);
       setMessage(`${detail.name} saved as ${detailLabels[detail.kind]}.`);
       await Promise.all([
@@ -362,8 +382,12 @@ export function AssetTypePage() {
     setMessageIsSuccess(false);
     setResult(null);
     setPreview(null);
-    const trimmed = name.trim();
+    const trimmed =
+      kind === 'STORE' ? [storeLocation, storeBlock].filter(Boolean).join(' / ') : name.trim();
     if (trimmed.length < 1) return setMessage('Enter a name.');
+    if (kind === 'STORE' && (!storeLocation || !storeBlock)) {
+      return setMessage('Choose a location and block for the store.');
+    }
     createMutation.mutate({ detailKind: kind, detailName: trimmed });
   }
 
@@ -877,27 +901,70 @@ export function AssetTypePage() {
                     <span className="field-label">What are you adding?</span>
                     <select
                       className="field-input"
-                      onChange={(event) => setKind(event.target.value as AssetDetailKind)}
+                      onChange={(event) => {
+                        setKind(event.target.value as AssetDetailKind);
+                        setName('');
+                        setStoreLocation('');
+                        setStoreBlock('');
+                      }}
                       value={kind}
                     >
                       <option value="ASSET_TYPE">IT Asset</option>
                       <option value="CONSUMABLE_TYPE">IT Consumable</option>
                       <option value="LOCATION">Location</option>
                       <option value="BLOCK">Block</option>
+                      <option value="STORE">Store</option>
                       <option value="DEPARTMENT">Department</option>
                     </select>
                     <span className="block text-xs font-medium leading-5 text-[var(--color-text-muted)]">
                       {detailDescriptions[kind]}
                     </span>
                   </label>
-                  <TextField
-                    label="Name"
-                    maxLength={120}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder={detailPlaceholders[kind]}
-                    required
-                    value={name}
-                  />
+                  {kind === 'STORE' ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="block space-y-1.5">
+                        <span className="field-label">Store location</span>
+                        <select
+                          className="field-input"
+                          onChange={(event) => setStoreLocation(event.target.value)}
+                          required
+                          value={storeLocation}
+                        >
+                          <option value="">Choose location</option>
+                          {savedLocations.map((location) => (
+                            <option key={location.id} value={location.name}>
+                              {location.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block space-y-1.5">
+                        <span className="field-label">Store block</span>
+                        <select
+                          className="field-input"
+                          onChange={(event) => setStoreBlock(event.target.value)}
+                          required
+                          value={storeBlock}
+                        >
+                          <option value="">Choose block</option>
+                          {savedBlocks.map((block) => (
+                            <option key={block.id} value={block.name}>
+                              {block.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  ) : (
+                    <TextField
+                      label="Name"
+                      maxLength={120}
+                      onChange={(event) => setName(event.target.value)}
+                      placeholder={detailPlaceholders[kind]}
+                      required
+                      value={name}
+                    />
+                  )}
                 </div>
                 <div className="mt-6 flex items-center justify-between gap-4 border-t border-[var(--color-border)] pt-5">
                   <p className="hidden text-sm text-[var(--color-text-muted)] sm:block">
@@ -928,6 +995,7 @@ export function AssetTypePage() {
                     <option value="CONSUMABLE_TYPE">IT Consumable</option>
                     <option value="LOCATION">Location</option>
                     <option value="BLOCK">Block</option>
+                    <option value="STORE">Store</option>
                     <option value="DEPARTMENT">Department</option>
                   </select>
                 </label>
@@ -1087,15 +1155,11 @@ export function AssetTypePage() {
               </div>
             </div>
             <div className="mt-5 grid gap-3 rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 sm:grid-cols-[minmax(0,1fr)_220px]">
-              <label className="relative block">
+              <label className="search-shell">
                 <span className="sr-only">Search saved asset details</span>
-                <Search
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]"
-                  size={17}
-                />
+                <Search aria-hidden="true" className="search-shell-icon" size={17} />
                 <input
-                  className="field-input pl-10"
+                  className="field-input field-input-search"
                   onChange={(event) => {
                     setSavedSearch(event.target.value);
                     setDirectoryPage(1);
@@ -1120,6 +1184,7 @@ export function AssetTypePage() {
                   <option value="CONSUMABLE_TYPE">IT Consumable</option>
                   <option value="LOCATION">Location</option>
                   <option value="BLOCK">Block</option>
+                  <option value="STORE">Store</option>
                   <option value="DEPARTMENT">Department</option>
                 </select>
               </label>

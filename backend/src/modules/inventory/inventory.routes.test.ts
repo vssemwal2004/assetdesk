@@ -120,11 +120,11 @@ describe('inventory route authorization', () => {
   it('allows assignment creators to load only issueable inventory for the issue picker', async () => {
     authState.permissions = ['ASSIGNMENTS_CREATE'];
 
-    await request(testApp()).get('/api/v1/inventory?issueable=true').expect(200);
+    await request(testApp()).get('/api/v1/inventory?issueable=true&pageSize=500').expect(200);
     await request(testApp()).get('/api/v1/inventory').expect(403);
 
     expect(service.listMaterials).toHaveBeenCalledWith(
-      expect.objectContaining({ issueable: true, role: 'WORKER' }),
+      expect.objectContaining({ issueable: true, role: 'WORKER', pageSize: 500 }),
     );
   });
 

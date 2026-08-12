@@ -502,7 +502,17 @@ export async function gateIn(
   const returned = already.size + normalized.length;
   pass.status = returned === pass.quantity ? 'QC_PENDING' : 'PARTIALLY_RETURNED';
   await pass.save();
-  const cartridges = await CartridgeModel.find({ serialNumberNormalized: { $in: normalized } });
+  const cartridges = await CartridgeModel.find({
+    serialNumberNormalized: { $in: normalized },
+    status: 'WITH_VENDOR',
+  });
+  if (cartridges.length !== normalized.length) {
+    throw new AppError(
+      409,
+      'CARTRIDGE_NOT_WITH_VENDOR',
+      'Only cartridges currently Gate Out with the vendor can be recorded at Gate In.',
+    );
+  }
   const fromStatuses = new Map(cartridges.map((item) => [item._id.toString(), item.status]));
   await CartridgeModel.updateMany(
     { serialNumberNormalized: { $in: normalized } },

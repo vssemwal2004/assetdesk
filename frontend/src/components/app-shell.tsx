@@ -110,12 +110,6 @@ const cartridgeNavigation: NavigationItem[] = [
     permission: 'CARTRIDGES_VIEW',
   },
   {
-    label: 'Activity log',
-    to: '/cartridges/activity',
-    icon: FileClock,
-    permission: 'CARTRIDGES_VIEW',
-  },
-  {
     label: 'Add cartridges',
     to: '/cartridges/new',
     icon: PackagePlus,
@@ -128,22 +122,52 @@ const cartridgeNavigation: NavigationItem[] = [
     permission: 'CARTRIDGES_ISSUE',
   },
   {
+    label: 'Issued data',
+    to: '/cartridges?status=ISSUED',
+    icon: ListChecks,
+    permission: 'CARTRIDGES_VIEW',
+  },
+  {
     label: 'Return cartridge',
     to: '/cartridges/returns/new',
     icon: RotateCcw,
     permission: 'CARTRIDGES_RETURN',
   },
   {
-    label: 'Gate Passes',
+    label: 'Return data',
+    to: '/cartridges/activity?type=RETURNED',
+    icon: FileClock,
+    permission: 'CARTRIDGES_VIEW',
+  },
+  {
+    label: 'Gate Pass Out',
     to: '/cartridges/gate-passes',
     icon: ReceiptText,
     permission: 'CARTRIDGE_GATE_PASSES_VIEW',
   },
   {
-    label: 'Gate In & QC',
+    label: 'Gate Pass Out data',
+    to: '/cartridges/activity?type=GATE_OUT',
+    icon: FileClock,
+    permission: 'CARTRIDGES_VIEW',
+  },
+  {
+    label: 'Gate Pass In',
     to: '/cartridges/gate-in',
     icon: ListChecks,
     permission: 'CARTRIDGE_QC',
+  },
+  {
+    label: 'Gate Pass In data',
+    to: '/cartridges/activity?type=GATE_IN',
+    icon: FileClock,
+    permission: 'CARTRIDGES_VIEW',
+  },
+  {
+    label: 'Activity log',
+    to: '/cartridges/activity',
+    icon: FileClock,
+    permission: 'CARTRIDGES_VIEW',
   },
 ];
 
@@ -173,10 +197,10 @@ function pageTitle(pathname: string): string {
   if (pathname === '/cartridges/new') return 'Add Cartridges';
   if (pathname === '/cartridges/issues/new') return 'Issue Cartridge';
   if (pathname === '/cartridges/returns/new') return 'Return Cartridge';
-  if (pathname === '/cartridges/gate-passes/new') return 'Create Gate Pass';
-  if (pathname === '/cartridges/gate-in') return 'Gate In & QC';
+  if (pathname === '/cartridges/gate-passes/new') return 'Create Gate Pass Out';
+  if (pathname === '/cartridges/gate-in') return 'Gate Pass In';
   if (pathname.includes('/cartridges/gate-passes/')) return 'Gate Pass';
-  if (pathname === '/cartridges/gate-passes') return 'Gate Passes';
+  if (pathname === '/cartridges/gate-passes') return 'Gate Pass Out';
   if (pathname.startsWith('/cartridges/')) return 'Cartridge Details';
   if (pathname === '/cartridges') return 'Cartridges';
   if (pathname === '/overdue') return 'Overdue assets';
