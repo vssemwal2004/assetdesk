@@ -52,7 +52,8 @@ Product copy must use **Issue Record**, **Return**, **Receiver**, and **Material
 
 Requirements:
 
-- Node.js 22.12 or newer; Node.js 24 LTS is the production target
+- Node.js 22 LTS, version 22.12 or newer. Do not deploy with Node.js 24; native
+  install binaries such as esbuild can crash during install on some Linux hosts.
 - npm 10 or newer
 - MongoDB Atlas or another replica-set deployment
 
@@ -104,10 +105,18 @@ so do a clean install on the server instead of copying `node_modules` from
 another machine:
 
 ```text
+nvm install 22
+nvm use 22
+node -v
 rm -rf node_modules frontend/node_modules backend/node_modules packages/*/node_modules
 npm ci --include=optional
 npm run build
 ```
+
+If `npm install` fails in `node_modules/esbuild` with `SIGSEGV`, the server is
+usually running an unsupported Node build such as Node.js 24. Switch to Node 22
+LTS with the commands above, delete `node_modules`, and run `npm ci
+--include=optional` again.
 
 If production fails with `Cannot find module '../lightningcss.linux-x64-gnu.node'`,
 the Linux optional package was pruned or never installed. Run the clean install

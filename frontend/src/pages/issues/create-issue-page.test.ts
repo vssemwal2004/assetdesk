@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import type { Material } from '@assetdesk/contracts';
 
-import { firstStockIssue, isIssueableInventoryMaterial } from './create-issue-page';
+import {
+  firstReceiverIssue,
+  firstIssueApiMessage,
+  firstStockIssue,
+  isIssueableInventoryMaterial,
+  matchesStoreSource,
+} from './create-issue-page';
 
-const storeNames = ['Param Centre Store', 'Aryabhatt Store'];
+const storeNames = ['Param Centre Store', 'Aryabhatt Store / Aryabhatt Centre'];
 
 const assetMaterial: Material = {
   id: 'material-id',
@@ -74,6 +80,38 @@ describe('IT Asset issue selection', () => {
     ).toBe(false);
   });
 
+  it('matches store filters against material location plus block', () => {
+    expect(
+      isIssueableInventoryMaterial(
+        {
+          ...assetMaterial,
+          location: 'Aryabhatt Store',
+          block: 'Aryabhatt Centre',
+          locationBlock: 'Aryabhatt Store / Aryabhatt Centre',
+        },
+        'Aryabhatt Store / Aryabhatt Centre',
+        storeNames,
+      ),
+    ).toBe(true);
+  });
+
+  it('matches configured stores to inventory location and block', () => {
+    expect(
+      matchesStoreSource('Aryabhatt Store / Aryabhatt Centre', {
+        location: 'Aryabhatt Store',
+        block: 'Aryabhatt Centre',
+        locationBlock: null,
+      }),
+    ).toBe(true);
+    expect(
+      matchesStoreSource('Aryabhatt Store / Aryabhatt Centre', {
+        location: 'Aryabhatt Store',
+        block: 'Other Block',
+        locationBlock: null,
+      }),
+    ).toBe(false);
+  });
+
   it('requires exactly one selected serial number for each requested quantity', () => {
     const materials = new Map([[assetMaterial.materialCode, assetMaterial]]);
     const line = {
@@ -106,5 +144,33 @@ describe('IT Asset issue selection', () => {
         materials,
       ),
     ).toBe('GEU-AST-000001 is selected more than once.');
+  });
+
+  it('reports missing receiver fields before schema validation', () => {
+    expect(firstReceiverIssue({ fullName: '', contact: '', email: '' })).toBe(
+      'Enter the receiver name or department.',
+    );
+    expect(firstReceiverIssue({ fullName: 'Amit', contact: '123', email: '' })).toBe(
+      'Enter a valid receiver contact number with at least 5 digits.',
+    );
+    expect(firstReceiverIssue({ fullName: 'Amit', contact: '9876543210', email: 'bad' })).toBe(
+      'Enter a valid receiver email address.',
+    );
+    expect(
+      firstReceiverIssue({
+        fullName: 'Amit',
+        contact: '9876543210',
+        email: 'amit@example.com',
+      }),
+    ).toBeNull();
+  });
+
+  it('translates backend validation fields into useful issue-form messages', () => {
+    expect(firstIssueApiMessage({ 'receiver.fullName': 'Too small' })).toBe(
+      'Enter the receiver name or department.',
+    );
+    expect(firstIssueApiMessage({ 'lines.0.assetTags': 'Too small' })).toBe(
+      'Choose inventory material and serial numbers for item 1.',
+    );
   });
 });

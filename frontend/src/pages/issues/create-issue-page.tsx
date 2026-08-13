@@ -99,7 +99,6 @@ export function CreateIssuePage() {
           pageSize: 500,
           issueable: true,
           trackingMode: materialType,
-          ...(storeFilter !== 'ALL' ? { location: storeFilter } : {}),
           ...(materialSearch ? { search: materialSearch } : {}),
         },
         signal,
@@ -169,7 +168,11 @@ export function CreateIssuePage() {
       ]);
     },
     onError: (error) =>
-      setMessage(isApiError(error) ? error.message : 'The assignment could not be created.'),
+      setMessage(
+        isApiError(error)
+          ? firstIssueApiMessage(error.fields) ?? error.message
+          : 'The assignment could not be created.',
+      ),
   });
 
   function expectedReturn(): Date | null {
@@ -182,6 +185,11 @@ export function CreateIssuePage() {
 
   function buildInput(): CreateIssueRequest | null {
     const expected = expectedReturn();
+    const receiverIssue = firstReceiverIssue(issuedTo);
+    if (receiverIssue) {
+      setMessage(receiverIssue);
+      return null;
+    }
     const stockIssue = firstStockIssue(lines, materialByCode);
     if (stockIssue) {
       setMessage(stockIssue);
@@ -227,7 +235,14 @@ export function CreateIssuePage() {
     };
     const parsed = CreateIssueRequestSchema.safeParse(candidate);
     if (!parsed.success) {
-      setMessage(parsed.error.issues[0]?.message ?? 'Check the assignment details.');
+      setMessage(
+        firstIssueSchemaMessage(
+          parsed.error.issues.map((issue) => ({
+            path: issue.path.map(String),
+            message: issue.message,
+          })),
+        ) ?? 'Check the assignment details.',
+      );
       return null;
     }
     if (effectiveAssignmentType === 'SHORT_TERM' && (!expected || expected <= new Date())) {
@@ -841,20 +856,52 @@ export function firstStockIssue(
   return null;
 }
 
+export function firstReceiverIssue(receiver: {
+  fullName: string;
+  contact: string;
+  email: string;
+}): string | null {
+  if (receiver.fullName.trim().length < 2) return 'Enter the receiver name or department.';
+  const contactDigits = receiver.contact.match(/\d/g)?.length ?? 0;
+  if (receiver.contact.trim().length < 5 || contactDigits < 5) {
+    return 'Enter a valid receiver contact number with at least 5 digits.';
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(receiver.email.trim())) {
+    return 'Enter a valid receiver email address.';
+  }
+  return null;
+}
+
+export function firstIssueApiMessage(fields: Record<string, string>): string | null {
+  const entries = Object.entries(fields);
+  if (entries.length === 0) return null;
+  return firstIssueSchemaMessage(
+    entries.map(([path, message]) => ({ path: path.split('.'), message })),
+  );
+}
+
+export function firstIssueSchemaMessage(
+  issues: Array<{ path: string[]; message: string }>,
+): string | null {
+  const first = issues[0];
+  if (!first) return null;
+  const path = first.path.join('.');
+  if (path === 'receiver.fullName') return 'Enter the receiver name or department.';
+  if (path === 'receiver.contact') return 'Enter a valid receiver contact number with at least 5 digits.';
+  if (path === 'receiver.email') return 'Enter a valid receiver email address.';
+  if (path === 'lines' || path.startsWith('lines.')) return 'Choose inventory material and serial numbers for item 1.';
+  if (path === 'due' || path.startsWith('due.')) return 'Choose a valid expected return date.';
+  return first.message;
+}
+
 export function isIssueableInventoryMaterial(
   material: Material,
   storeFilter: StoreFilter = 'ALL',
   storeNames: string[] = [],
 ): boolean {
+  const source = inventoryStoreSourceLabel(material);
   const location = material.location ?? '';
-  const locationBlock =
-    material.locationBlock ?? [material.location, material.block].filter(Boolean).join(' / ');
-  const isConfiguredStore = storeNames.some((store) => {
-    const normalizedStore = store.toLowerCase();
-    return (
-      normalizedStore === location.toLowerCase() || normalizedStore === locationBlock.toLowerCase()
-    );
-  });
+  const isConfiguredStore = storeNames.some((store) => matchesStoreSource(store, material));
   if (!(
     (material.status === 'ACTIVE' || material.status === 'NOT_IN_USE') &&
     material.availableQuantity > 0 &&
@@ -862,7 +909,32 @@ export function isIssueableInventoryMaterial(
   )) {
     return false;
   }
-  return storeFilter === 'ALL' || material.location?.toLowerCase() === storeFilter.toLowerCase();
+  return (
+    storeFilter === 'ALL' ||
+    source.toLowerCase() === storeFilter.toLowerCase() ||
+    (material.location ?? '').toLowerCase() === storeFilter.toLowerCase()
+  );
+}
+
+export function inventoryStoreSourceLabel(
+  material: Pick<Material, 'location' | 'block' | 'locationBlock'>,
+): string {
+  return (
+    material.locationBlock ||
+    [material.location, material.block].filter(Boolean).join(' / ') ||
+    material.location ||
+    'Unassigned source'
+  );
+}
+
+export function matchesStoreSource(
+  store: string,
+  material: Pick<Material, 'location' | 'block' | 'locationBlock'>,
+): boolean {
+  const normalizedStore = store.trim().toLowerCase();
+  const source = inventoryStoreSourceLabel(material).trim().toLowerCase();
+  const location = (material.location ?? '').trim().toLowerCase();
+  return normalizedStore === source || normalizedStore === location;
 }
 
 function compareIssueableMaterials(first: Material, second: Material): number {

@@ -10,7 +10,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=22.12 <27",
+    "node": ">=22.12 <23",
     "npm": ">=10"
   },
   "packageManager": "npm@10.9.2",
