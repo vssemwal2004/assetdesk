@@ -255,6 +255,19 @@ function ensureAssetUnitListAccess(
   }
 }
 
+function ensureAssetDetailsAccess(request: Request): void {
+  const actor = authenticated(request);
+  const allowed =
+    hasServerPermission(actor, 'INVENTORY_VIEW') ||
+    hasServerPermission(actor, 'INVENTORY_ADD') ||
+    hasServerPermission(actor, 'INVENTORY_IMPORT') ||
+    hasServerPermission(actor, 'ASSET_TYPES_ADD') ||
+    hasServerPermission(actor, 'INVENTORY_MODELS_ADD');
+  if (!allowed) {
+    throw new AppError(403, 'PERMISSION_DENIED', 'You do not have access to asset details.');
+  }
+}
+
 export function createInventoryRouter(): Router {
   const router = Router();
 
@@ -311,9 +324,9 @@ export function createInventoryRouter(): Router {
 
   router.get(
     '/asset-details',
-    requirePermission('INVENTORY_VIEW'),
     async (request, response, next) => {
       try {
+        ensureAssetDetailsAccess(request);
         const kind = request.query.kind
           ? AssetDetailKindSchema.parse(request.query.kind)
           : undefined;

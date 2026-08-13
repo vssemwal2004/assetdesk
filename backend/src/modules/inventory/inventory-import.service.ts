@@ -38,6 +38,7 @@ type Field =
   | 'configuration'
   | 'location'
   | 'block'
+  | 'department'
   | 'vendorName'
   | 'locationBlock'
   | 'description'
@@ -79,6 +80,9 @@ const HEADER_ALIASES: Record<string, Field> = {
   'location / block': 'locationBlock',
   location: 'location',
   block: 'block',
+  department: 'department',
+  departments: 'department',
+  dept: 'department',
   vendor: 'vendorName',
   'vendor name': 'vendorName',
   description: 'description',
@@ -246,6 +250,7 @@ export function importInputToCreateMaterialRequest(
     ...(record.trackingMode === 'SERIALIZED' ? { configuration: record.configuration } : {}),
     location: record.location,
     block: record.block,
+    ...(record.department ? { department: record.department } : {}),
     ...(record.vendorName ? { vendorName: record.vendorName } : {}),
     ...(record.locationBlock ? { locationBlock: record.locationBlock } : {}),
     ...(record.description ? { description: record.description } : {}),
@@ -299,7 +304,7 @@ export function normalizeImportConfiguration(value: string): string {
 }
 
 async function savedLookup(
-  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK',
+  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
   value: string,
 ): Promise<string | null> {
   const detail = await AssetDetailModel.findOne({ kind, normalizedName: normalizedLookup(value) });
@@ -311,15 +316,18 @@ async function savedLookup(
   return null;
 }
 
-function detailKindLabel(kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK'): string {
+function detailKindLabel(
+  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
+): string {
   if (kind === 'ASSET_TYPE') return 'IT asset type';
   if (kind === 'CONSUMABLE_TYPE') return 'IT consumable type';
   if (kind === 'LOCATION') return 'Location';
+  if (kind === 'DEPARTMENT') return 'Department';
   return 'Block';
 }
 
 function missingDropdownValue(
-  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK',
+  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
   value: string,
 ): Error {
   return new Error(
@@ -416,6 +424,7 @@ export async function previewInventoryImport(
         ...(row.values.configuration ? { configuration: row.values.configuration } : {}),
         ...(row.values.location ? { location: row.values.location } : {}),
         ...(row.values.block ? { block: row.values.block } : {}),
+        ...(row.values.department ? { department: row.values.department } : {}),
         ...(row.values.vendorName ? { vendorName: row.values.vendorName } : {}),
         ...(row.values.locationBlock ? { locationBlock: row.values.locationBlock } : {}),
         ...(row.values.serialNumber ? { serialNumber: row.values.serialNumber } : {}),
@@ -506,9 +515,15 @@ export async function previewInventoryImport(
       async (value) => [normalizedLookup(value), await savedLookup('BLOCK', value)] as const,
     ),
   );
+  const departmentEntries = await Promise.all(
+    [...new Set(rows.map((row) => row.values.department).filter(Boolean))].map(
+      async (value) => [normalizedLookup(value), await savedLookup('DEPARTMENT', value)] as const,
+    ),
+  );
   const categories = new Map(categoryEntries);
   const locations = new Map(locationEntries);
   const blocks = new Map(blockEntries);
+  const departments = new Map(departmentEntries);
   const registeredModelEntries = await Promise.all(
     [...new Set(rows.map((row) => normalizedLookup(row.values.category)))].map(async (key) => {
       const category = categories.get(key);
@@ -547,6 +562,9 @@ export async function previewInventoryImport(
       const category = categories.get(normalizedLookup(values.category));
       const location = locations.get(normalizedLookup(values.location));
       const block = blocks.get(normalizedLookup(values.block));
+      const department = values.department
+        ? departments.get(normalizedLookup(values.department))
+        : undefined;
       if (!category) throw missingDropdownValue(categoryDetailKind, values.category);
       const registeredModel = registeredModels
         .get(normalizedLookup(values.category))
@@ -558,6 +576,9 @@ export async function previewInventoryImport(
       }
       if (!location) throw missingDropdownValue('LOCATION', values.location);
       if (!block) throw missingDropdownValue('BLOCK', values.block);
+      if (values.department && !department) {
+        throw missingDropdownValue('DEPARTMENT', values.department);
+      }
       const displayName = materialName(category, registeredModel);
       const locationBlock = `${location} / ${block}`;
       let draft: CreateMaterialRequest;
@@ -583,6 +604,7 @@ export async function previewInventoryImport(
           typeModelName: registeredModel,
           location,
           block,
+          ...(department ? { department } : {}),
           locationBlock,
           ...(values.vendorName ? { vendorName: values.vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
@@ -598,6 +620,7 @@ export async function previewInventoryImport(
           'unitLabel',
           'location',
           'block',
+          'department',
           'vendorName',
           'description',
           'returnPolicy',
@@ -628,6 +651,7 @@ export async function previewInventoryImport(
           typeModelName: registeredModel,
           location,
           block,
+          ...(department ? { department } : {}),
           locationBlock,
           ...(values.vendorName ? { vendorName: values.vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),

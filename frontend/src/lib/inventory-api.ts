@@ -329,6 +329,7 @@ export interface InventoryImportPreview {
     configuration?: string;
     location?: string;
     block?: string;
+    department?: string;
     vendorName?: string;
     locationBlock?: string;
     quantity?: number;

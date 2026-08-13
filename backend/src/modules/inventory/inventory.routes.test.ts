@@ -147,6 +147,14 @@ describe('inventory route authorization', () => {
     expect(service.listAssetDetails).toHaveBeenCalledWith(undefined);
   });
 
+  it('allows inventory add workers to load asset details for add-material dropdowns', async () => {
+    authState.permissions = ['INVENTORY_ADD'];
+
+    await request(testApp()).get('/api/v1/inventory/asset-details').expect(200);
+
+    expect(service.listAssetDetails).toHaveBeenCalledWith(undefined);
+  });
+
   it('blocks Worker mutations before the inventory service is called', async () => {
     const response = await request(testApp())
       .post('/api/v1/inventory')
