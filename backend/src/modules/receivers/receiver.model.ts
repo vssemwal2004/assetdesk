@@ -12,10 +12,10 @@ export interface ReceiverRecord {
   type: ReceiverType;
   department?: string;
   departmentNormalized?: string;
-  contact: string;
-  contactNormalized: string;
-  email: string;
-  emailNormalized: string;
+  contact?: string;
+  contactNormalized?: string;
+  email?: string;
+  emailNormalized?: string;
   status: ReceiverStatus;
   operationalUseCount: number;
   createdBy: Types.ObjectId;
@@ -49,12 +49,11 @@ const ReceiverSchema = new Schema<ReceiverRecord>(
     },
     department: { type: String, trim: true, maxlength: 120 },
     departmentNormalized: { type: String, trim: true, maxlength: 120 },
-    contact: { type: String, required: true, trim: true, maxlength: 40 },
-    contactNormalized: { type: String, required: true, trim: true, maxlength: 40 },
-    email: { type: String, required: true, trim: true, maxlength: 254 },
+    contact: { type: String, trim: true, maxlength: 40 },
+    contactNormalized: { type: String, trim: true, maxlength: 40 },
+    email: { type: String, trim: true, maxlength: 254 },
     emailNormalized: {
       type: String,
-      required: true,
       lowercase: true,
       trim: true,
       maxlength: 254,
@@ -78,7 +77,14 @@ const ReceiverSchema = new Schema<ReceiverRecord>(
 );
 
 ReceiverSchema.index({ receiverCode: 1 }, { unique: true, name: 'receiver_code_unique' });
-ReceiverSchema.index({ emailNormalized: 1 }, { unique: true, name: 'receiver_email_unique' });
+ReceiverSchema.index(
+  { emailNormalized: 1 },
+  {
+    unique: true,
+    name: 'receiver_email_unique',
+    partialFilterExpression: { emailNormalized: { $type: 'string' } },
+  },
+);
 ReceiverSchema.index(
   { universityIdNormalized: 1 },
   {

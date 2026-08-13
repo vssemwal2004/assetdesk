@@ -10,7 +10,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 
 import {
@@ -42,7 +42,7 @@ import { getAssetDetails, getAvailableAssetUnits, getInventory } from '../../lib
 import { createIssue } from '../../lib/issues-api';
 
 type DuePreset = NonNullable<CreateIssueRequest['due']>['preset'];
-type StoreFilter = 'ALL' | string;
+type StoreFilter = string;
 
 interface LineDraft {
   id: string;
@@ -81,7 +81,7 @@ export function CreateIssuePage() {
     email: '',
   });
   const [materialSearch, setMaterialSearch] = useState('');
-  const [storeFilter, setStoreFilter] = useState<StoreFilter>('ALL');
+  const [storeFilter, setStoreFilter] = useState<StoreFilter>('');
   const [lines, setLines] = useState<LineDraft[]>([blankLine()]);
   const [duePreset, setDuePreset] = useState<DuePreset>('ONE_WEEK');
   const [customReturnAt, setCustomReturnAt] = useState('');
@@ -117,15 +117,41 @@ export function CreateIssuePage() {
     () => (storeQuery.data ?? []).map((store) => store.name),
     [storeQuery.data],
   );
-  const storeFilterOptions = useMemo(
-    () => [
-      { value: 'ALL' as const, label: 'All stores' },
-      ...storeNames.map((store) => ({ value: store, label: store })),
-    ],
-    [storeNames],
+  const allIssueableMaterials = useMemo(
+    () =>
+      (inventoryQuery.data?.data ?? []).filter((material) =>
+        isIssueableInventoryMaterial(material, '', storeNames),
+      ),
+    [inventoryQuery.data?.data, storeNames],
   );
+  const storeAvailability = useMemo(
+    () =>
+      new Map(
+        storeNames.map((store) => [
+          store,
+          allIssueableMaterials
+            .filter((material) => matchesStoreSource(store, material))
+            .reduce((total, material) => total + material.availableQuantity, 0),
+        ]),
+      ),
+    [allIssueableMaterials, storeNames],
+  );
+  const storeFilterOptions = useMemo(
+    () =>
+      storeNames.map((store) => ({
+        value: store,
+        label: store,
+        available: storeAvailability.get(store) ?? 0,
+      })),
+    [storeAvailability, storeNames],
+  );
+  useEffect(() => {
+    if (storeFilter || inventoryQuery.isPending || storeQuery.isPending) return;
+    const stockedStore = storeFilterOptions.find((store) => store.available > 0);
+    setStoreFilter(stockedStore?.value ?? storeFilterOptions[0]?.value ?? '');
+  }, [inventoryQuery.isPending, storeFilter, storeFilterOptions, storeQuery.isPending]);
   const selectedStoreLabel =
-    storeFilterOptions.find((store) => store.value === storeFilter)?.label ?? 'All stores';
+    storeFilterOptions.find((store) => store.value === storeFilter)?.label ?? 'Choose store';
 
   const materials = useMemo(
     () =>
@@ -204,8 +230,8 @@ export function CreateIssuePage() {
         ...(issuedTo.universityId.trim() ? { universityId: issuedTo.universityId } : {}),
         type: issuedTo.type,
         ...(issuedTo.department.trim() ? { department: issuedTo.department } : {}),
-        contact: issuedTo.contact,
-        email: issuedTo.email,
+        ...(issuedTo.contact.trim() ? { contact: issuedTo.contact } : {}),
+        ...(issuedTo.email.trim() ? { email: issuedTo.email } : {}),
       },
       lines: lines.map((line) => {
         const material = materialByCode.get(line.materialCode);
@@ -333,6 +359,7 @@ export function CreateIssuePage() {
               className="field-input field-input-compact"
               onChange={(event) => {
                 setMaterialType(event.target.value as TrackingMode);
+                setStoreFilter('');
                 setLines([blankLine()]);
                 setMessage(null);
               }}
@@ -349,12 +376,14 @@ export function CreateIssuePage() {
               onChange={(event) => {
                 setStoreFilter(event.target.value as StoreFilter);
                 setLines([blankLine()]);
+                setMessage(null);
               }}
               value={storeFilter}
             >
+              {!storeFilter ? <option value="">Choose store</option> : null}
               {storeFilterOptions.map((store) => (
                 <option key={store.value} value={store.value}>
-                  {store.label}
+                  {store.label} ({store.available} available)
                 </option>
               ))}
             </select>
@@ -413,13 +442,13 @@ export function CreateIssuePage() {
             </select>
           </label>
           <Field
-            label="Contact"
+            label="Contact (optional)"
             onChange={(value) => setIssuedTo((current) => ({ ...current, contact: value }))}
             type="tel"
             value={issuedTo.contact}
           />
           <Field
-            label="Email"
+            label="Email (optional)"
             onChange={(value) => setIssuedTo((current) => ({ ...current, email: value }))}
             type="email"
             value={issuedTo.email}
@@ -471,10 +500,17 @@ export function CreateIssuePage() {
         ) : null}
         {!inventoryQuery.isPending && !inventoryQuery.isError && materials.length === 0 ? (
           <p className="mt-4 rounded-[10px] bg-[var(--color-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-warning)]">
-            No issueable {materialType === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'} found.
+            {storeFilter
+              ? `No issueable ${materialType === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'} are available in ${selectedStoreLabel}.`
+              : `No issueable ${materialType === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'} found.`}
             {storeNames.length === 0
               ? ' Add Store records from Asset details before issuing material.'
-              : null}
+              : storeFilterOptions.some((store) => store.available > 0)
+                ? ` Choose ${storeFilterOptions
+                    .filter((store) => store.available > 0)
+                    .map((store) => `${store.label} (${store.available})`)
+                    .join(', ')} instead.`
+                : ' Add available inventory to this material type in a configured store.'}
           </p>
         ) : null}
         <div className="mt-4 space-y-3">
@@ -863,10 +899,12 @@ export function firstReceiverIssue(receiver: {
 }): string | null {
   if (receiver.fullName.trim().length < 2) return 'Enter the receiver name or department.';
   const contactDigits = receiver.contact.match(/\d/g)?.length ?? 0;
-  if (receiver.contact.trim().length < 5 || contactDigits < 5) {
+  const contact = receiver.contact.trim();
+  const email = receiver.email.trim();
+  if (contact && (contact.length < 5 || contactDigits < 5)) {
     return 'Enter a valid receiver contact number with at least 5 digits.';
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(receiver.email.trim())) {
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return 'Enter a valid receiver email address.';
   }
   return null;
@@ -896,11 +934,9 @@ export function firstIssueSchemaMessage(
 
 export function isIssueableInventoryMaterial(
   material: Material,
-  storeFilter: StoreFilter = 'ALL',
+  storeFilter: StoreFilter = '',
   storeNames: string[] = [],
 ): boolean {
-  const source = inventoryStoreSourceLabel(material);
-  const location = material.location ?? '';
   const isConfiguredStore = storeNames.some((store) => matchesStoreSource(store, material));
   if (!(
     (material.status === 'ACTIVE' || material.status === 'NOT_IN_USE') &&
@@ -909,11 +945,7 @@ export function isIssueableInventoryMaterial(
   )) {
     return false;
   }
-  return (
-    storeFilter === 'ALL' ||
-    source.toLowerCase() === storeFilter.toLowerCase() ||
-    (material.location ?? '').toLowerCase() === storeFilter.toLowerCase()
-  );
+  return storeFilter === '' || matchesStoreSource(storeFilter, material);
 }
 
 export function inventoryStoreSourceLabel(
@@ -931,10 +963,14 @@ export function matchesStoreSource(
   store: string,
   material: Pick<Material, 'location' | 'block' | 'locationBlock'>,
 ): boolean {
-  const normalizedStore = store.trim().toLowerCase();
-  const source = inventoryStoreSourceLabel(material).trim().toLowerCase();
-  const location = (material.location ?? '').trim().toLowerCase();
+  const normalizedStore = normalizeStoreSource(store);
+  const source = normalizeStoreSource(inventoryStoreSourceLabel(material));
+  const location = normalizeStoreSource(material.location ?? '');
   return normalizedStore === source || normalizedStore === location;
+}
+
+function normalizeStoreSource(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 function compareIssueableMaterials(first: Material, second: Material): number {

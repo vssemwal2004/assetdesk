@@ -18,8 +18,8 @@ export interface IssueReceiverSnapshotRecord {
   universityId?: string;
   type: ReceiverType;
   department?: string;
-  contact: string;
-  email: string;
+  contact?: string;
+  email?: string;
 }
 
 export interface IssueActorSnapshotRecord {
@@ -147,8 +147,8 @@ const ReceiverSnapshotSchema = new Schema<IssueReceiverSnapshotRecord>(
       required: true,
     },
     department: { type: String, maxlength: 120 },
-    contact: { type: String, required: true, maxlength: 40 },
-    email: { type: String, required: true, maxlength: 254 },
+    contact: { type: String, maxlength: 40 },
+    email: { type: String, maxlength: 254 },
   },
   { _id: false },
 );

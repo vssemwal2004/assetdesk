@@ -90,8 +90,8 @@ export function BillDocument({
             <BillRow label="University ID" value={optional(issue.receiver.universityId)} />
             <BillRow label="Type" value={issue.receiver.type.replaceAll('_', ' ')} />
             <BillRow label="Department" value={optional(issue.receiver.department)} />
-            <BillRow label="Contact" value={issue.receiver.contact} />
-            <BillRow label="Email" value={issue.receiver.email} />
+            <BillRow label="Contact" value={optional(issue.receiver.contact)} />
+            <BillRow label="Email" value={optional(issue.receiver.email)} />
           </dl>
         </div>
         <div>
@@ -243,7 +243,7 @@ function ReturnBillDocument({
             <BillRow label="Receiver code" value={issue.receiver.receiverCode} />
             <BillRow label="University ID" value={optional(issue.receiver.universityId)} />
             <BillRow label="Department" value={optional(issue.receiver.department)} />
-            <BillRow label="Email" value={issue.receiver.email} />
+            <BillRow label="Email" value={optional(issue.receiver.email)} />
           </dl>
         </div>
         <div>

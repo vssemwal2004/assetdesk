@@ -19,7 +19,7 @@ interface Recipient {
   role: NotificationRecipientRole;
   id: string;
   name: string;
-  email: string;
+  email?: string;
   templateKey: EmailTemplateKey;
 }
 
@@ -33,6 +33,12 @@ function formatIst(value: Date): string {
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function emailableRecipients(recipients: Recipient[]): Array<Recipient & { email: string }> {
+  return recipients.filter((recipient): recipient is Recipient & { email: string } =>
+    Boolean(recipient.email?.trim()),
+  );
 }
 
 function materialIssueLines(issue: IssueDocument): string[] {
@@ -97,6 +103,7 @@ async function mainAdmin(session?: ClientSession): Promise<UserDocument | null> 
 function deduplicateRecipients(recipients: Recipient[]): Recipient[] {
   const emails = new Set<string>();
   return recipients.filter((recipient) => {
+    if (!recipient.email?.trim()) return true;
     const normalized = normalizeEmail(recipient.email);
     if (emails.has(normalized)) return false;
     emails.add(normalized);
@@ -119,13 +126,17 @@ export async function enqueueIssueNotifications(
 ): Promise<void> {
   const actor = await activeUser(issue.issuedBy.userId, session);
   const recipients: Recipient[] = [
-    {
-      role: 'RECEIVER',
-      id: issue.receiver.receiverId.toString(),
-      name: issue.receiver.fullName,
-      email: issue.receiver.email,
-      templateKey: 'MATERIAL_ISSUED_RECEIVER',
-    },
+    ...(issue.receiver.email
+      ? [
+          {
+            role: 'RECEIVER' as const,
+            id: issue.receiver.receiverId.toString(),
+            name: issue.receiver.fullName,
+            email: issue.receiver.email,
+            templateKey: 'MATERIAL_ISSUED_RECEIVER' as const,
+          },
+        ]
+      : []),
     {
       role: 'ACTOR',
       id: actor._id.toString(),
@@ -162,7 +173,7 @@ export async function enqueueIssueNotifications(
   };
   const now = new Date();
   await insertJobs(
-    deduplicateRecipients(recipients).map((recipient) => ({
+    emailableRecipients(deduplicateRecipients(recipients)).map((recipient) => ({
       eventKey: `issue:${issue.issueId}:issued:${recipient.role}:${recipient.id}`,
       issueId: issue.issueId,
       eventType: 'MATERIAL_ISSUED',
@@ -189,13 +200,17 @@ export async function enqueueReturnNotifications(
 ): Promise<void> {
   const actor = await activeUser(event.performedBy.userId, session);
   const recipients: Recipient[] = [
-    {
-      role: 'RECEIVER',
-      id: issue.receiver.receiverId.toString(),
-      name: issue.receiver.fullName,
-      email: issue.receiver.email,
-      templateKey: 'MATERIAL_RETURNED_RECEIVER',
-    },
+    ...(issue.receiver.email
+      ? [
+          {
+            role: 'RECEIVER' as const,
+            id: issue.receiver.receiverId.toString(),
+            name: issue.receiver.fullName,
+            email: issue.receiver.email,
+            templateKey: 'MATERIAL_RETURNED_RECEIVER' as const,
+          },
+        ]
+      : []),
     {
       role: 'ACTOR',
       id: actor._id.toString(),
@@ -230,7 +245,7 @@ export async function enqueueReturnNotifications(
   };
   const now = new Date();
   await insertJobs(
-    deduplicateRecipients(recipients).map((recipient) => ({
+    emailableRecipients(deduplicateRecipients(recipients)).map((recipient) => ({
       eventKey: `return:${issue.issueId}:${event.returnEventId}:${recipient.role}:${recipient.id}`,
       issueId: issue.issueId,
       returnEventId: event.returnEventId,
@@ -258,13 +273,17 @@ export async function enqueueReminderNotifications(input: {
   session: ClientSession;
 }): Promise<number> {
   const recipients: Recipient[] = [
-    {
-      role: 'RECEIVER',
-      id: input.issue.receiver.receiverId.toString(),
-      name: input.issue.receiver.fullName,
-      email: input.issue.receiver.email,
-      templateKey: 'RETURN_REMINDER_RECEIVER',
-    },
+    ...(input.issue.receiver.email
+      ? [
+          {
+            role: 'RECEIVER' as const,
+            id: input.issue.receiver.receiverId.toString(),
+            name: input.issue.receiver.fullName,
+            email: input.issue.receiver.email,
+            templateKey: 'RETURN_REMINDER_RECEIVER' as const,
+          },
+        ]
+      : []),
   ];
   const params = {
     issueId: input.issue.issueId,
@@ -277,7 +296,7 @@ export async function enqueueReminderNotifications(input: {
     materials: outstandingLines(input.issue),
     viewUrl: `${env.APP_ORIGIN}/issues/${encodeURIComponent(input.issue.issueId)}`,
   };
-  const jobs = deduplicateRecipients(recipients).map((recipient) => ({
+  const jobs = emailableRecipients(deduplicateRecipients(recipients)).map((recipient) => ({
     eventKey: `reminder:${input.issue.issueId}:${input.reminderId}:${recipient.role}:${recipient.id}`,
     issueId: input.issue.issueId,
     eventType: 'RETURN_REMINDER' as const,

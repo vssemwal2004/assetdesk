@@ -139,6 +139,11 @@ function exactCaseInsensitive(value: string): RegExp {
   return new RegExp(`^${escapeSearchRegex(value)}$`, 'i');
 }
 
+function exactCaseInsensitiveWhitespace(value: string): RegExp {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return new RegExp(`^${escapeSearchRegex(normalized).replaceAll(' ', '\\s+')}$`, 'i');
+}
+
 function normalizeAssetType(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
 }
@@ -236,11 +241,11 @@ function storeMatches(
       : storeNames;
   return names.flatMap((name): Array<Record<string, unknown>> => {
     const [location, block] = name.split('/').map((part) => part.trim());
-    const exactLocation = exactCaseInsensitive(location ?? name);
+    const exactLocation = exactCaseInsensitiveWhitespace(location ?? name);
     if (location && block) {
       return [
-        { location: exactLocation, block: exactCaseInsensitive(block) },
-        { locationBlock: exactCaseInsensitive(name) },
+        { location: exactLocation, block: exactCaseInsensitiveWhitespace(block) },
+        { locationBlock: exactCaseInsensitiveWhitespace(name) },
       ];
     }
     return [{ location: exactCaseInsensitive(name) }];

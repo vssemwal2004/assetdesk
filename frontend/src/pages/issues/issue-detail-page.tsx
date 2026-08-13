@@ -482,8 +482,8 @@ function EditIssueCard({
   const [universityId, setUniversityId] = useState(issue.receiver.universityId ?? '');
   const [type, setType] = useState<ReceiverType>(issue.receiver.type);
   const [department, setDepartment] = useState(issue.receiver.department ?? '');
-  const [contact, setContact] = useState(issue.receiver.contact);
-  const [email, setEmail] = useState(issue.receiver.email);
+  const [contact, setContact] = useState(issue.receiver.contact ?? '');
+  const [email, setEmail] = useState(issue.receiver.email ?? '');
   const [purpose, setPurpose] = useState(issue.purpose ?? '');
   const [notes, setNotes] = useState(issue.notes ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -571,8 +571,8 @@ function EditIssueCard({
             </select>
           </label>
           <EditField label="Department" onChange={setDepartment} optional value={department} />
-          <EditField label="Contact" onChange={setContact} value={contact} />
-          <EditField label="Email" onChange={setEmail} value={email} />
+          <EditField label="Contact" onChange={setContact} optional value={contact} />
+          <EditField label="Email" onChange={setEmail} optional value={email} />
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           <label className="block">

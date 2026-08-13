@@ -407,8 +407,8 @@ export async function createIssue(
         ...(receiver.universityId ? { universityId: receiver.universityId } : {}),
         type: receiver.type,
         ...(receiver.department ? { department: receiver.department } : {}),
-        contact: receiver.contact,
-        email: receiver.email,
+        ...(receiver.contact ? { contact: receiver.contact } : {}),
+        ...(receiver.email ? { email: receiver.email } : {}),
       },
       issuedBy,
       issuedAt,
@@ -708,8 +708,8 @@ export async function updateIssue(
   if (input.receiver) {
     issue.receiver.fullName = input.receiver.fullName;
     issue.receiver.type = input.receiver.type;
-    issue.receiver.contact = input.receiver.contact;
-    issue.receiver.email = input.receiver.email;
+    issue.set('receiver.contact', input.receiver.contact || undefined);
+    issue.set('receiver.email', input.receiver.email || undefined);
     issue.set('receiver.universityId', input.receiver.universityId || undefined);
     issue.set('receiver.department', input.receiver.department || undefined);
     changedFields.push('receiver');

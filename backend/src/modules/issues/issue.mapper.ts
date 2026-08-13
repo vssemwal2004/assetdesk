@@ -93,8 +93,8 @@ function receiver(issue: IssueDocument) {
     universityId: issue.receiver.universityId ?? null,
     type: issue.receiver.type,
     department: issue.receiver.department ?? null,
-    contact: issue.receiver.contact,
-    email: issue.receiver.email,
+    contact: issue.receiver.contact ?? null,
+    email: issue.receiver.email ?? null,
   };
 }
 

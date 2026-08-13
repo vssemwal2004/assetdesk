@@ -8,7 +8,6 @@ import {
   TrackingModeSchema,
   UserRoleSchema,
 } from './domain.js';
-import { CreateReceiverRequestSchema } from './receivers.js';
 import {
   AssetTagSchema,
   IssueIdSchema,
@@ -20,6 +19,23 @@ import {
 const OptionalPurposeSchema = z.string().trim().min(1).max(240).optional();
 const OptionalNotesSchema = z.string().trim().min(1).max(2_000).optional();
 const LineIdSchema = z.string().uuid();
+const OptionalIssueContactSchema = z
+  .string()
+  .trim()
+  .max(40)
+  .optional()
+  .transform((value) => value || undefined)
+  .refine((value) => value === undefined || (value.match(/\d/g) ?? []).length >= 5, {
+    message: 'Contact must contain at least 5 digits',
+  });
+const OptionalIssueEmailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .email()
+  .max(254)
+  .optional()
+  .or(z.literal('').transform(() => undefined));
 
 export const DuePresetSchema = z.enum([
   'ONE_DAY',
@@ -74,12 +90,23 @@ export const CreateIssueLineSchema = z.discriminatedUnion('trackingMode', [
   CreateIssueSerializedLineSchema,
 ]);
 
+export const CreateIssueReceiverRequestSchema = z
+  .object({
+    fullName: z.string().trim().min(2).max(120),
+    universityId: z.string().trim().min(1).max(64).optional(),
+    type: ReceiverTypeSchema,
+    department: z.string().trim().min(1).max(120).optional(),
+    contact: OptionalIssueContactSchema,
+    email: OptionalIssueEmailSchema,
+  })
+  .strict();
+
 export const CreateCatalogIssueRequestSchema = z
   .object({
     mode: z.literal('CATALOG').optional(),
     assignmentType: AssignmentTypeSchema,
     receiverCode: ReceiverCodeSchema.optional(),
-    receiver: CreateReceiverRequestSchema.optional(),
+    receiver: CreateIssueReceiverRequestSchema.optional(),
     lines: z.array(CreateIssueLineSchema).min(1).max(50),
     due: DueSelectionSchema.optional(),
     purpose: OptionalPurposeSchema,
@@ -155,8 +182,8 @@ export const UpdateIssueReceiverSchema = z
       .optional()
       .nullable()
       .transform((value) => value || null),
-    contact: z.string().trim().min(3).max(40),
-    email: z.string().trim().toLowerCase().email().max(254),
+    contact: OptionalIssueContactSchema.nullable(),
+    email: OptionalIssueEmailSchema.nullable(),
   })
   .strict();
 
@@ -193,8 +220,8 @@ export const IssueReceiverSnapshotSchema = z
     universityId: z.string().nullable(),
     type: ReceiverTypeSchema,
     department: z.string().nullable(),
-    contact: z.string().min(1),
-    email: z.string().email(),
+    contact: z.string().nullable(),
+    email: z.string().email().nullable(),
   })
   .strict();
 
@@ -560,6 +587,7 @@ export type DuePreset = z.infer<typeof DuePresetSchema>;
 export type DueSelection = z.infer<typeof DueSelectionSchema>;
 export type CreateIssueRequest = z.infer<typeof CreateIssueRequestSchema>;
 export type CreateCatalogIssueRequest = z.infer<typeof CreateCatalogIssueRequestSchema>;
+export type CreateIssueReceiverRequest = z.infer<typeof CreateIssueReceiverRequestSchema>;
 export type UpdateIssueReceiver = z.infer<typeof UpdateIssueReceiverSchema>;
 export type UpdateIssueRequest = z.infer<typeof UpdateIssueRequestSchema>;
 export type IssueReceiverSnapshot = z.infer<typeof IssueReceiverSnapshotSchema>;

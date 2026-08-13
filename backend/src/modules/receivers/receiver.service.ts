@@ -1,6 +1,7 @@
 import { Types, type ClientSession, type QueryFilter } from 'mongoose';
 
 import type {
+  CreateIssueReceiverRequest,
   CreateReceiverRequest,
   Receiver,
   ReceiverStatus,
@@ -78,13 +79,13 @@ export function conflictFromReceiverDuplicate(error: unknown): AppError | null {
 }
 
 async function assertUniqueIdentity(
-  emailNormalized: string,
+  emailNormalized?: string,
   universityIdNormalized?: string,
   excludeId?: Types.ObjectId,
 ): Promise<void> {
   const excluding = excludeId ? { _id: { $ne: excludeId } } : {};
   const [emailExists, universityIdExists] = await Promise.all([
-    ReceiverModel.exists({ ...excluding, emailNormalized }),
+    emailNormalized ? ReceiverModel.exists({ ...excluding, emailNormalized }) : Promise.resolve(null),
     universityIdNormalized
       ? ReceiverModel.exists({ ...excluding, universityIdNormalized })
       : Promise.resolve(null),
@@ -101,12 +102,15 @@ function objectId(value: string): Types.ObjectId {
   return new Types.ObjectId(value);
 }
 
-export function createRecordInput(input: CreateReceiverRequest, actorUserId: Types.ObjectId) {
+export function createRecordInput(
+  input: CreateReceiverRequest | CreateIssueReceiverRequest,
+  actorUserId: Types.ObjectId,
+) {
   const fullName = normalizeDisplayText(input.fullName);
   const universityId = input.universityId ? normalizeDisplayText(input.universityId) : undefined;
   const department = input.department ? normalizeDisplayText(input.department) : undefined;
-  const contact = normalizeDisplayText(input.contact);
-  const email = normalizeEmail(input.email);
+  const contact = input.contact ? normalizeDisplayText(input.contact) : undefined;
+  const email = input.email ? normalizeEmail(input.email) : undefined;
 
   return {
     fullName,
@@ -116,10 +120,8 @@ export function createRecordInput(input: CreateReceiverRequest, actorUserId: Typ
       : {}),
     type: input.type,
     ...(department ? { department, departmentNormalized: normalizeSearchText(department) } : {}),
-    contact,
-    contactNormalized: normalizeContactSearch(contact),
-    email,
-    emailNormalized: email,
+    ...(contact ? { contact, contactNormalized: normalizeContactSearch(contact) } : {}),
+    ...(email ? { email, emailNormalized: email } : {}),
     status: 'ACTIVE' as const,
     createdBy: actorUserId,
     updatedBy: actorUserId,
@@ -188,50 +190,53 @@ export async function createReceiver(
 }
 
 export async function findOrCreateReceiverForIssue(
-  input: CreateReceiverRequest,
+  input: CreateIssueReceiverRequest,
   actorUserId: string,
   session?: ClientSession,
 ): Promise<ReceiverRecord> {
   const values = createRecordInput(input, objectId(actorUserId));
-  const identityFilter: QueryFilter<ReceiverRecord> = {
-    $or: [
-      { emailNormalized: values.emailNormalized },
-      ...(values.universityIdNormalized
-        ? [{ universityIdNormalized: values.universityIdNormalized }]
-        : []),
-    ],
-  };
-  const existing = await ReceiverModel.findOneAndUpdate(
-    identityFilter,
-    {
-      $set: {
-        status: 'ACTIVE',
-        fullName: values.fullName,
-        fullNameNormalized: values.fullNameNormalized,
-        type: values.type,
-        contact: values.contact,
-        contactNormalized: values.contactNormalized,
-        email: values.email,
-        emailNormalized: values.emailNormalized,
-        updatedBy: values.updatedBy,
-        ...(values.universityId
-          ? {
-              universityId: values.universityId,
-              universityIdNormalized: values.universityIdNormalized,
-            }
-          : {}),
-        ...(values.department
-          ? {
-              department: values.department,
-              departmentNormalized: values.departmentNormalized,
-            }
-          : {}),
+  const identityAlternatives: QueryFilter<ReceiverRecord>[] = [
+    ...(values.emailNormalized ? [{ emailNormalized: values.emailNormalized }] : []),
+    ...(values.universityIdNormalized
+      ? [{ universityIdNormalized: values.universityIdNormalized }]
+      : []),
+  ];
+  const identityFilter: QueryFilter<ReceiverRecord> | null = identityAlternatives.length
+    ? { $or: identityAlternatives }
+    : null;
+  if (identityFilter) {
+    const existing = await ReceiverModel.findOneAndUpdate(
+      identityFilter,
+      {
+        $set: {
+          status: 'ACTIVE',
+          fullName: values.fullName,
+          fullNameNormalized: values.fullNameNormalized,
+          type: values.type,
+          updatedBy: values.updatedBy,
+          ...(values.contact
+            ? { contact: values.contact, contactNormalized: values.contactNormalized }
+            : {}),
+          ...(values.email ? { email: values.email, emailNormalized: values.emailNormalized } : {}),
+          ...(values.universityId
+            ? {
+                universityId: values.universityId,
+                universityIdNormalized: values.universityIdNormalized,
+              }
+            : {}),
+          ...(values.department
+            ? {
+                department: values.department,
+                departmentNormalized: values.departmentNormalized,
+              }
+            : {}),
+        },
+        $inc: { operationalUseCount: 1 },
       },
-      $inc: { operationalUseCount: 1 },
-    },
-    { returnDocument: 'after', ...(session ? { session } : {}), timestamps: false },
-  );
-  if (existing) return existing;
+      { returnDocument: 'after', ...(session ? { session } : {}), timestamps: false },
+    );
+    if (existing) return existing;
+  }
 
   for (let attempt = 0; attempt < MAX_CODE_ALLOCATION_ATTEMPTS; attempt += 1) {
     const receiverCode = await allocateReceiverCode();
@@ -246,12 +251,17 @@ export async function findOrCreateReceiverForIssue(
     } catch (error) {
       const conflict = conflictFromReceiverDuplicate(error);
       if (conflict) {
-        const retry = await ReceiverModel.findOneAndUpdate(
-          identityFilter,
-          { $set: { status: 'ACTIVE', updatedBy: values.updatedBy }, $inc: { operationalUseCount: 1 } },
-          { returnDocument: 'after', ...(session ? { session } : {}), timestamps: false },
-        );
-        if (retry) return retry;
+        if (identityFilter) {
+          const retry = await ReceiverModel.findOneAndUpdate(
+            identityFilter,
+            {
+              $set: { status: 'ACTIVE', updatedBy: values.updatedBy },
+              $inc: { operationalUseCount: 1 },
+            },
+            { returnDocument: 'after', ...(session ? { session } : {}), timestamps: false },
+          );
+          if (retry) return retry;
+        }
         throw conflict;
       }
       if (duplicateField(error) === 'receiverCode') continue;

@@ -44,7 +44,7 @@ describe('IT Asset issue selection', () => {
           ...assetMaterial,
           status: 'NOT_IN_USE',
         },
-        'ALL',
+        '',
         storeNames,
       ),
     ).toBe(true);
@@ -54,7 +54,7 @@ describe('IT Asset issue selection', () => {
           ...assetMaterial,
           status: 'SCRAP',
         },
-        'ALL',
+        '',
         storeNames,
       ),
     ).toBe(false);
@@ -64,7 +64,7 @@ describe('IT Asset issue selection', () => {
           ...assetMaterial,
           location: 'Chandra Shekhar Azad Hostel',
         },
-        'ALL',
+        '',
         storeNames,
       ),
     ).toBe(false);
@@ -74,7 +74,7 @@ describe('IT Asset issue selection', () => {
           ...assetMaterial,
           availableQuantity: 0,
         },
-        'ALL',
+        '',
         storeNames,
       ),
     ).toBe(false);
@@ -93,6 +93,18 @@ describe('IT Asset issue selection', () => {
         storeNames,
       ),
     ).toBe(true);
+    expect(
+      isIssueableInventoryMaterial(
+        {
+          ...assetMaterial,
+          location: 'Param Centre Store',
+          block: 'Param Computer Centre',
+          locationBlock: 'Param Centre Store / Param Computer Centre',
+        },
+        'Param Centre Store / Param  Computer Centre',
+        ['Param Centre Store / Param  Computer Centre'],
+      ),
+    ).toBe(true);
   });
 
   it('matches configured stores to inventory location and block', () => {
@@ -109,6 +121,28 @@ describe('IT Asset issue selection', () => {
         block: 'Other Block',
         locationBlock: null,
       }),
+    ).toBe(false);
+    expect(
+      matchesStoreSource('Param Centre Store / Param  Computer Centre', {
+        location: 'Param Centre Store',
+        block: 'Param Computer Centre',
+        locationBlock: 'Param Centre Store / Param Computer Centre',
+      }),
+    ).toBe(true);
+  });
+
+  it('does not treat another configured store as stock for the selected store', () => {
+    expect(
+      isIssueableInventoryMaterial(
+        {
+          ...assetMaterial,
+          location: 'Param Centre Store',
+          block: 'Param Computer Centre',
+          locationBlock: 'Param Centre Store / Param Computer Centre',
+        },
+        'Aryabhatt Store / Aryabhatt Centre',
+        storeNames,
+      ),
     ).toBe(false);
   });
 
@@ -146,10 +180,11 @@ describe('IT Asset issue selection', () => {
     ).toBe('GEU-AST-000001 is selected more than once.');
   });
 
-  it('reports missing receiver fields before schema validation', () => {
+  it('allows optional receiver contact and email before schema validation', () => {
     expect(firstReceiverIssue({ fullName: '', contact: '', email: '' })).toBe(
       'Enter the receiver name or department.',
     );
+    expect(firstReceiverIssue({ fullName: 'Amit', contact: '', email: '' })).toBeNull();
     expect(firstReceiverIssue({ fullName: 'Amit', contact: '123', email: '' })).toBe(
       'Enter a valid receiver contact number with at least 5 digits.',
     );

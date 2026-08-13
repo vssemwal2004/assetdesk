@@ -348,13 +348,13 @@ function EditReceiverForm({
           label="Contact number"
           onChange={(event) => setForm((value) => ({ ...value, contact: event.target.value }))}
           type="tel"
-          value={form.contact}
+          value={form.contact ?? ''}
         />
         <TextField
           label="Email"
           onChange={(event) => setForm((value) => ({ ...value, email: event.target.value }))}
           type="email"
-          value={form.email}
+          value={form.email ?? ''}
         />
       </div>
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

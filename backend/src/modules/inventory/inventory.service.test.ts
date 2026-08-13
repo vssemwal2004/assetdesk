@@ -20,7 +20,10 @@ vi.mock('./asset-detail.model.js', () => ({
     find: vi.fn(() => ({
       select: vi.fn(() => ({
         lean: vi.fn(() =>
-          Promise.resolve([{ name: 'Param Centre Store' }, { name: 'Aryabhatt Store' }]),
+          Promise.resolve([
+            { name: 'Param Centre Store / Param  Computer Centre' },
+            { name: 'Aryabhatt Store / Aryabhatt Centre' },
+          ]),
         ),
       })),
       sort: vi.fn(() => Promise.resolve([])),
@@ -124,12 +127,36 @@ describe('inventory access filters', () => {
       pageSize: 20,
       role: 'ADMIN',
       issueable: true,
-      location: 'Aryabhatt Store',
+      location: 'Aryabhatt Store / Aryabhatt Centre',
     });
 
     expect(filter.status).toEqual({ $in: ['ACTIVE', 'NOT_IN_USE'] });
     expect(filter.availableQuantity).toEqual({ $gt: 0 });
-    expect(filter.$and).toEqual([{ $or: [{ location: /^Aryabhatt Store$/i }] }]);
+    expect(filter.$and).toEqual([
+      {
+        $or: [
+          { location: /^Aryabhatt\s+Store$/i, block: /^Aryabhatt\s+Centre$/i },
+          { locationBlock: /^Aryabhatt\s+Store\s+\/\s+Aryabhatt\s+Centre$/i },
+        ],
+      },
+    ]);
+  });
+
+  it('matches store location and block when master data contains extra spaces', async () => {
+    const filter = await buildMaterialListFilterAsync({
+      page: 1,
+      pageSize: 20,
+      role: 'ADMIN',
+      issueable: true,
+      location: 'Param Centre Store / Param Computer Centre',
+    });
+
+    const storeFilter = (filter.$and as Array<{ $or: Array<Record<string, RegExp>> }>)[0];
+    expect(storeFilter?.$or[0]?.location?.test('Param Centre Store')).toBe(true);
+    expect(storeFilter?.$or[0]?.block?.test('Param Computer Centre')).toBe(true);
+    expect(storeFilter?.$or[1]?.locationBlock?.test('Param Centre Store / Param Computer Centre')).toBe(
+      true,
+    );
   });
 
   it('forces Worker unit reads to AVAILABLE while Admin filters remain selectable', () => {
