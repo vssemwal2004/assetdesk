@@ -36,8 +36,9 @@ function dateDaysAgo(days: number): string {
 
 export function AuditPage() {
   const [parameters, setParameters] = useSearchParams();
+  const today = parameters.get('today') === '1';
   const page = Math.max(1, Number(parameters.get('page')) || 1);
-  const from = parameters.get('from') ?? dateDaysAgo(30);
+  const from = parameters.get('from') ?? dateDaysAgo(today ? 0 : 30);
   const to = parameters.get('to') ?? dateDaysAgo(0);
   const search = parameters.get('search') ?? '';
   const action = parameters.get('action') ?? '';

@@ -299,7 +299,7 @@ function DashboardContent({
       value: data.stats.pendingReturns,
       helper: `${data.stats.outstandingItems} material item${data.stats.outstandingItems === 1 ? '' : 's'} outside`,
       icon: Clock3,
-      to: '/issues?returnState=PENDING',
+      to: '/issues?returnState=PENDING&assignmentType=SHORT_TERM',
       tone: 'warning' as const,
     },
     {
@@ -342,6 +342,19 @@ function DashboardContent({
       </section>
 
       <OperationalSummary admin={admin} stats={data.stats} />
+
+      {admin ? (
+        <section className="grid gap-3 sm:grid-cols-2">
+          <Link className="group flex items-center gap-4 rounded-[8px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]" to="/inventory/low-stock">
+            <PackageOpen className="text-[var(--color-warning)]" size={20} />
+            <span className="flex-1"><strong className="block text-sm">Low stock</strong><span className="text-xs text-[var(--color-text-muted)]">Consumables and assets below stock level</span></span><ArrowRight size={16} />
+          </Link>
+          <Link className="group flex items-center gap-4 rounded-[8px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]" to="/activity">
+            <Activity className="text-[var(--color-info)]" size={20} />
+            <span className="flex-1"><strong className="block text-sm">Today activity</strong><span className="text-xs text-[var(--color-text-muted)]">All employee actions and audit evidence</span></span><ArrowRight size={16} />
+          </Link>
+        </section>
+      ) : null}
 
       <section className="dashboard-enter grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.7fr)]">
         <TrendPanel data={data.trend} range={range} />

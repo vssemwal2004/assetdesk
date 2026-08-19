@@ -584,6 +584,7 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
   }
   if (input.returnState) {
     filter.totalOutstandingQuantity = { $gt: 0 };
+    filter.assignmentType = 'SHORT_TERM';
     accessClauses.push({ status: { $in: ['ISSUED', 'PARTIALLY_RETURNED'] } });
     if (input.returnState === 'DUE_TODAY') {
       filter.expectedReturnAt = { $gte: today.start, $lt: today.end };

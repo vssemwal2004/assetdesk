@@ -48,6 +48,7 @@ export interface MaterialListInput {
   dataScope?: 'OWN' | 'ALL';
   search?: string;
   issueable?: boolean;
+  storeOnly?: boolean;
   status?: MaterialStatus;
   trackingMode?: TrackingMode;
   returnPolicy?: ReturnPolicy;
@@ -488,9 +489,12 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
   if (input.returnPolicy) filter.returnPolicy = input.returnPolicy;
   if (input.stockState === 'AVAILABLE') filter.availableQuantity = { $gt: 0 };
   if (input.stockState === 'LOW_STOCK') {
-    filter.availableQuantity = { $gt: 0 };
+    filter.availableQuantity = { $gte: 0 };
     filter.$expr = {
-      $lte: ['$availableQuantity', { $ceil: { $multiply: ['$totalQuantity', 0.2] } }],
+      $and: [
+        { $gt: ['$totalQuantity', 0] },
+        { $lte: ['$availableQuantity', { $multiply: ['$totalQuantity', 0.5] }] },
+      ],
     };
   }
   if (input.stockState === 'OUT_OF_STOCK') filter.availableQuantity = 0;
@@ -533,7 +537,7 @@ export async function buildMaterialListFilterAsync(
   input: MaterialListInput,
 ): Promise<Record<string, unknown>> {
   const filter = buildMaterialListFilter(input);
-  if (input.issueable) {
+  if (input.issueable || input.storeOnly) {
     const stores = storeMatches(await issueableStoreNames(), input.location);
     filter.$and = [
       ...((filter.$and as Record<string, unknown>[] | undefined) ?? []),

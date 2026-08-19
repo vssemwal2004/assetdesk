@@ -58,6 +58,9 @@ const InventoryPage = lazy(() =>
     default: module.InventoryPage,
   })),
 );
+const LowStockPage = lazy(() =>
+  import('../pages/inventory/low-stock-page').then((module) => ({ default: module.LowStockPage })),
+);
 const InventoryDetailPage = lazy(() =>
   import('../pages/inventory/inventory-detail-page').then((module) => ({
     default: module.InventoryDetailPage,
@@ -132,6 +135,9 @@ const BillPage = lazy(() =>
 );
 const AuditPage = lazy(() =>
   import('../pages/audit/audit-page').then((module) => ({ default: module.AuditPage })),
+);
+const ActivityPage = lazy(() =>
+  import('../pages/audit/activity-page').then((module) => ({ default: module.ActivityPage })),
 );
 const ReportsPage = lazy(() =>
   import('../pages/reports/reports-page').then((module) => ({ default: module.ReportsPage })),
@@ -249,6 +255,18 @@ export function App() {
                   path="/returns"
                 />
                 <Route element={<AdminRoute />}>
+                  <Route
+                    element={
+                      <Suspense fallback={<FeatureRouteFallback />}>
+                        <ActivityPage />
+                      </Suspense>
+                    }
+                    path="/activity"
+                  />
+                  <Route
+                    element={<LowStockPage />}
+                    path="/inventory/low-stock"
+                  />
                   <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>

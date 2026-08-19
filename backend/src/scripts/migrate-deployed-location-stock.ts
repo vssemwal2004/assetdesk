@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import mongoose, { Types, type ClientSession } from 'mongoose';
 
 import { env } from '../config/env.js';
-import { connectToDatabase } from '../db/mongoose.js';
+import { connectDatabase } from '../db/mongoose.js';
 import { appendAuditEvent } from '../modules/audit/audit.service.js';
 import { AssetUnitModel } from '../modules/inventory/asset-unit.model.js';
 import { MaterialModel, type MaterialDocument } from '../modules/inventory/material.model.js';
@@ -15,7 +15,7 @@ import { ReceiverModel, type ReceiverDocument } from '../modules/receivers/recei
 import { UserModel, type UserDocument } from '../modules/users/user.model.js';
 
 const MIGRATION_KEY = 'deployed-location-stock-2026-08-12';
-const STORE_PATTERN = /param\s*(?:centre\s*store|computer\s*cent(?:re|er))/i;
+const STORE_PATTERN = /(?:param\s*(?:centre\s*store|computer\s*cent(?:re|er))|aryabhatt\s*store)/i;
 const CONTACT_PLACEHOLDER = '0000000000';
 const EMAIL_DOMAIN = 'assetdesk.local';
 
@@ -72,7 +72,8 @@ function locationKey(material: MaterialDocument): string {
 }
 
 function receiverIdentity(locationBlock: string): string {
-  return `MIGRATION:${MIGRATION_KEY}:${locationBlock.toUpperCase()}`;
+  const hash = createHash('sha1').update(locationBlock).digest('hex').slice(0, 12);
+  return `MIGRATION:${MIGRATION_KEY.slice(-20)}:${hash}`.slice(0, 64);
 }
 
 function receiverEmail(locationBlock: string): string {
@@ -357,11 +358,12 @@ async function migrateLocation(
 
 async function main() {
   const options = parseOptions();
-  await connectToDatabase();
+  await connectDatabase();
 
   const admin = await getAdminActor();
   const materials = await MaterialModel.find({
     status: { $in: ['ACTIVE', 'NOT_IN_USE'] },
+    trackingMode: 'SERIALIZED',
     availableQuantity: { $gt: 0 },
   }).sort({ location: 1, block: 1, category: 1, name: 1 });
   const plans = buildPlans(materials);

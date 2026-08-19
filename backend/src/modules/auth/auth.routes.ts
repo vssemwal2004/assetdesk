@@ -47,6 +47,16 @@ function cookieValue(request: Request, name: string): string | undefined {
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,
+  // Key authentication attempts by the account being acted on, not by the
+  // shared office/NAT IP. Otherwise one user's failures lock out every user
+  // on the same network.
+  keyGenerator: (request) => {
+    const identifier = request.body?.identifier ?? request.body?.email;
+    if (typeof identifier === 'string' && identifier.trim()) {
+      return `account:${identifier.trim().toLocaleLowerCase('en-US')}`;
+    }
+    return `ip:${request.ip}`;
+  },
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   handler: (request, response) => {

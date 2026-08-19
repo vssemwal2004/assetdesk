@@ -111,6 +111,7 @@ const MaterialListQuerySchema = z
       if (value === 'false' || value === false) return false;
       return undefined;
     }, z.boolean().optional()),
+    storeOnly: z.preprocess((value) => value === 'true' || value === true ? true : undefined, z.boolean().optional()),
     status: z.preprocess(
       (value) => (value === '' ? undefined : value),
       MaterialStatusSchema.optional(),
@@ -290,6 +291,7 @@ export function createInventoryRouter(): Router {
         actorUserId: actor.userId,
         dataScope: actor.dataAccess.inventory,
         ...(input.issueable !== undefined ? { issueable: input.issueable } : {}),
+        ...(input.storeOnly !== undefined ? { storeOnly: input.storeOnly } : {}),
         ...(input.search ? { search: input.search } : {}),
         ...(input.status ? { status: input.status } : {}),
         ...(input.trackingMode ? { trackingMode: input.trackingMode } : {}),

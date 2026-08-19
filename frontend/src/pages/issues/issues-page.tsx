@@ -77,7 +77,9 @@ export function IssuesPage() {
   const status = issueStatus(parameters.get('status') ?? '');
   const period = issuePeriod(parameters.get('period') ?? '');
   const returnState = issueReturnState(parameters.get('returnState') ?? '');
-  const issueAssignmentType = assignmentType(parameters.get('assignmentType') ?? '');
+  const issueAssignmentType =
+    assignmentType(parameters.get('assignmentType') ?? '') ??
+    (returnState === 'PENDING' ? 'SHORT_TERM' : undefined);
   const query = useQuery({
     queryKey: [
       'issues',
@@ -104,6 +106,8 @@ export function IssuesPage() {
       if (value) next.set(key, value);
       else next.delete(key);
     }
+    if (updates.returnState === 'PENDING') next.set('assignmentType', 'SHORT_TERM');
+    if (updates.returnState === '') next.delete('assignmentType');
     if (!Object.hasOwn(updates, 'page')) next.set('page', '1');
     setParameters(next);
   }
