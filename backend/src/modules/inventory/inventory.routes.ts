@@ -112,6 +112,8 @@ const MaterialListQuerySchema = z
       return undefined;
     }, z.boolean().optional()),
     storeOnly: z.preprocess((value) => value === 'true' || value === true ? true : undefined, z.boolean().optional()),
+    lowStockOnly: z.preprocess((value) => value === 'true' || value === true ? true : undefined, z.boolean().optional()),
+    availableMax: z.coerce.number().int().min(0).max(1_000_000_000).optional(),
     status: z.preprocess(
       (value) => (value === '' ? undefined : value),
       MaterialStatusSchema.optional(),
@@ -292,6 +294,8 @@ export function createInventoryRouter(): Router {
         dataScope: actor.dataAccess.inventory,
         ...(input.issueable !== undefined ? { issueable: input.issueable } : {}),
         ...(input.storeOnly !== undefined ? { storeOnly: input.storeOnly } : {}),
+        ...(input.lowStockOnly !== undefined ? { lowStockOnly: input.lowStockOnly } : {}),
+        ...(input.availableMax !== undefined ? { availableMax: input.availableMax } : {}),
         ...(input.search ? { search: input.search } : {}),
         ...(input.status ? { status: input.status } : {}),
         ...(input.trackingMode ? { trackingMode: input.trackingMode } : {}),

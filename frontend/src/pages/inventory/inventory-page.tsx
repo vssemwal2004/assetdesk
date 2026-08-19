@@ -842,46 +842,16 @@ export function InventoryPage() {
           ) : (
             <>
               <div className="space-y-3 min-[840px]:hidden">
-                {materialGroups.map((group) => (
-                  <details
-                    className="group space-y-2"
-                    key={materialGroupKey(group.category, group.trackingMode)}
-                  >
-                    <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <ChevronDown
-                            className="text-[var(--color-primary)] transition-transform group-open:rotate-180"
-                            size={18}
-                          />
-                          <div>
-                            <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-                              {group.category}
-                            </h2>
-                            <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                              {humanizeCatalogValue(group.trackingMode)} · {group.materials.length}{' '}
-                              model
-                              {group.materials.length === 1 ? '' : 's'}
-                            </p>
-                          </div>
-                        </div>
-                        <p className="text-right text-xs font-bold text-[var(--color-text-muted)]">
-                          {group.availableQuantity} / {group.totalQuantity} available
-                        </p>
-                      </div>
-                    </summary>
-                    {group.materials.map((material) => (
-                      <MaterialCard
-                        canAdjustQuantity={canAdjustQuantity}
-                        canDelete={canDeleteInventory}
-                        canEdit={canEditInventory}
-                        key={material.materialCode}
-                        material={material}
-                        onDelete={confirmDelete}
-                        onAdjustQuantity={setQuantityTarget}
-                      />
-                    ))}
-                  </details>
+                {materials.map((material) => (
+                  <MaterialCard
+                    canAdjustQuantity={canAdjustQuantity}
+                    canDelete={canDeleteInventory}
+                    canEdit={canEditInventory}
+                    key={material.materialCode}
+                    material={material}
+                    onDelete={confirmDelete}
+                    onAdjustQuantity={setQuantityTarget}
+                  />
                 ))}
               </div>
               <MaterialTable
@@ -1840,7 +1810,6 @@ function MaterialTable({
     action: 'EDIT' | 'DELETE';
   }) => void;
 }) {
-  const groups = groupMaterials(materials);
   return (
     <div className="hidden overflow-visible rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
       <table className="w-full border-collapse text-left">
@@ -1865,19 +1834,15 @@ function MaterialTable({
           </tr>
         </thead>
         <tbody>
-          {groups.map((group) => (
-            <GroupedMaterialRows
-              canAdd={canAdd}
+          {materials.map((material) => (
+            <MaterialVariantRows
               canDelete={canDelete}
               canAdjustQuantity={canAdjustQuantity}
               canEdit={canEdit}
-              group={group}
-              key={materialGroupKey(group.category, group.trackingMode)}
+              key={material.materialCode}
+              material={material}
               onDelete={onDelete}
               onAdjustQuantity={onAdjustQuantity}
-              onAddCategory={onAddCategory}
-              {...(onMergeCategory ? { onMergeCategory } : {})}
-              {...(onModelCrud ? { onModelCrud } : {})}
               onView={onView}
             />
           ))}
@@ -1919,6 +1884,26 @@ function GroupedMaterialRows({
 }) {
   const [open, setOpen] = useState(false);
   const [openModels, setOpenModels] = useState<string[]>([]);
+
+  if (group.category.trim().toLowerCase() === 'consumable') {
+    return (
+      <>
+        {group.materials.map((material) => (
+          <MaterialVariantRows
+            canAdjustQuantity={canAdjustQuantity}
+            canDelete={canDelete}
+            canEdit={canEdit}
+            key={material.materialCode}
+            material={material}
+            onAdjustQuantity={onAdjustQuantity}
+            onDelete={onDelete}
+            onView={onView}
+          />
+        ))}
+      </>
+    );
+  }
+
   const modelGroups = Object.values(
     group.materials.reduce<
       Record<
@@ -2171,7 +2156,7 @@ function MaterialVariantRows({
             />
             <span className="min-w-0">
               <span className="block truncate text-sm font-bold text-[var(--color-text-strong)]">
-                {material.configuration || 'Standard configuration'}
+                {material.typeModelName || material.name || material.configuration || 'Standard configuration'}
               </span>
               <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
                 {material.materialCode} ·{' '}

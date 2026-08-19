@@ -49,6 +49,8 @@ export interface MaterialListInput {
   search?: string;
   issueable?: boolean;
   storeOnly?: boolean;
+  lowStockOnly?: boolean;
+  availableMax?: number;
   status?: MaterialStatus;
   trackingMode?: TrackingMode;
   returnPolicy?: ReturnPolicy;
@@ -482,6 +484,12 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
   if (input.issueable) {
     filter.availableQuantity = { $gt: 0 };
   }
+  if (input.availableMax !== undefined) {
+    filter.availableQuantity = {
+      ...((filter.availableQuantity as Record<string, unknown> | undefined) ?? {}),
+      $lte: input.availableMax,
+    };
+  }
   if (input.role === 'WORKER' && input.dataScope !== 'ALL' && input.actorUserId) {
     filter.createdBy = objectId(input.actorUserId);
   }
@@ -491,9 +499,9 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
   if (input.stockState === 'LOW_STOCK') {
     filter.availableQuantity = { $gte: 0 };
     filter.$expr = {
-      $and: [
-        { $gt: ['$totalQuantity', 0] },
-        { $lte: ['$availableQuantity', { $multiply: ['$totalQuantity', 0.5] }] },
+      $or: [
+        { $lt: ['$availableQuantity', '$totalQuantity'] },
+        { $and: [{ $eq: ['$totalQuantity', 0] }, { $eq: ['$availableQuantity', 0] }] },
       ],
     };
   }
@@ -502,6 +510,14 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
   if (input.stockState === 'FULLY_ISSUED') {
     filter.issuedQuantity = { $gt: 0 };
     filter.$expr = { $eq: ['$issuedQuantity', '$totalQuantity'] };
+  }
+  if (input.lowStockOnly) {
+    filter.$expr = {
+      $or: [
+        { $lt: ['$availableQuantity', '$totalQuantity'] },
+        { $and: [{ $eq: ['$totalQuantity', 0] }, { $eq: ['$availableQuantity', 0] }] },
+      ],
+    };
   }
   if (input.category) filter.category = exactCaseInsensitive(input.category);
   if (input.location && !input.issueable) filter.location = exactCaseInsensitive(input.location);

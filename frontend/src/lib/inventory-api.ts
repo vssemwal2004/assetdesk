@@ -44,6 +44,8 @@ export interface InventoryFilters {
   status?: MaterialStatus;
   issueable?: boolean;
   storeOnly?: boolean;
+  lowStockOnly?: boolean;
+  availableMax?: number;
   trackingMode?: TrackingMode;
   returnPolicy?: ReturnPolicy;
   stockState?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
@@ -68,6 +70,8 @@ export async function getInventory(
   if (filters.status) parameters.set('status', filters.status);
   if (filters.issueable) parameters.set('issueable', 'true');
   if (filters.storeOnly) parameters.set('storeOnly', 'true');
+  if (filters.lowStockOnly) parameters.set('lowStockOnly', 'true');
+  if (filters.availableMax !== undefined) parameters.set('availableMax', String(filters.availableMax));
   if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
