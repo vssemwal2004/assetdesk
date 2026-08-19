@@ -36,6 +36,9 @@ const AuditEventSchema = new Schema<AuditEventRecord>(
 AuditEventSchema.index({ targetType: 1, targetId: 1, timestampUtc: -1 });
 AuditEventSchema.index({ actorUserId: 1, timestampUtc: -1 });
 AuditEventSchema.index({ timestampUtc: -1, _id: -1 });
+// Keep activity/audit history for 14 days. MongoDB removes expired records
+// automatically in the background; this also applies to records already stored.
+AuditEventSchema.index({ timestampUtc: 1 }, { expireAfterSeconds: 14 * 24 * 60 * 60 });
 AuditEventSchema.index({ action: 1, timestampUtc: -1 });
 AuditEventSchema.index({ result: 1, timestampUtc: -1 });
 AuditEventSchema.index({ actorWorkerId: 1, timestampUtc: -1 });
