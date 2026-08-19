@@ -20,7 +20,6 @@ export function LowStockPage() {
         const response = await getInventory({
           page,
           pageSize,
-          lowStockOnly: true,
           ...(maxAvailable !== undefined ? { availableMax: maxAvailable } : {}),
           ...(kind === 'CONSUMABLE' ? { trackingMode: 'QUANTITY' } : {}),
           ...(kind === 'ASSET' ? { trackingMode: 'SERIALIZED' } : {}),
@@ -39,7 +38,7 @@ export function LowStockPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader description="All consumables and assets with stock below their total quantity. Use the quantity filter to narrow the list." title="Low stock" />
+      <PageHeader description="Consumables and assets filtered by available quantity. Enter a maximum quantity to inspect stock levels." title="Low stock" />
       <AppCard>
         <div className="grid gap-4 md:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)]">
           <label className="space-y-1.5">
