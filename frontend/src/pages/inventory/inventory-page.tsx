@@ -842,7 +842,7 @@ export function InventoryPage() {
           ) : (
             <>
               <div className="space-y-3 min-[840px]:hidden">
-                {materials.map((material) => (
+                {materialGroups.map((group) => group.category.trim().toLowerCase() === 'consumable' ? group.materials.map((material) => (
                   <MaterialCard
                     canAdjustQuantity={canAdjustQuantity}
                     canDelete={canDeleteInventory}
@@ -852,6 +852,13 @@ export function InventoryPage() {
                     onDelete={confirmDelete}
                     onAdjustQuantity={setQuantityTarget}
                   />
+                )) : (
+                  <details className="group space-y-2" key={materialGroupKey(group.category, group.trackingMode)}>
+                    <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
+                      <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><ChevronDown className="text-[var(--color-primary)] transition-transform group-open:rotate-180" size={18} /><div><h2 className="font-extrabold text-[var(--color-primary-strong)]">{group.category}</h2><p className="text-xs font-semibold text-[var(--color-text-muted)]">{humanizeCatalogValue(group.trackingMode)} · {group.materials.length} material{group.materials.length === 1 ? '' : 's'}</p></div></div><p className="text-right text-xs font-bold text-[var(--color-text-muted)]">{group.availableQuantity} / {group.totalQuantity} available</p></div>
+                    </summary>
+                    {group.materials.map((material) => <MaterialCard canAdjustQuantity={canAdjustQuantity} canDelete={canDeleteInventory} canEdit={canEditInventory} key={material.materialCode} material={material} onDelete={confirmDelete} onAdjustQuantity={setQuantityTarget} />)}
+                  </details>
                 ))}
               </div>
               <MaterialTable
@@ -1810,6 +1817,7 @@ function MaterialTable({
     action: 'EDIT' | 'DELETE';
   }) => void;
 }) {
+  const groups = groupMaterials(materials);
   return (
     <div className="hidden overflow-visible rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
       <table className="w-full border-collapse text-left">
@@ -1834,17 +1842,10 @@ function MaterialTable({
           </tr>
         </thead>
         <tbody>
-          {materials.map((material) => (
-            <MaterialVariantRows
-              canDelete={canDelete}
-              canAdjustQuantity={canAdjustQuantity}
-              canEdit={canEdit}
-              key={material.materialCode}
-              material={material}
-              onDelete={onDelete}
-              onAdjustQuantity={onAdjustQuantity}
-              onView={onView}
-            />
+          {groups.map((group) => group.category.trim().toLowerCase() === 'consumable' ? group.materials.map((material) => (
+            <MaterialVariantRows canDelete={canDelete} canAdjustQuantity={canAdjustQuantity} canEdit={canEdit} key={material.materialCode} material={material} onDelete={onDelete} onAdjustQuantity={onAdjustQuantity} onView={onView} />
+          )) : (
+            <GroupedMaterialRows canAdd={canAdd} canDelete={canDelete} canAdjustQuantity={canAdjustQuantity} canEdit={canEdit} group={group} key={materialGroupKey(group.category, group.trackingMode)} onDelete={onDelete} onAdjustQuantity={onAdjustQuantity} onAddCategory={onAddCategory} onView={onView} {...(onMergeCategory ? { onMergeCategory } : {})} {...(onModelCrud ? { onModelCrud } : {})} />
           ))}
         </tbody>
       </table>
