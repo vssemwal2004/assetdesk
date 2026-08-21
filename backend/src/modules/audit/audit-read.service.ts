@@ -14,6 +14,7 @@ interface AuditListInput {
   action?: string;
   result?: AuditResult;
   actorRole?: UserRole;
+  actorWorkerId?: string;
 }
 
 function escapeRegex(value: string): string {
@@ -43,6 +44,7 @@ export async function listAuditEvents(input: AuditListInput) {
   if (input.action) filter.action = input.action;
   if (input.result) filter.result = input.result;
   if (input.actorRole) filter.actorRole = input.actorRole;
+  if (input.actorWorkerId) filter.actorWorkerId = input.actorWorkerId;
   if (input.search) {
     const value = new RegExp(escapeRegex(input.search), 'i');
     filter.$or = [

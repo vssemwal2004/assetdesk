@@ -17,5 +17,5 @@ $trigger = New-ScheduledTaskTrigger -Daily -At $DailyAt
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
 
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description 'Daily AssetDesk MongoDB backup; backup script retains the last 2 days.' -Force | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description 'Daily AssetDesk MongoDB backup; backup script retains the last 14 days.' -Force | Out-Null
 Write-Output "Scheduled task '$TaskName' installed. It runs daily at $($DailyAt.ToString('HH:mm')) when this user is logged on, or as soon as possible afterward."

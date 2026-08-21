@@ -2,7 +2,7 @@
 param(
   [string]$BackupRoot,
   [ValidateRange(1, 3650)]
-  [int]$RetentionDays = 2
+  [int]$RetentionDays = 14
 )
 
 $ErrorActionPreference = 'Stop'

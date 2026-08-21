@@ -32,6 +32,7 @@ const QuerySchema = z
       (value) => (value === '' ? undefined : value),
       UserRoleSchema.optional(),
     ),
+    actorWorkerId: z.preprocess((value) => (value === '' ? undefined : value), z.string().trim().min(1).max(32).optional()),
   })
   .strict();
 
@@ -72,6 +73,7 @@ export function createAuditRouter(): Router {
         ...(input.action ? { action: input.action } : {}),
         ...(input.result ? { result: input.result } : {}),
         ...(input.actorRole ? { actorRole: input.actorRole } : {}),
+        ...(input.actorWorkerId ? { actorWorkerId: input.actorWorkerId } : {}),
       });
       response.json({
         data: result.events,
