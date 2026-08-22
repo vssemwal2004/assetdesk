@@ -9,6 +9,7 @@ import {
   IssueReturnStateSchema,
   IssueStatusSchema,
   UpdateIssueRequestSchema,
+  type CreateInventoryGatePassRequest,
 } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
@@ -33,6 +34,7 @@ import {
   searchReturnableIssues,
   updateIssue,
 } from './issue.service.js';
+import { createInventoryGatePass } from '../inventory-gate-passes/inventory-gate-pass.service.js';
 
 const OptionalQueryTextSchema = z.preprocess(
   (value) => (value === '' ? undefined : value),
@@ -138,6 +140,9 @@ export function createIssuesRouter(): Router {
       try {
         const actor = authenticated(request);
         const input = CreateIssueRequestSchema.parse(request.body);
+        if (input.outsideUniversity && actor.role !== 'ADMIN' && !actor.permissions.includes('GATE_PASS_CREATE_FROM_ISSUE')) {
+          throw new AppError(403, 'GATE_PASS_PERMISSION_REQUIRED', 'You do not have permission to create a Gate Pass from an Issue.');
+        }
         const key = idempotencyKeyFromRequest(request);
         const result = await createIssue(
           input,
@@ -150,6 +155,26 @@ export function createIssuesRouter(): Router {
           hashIdempotencyKey(key),
           fingerprintRequest(input),
         );
+        if (input.outsideUniversity) {
+          const movement = input.outsideUniversity;
+          const gatePassItems = result.issue.lines.reduce<CreateInventoryGatePassRequest['items']>((all, line) => {
+            if (line.material.trackingMode === 'SERIALIZED') all.push(...line.assets.map(asset => ({ trackingMode: 'SERIALIZED' as const, materialCode: line.material.materialCode, assetTag: asset.assetTag, returnRequirement: 'RETURNABLE' as const })));
+            else all.push({ trackingMode: 'QUANTITY', materialCode: line.material.materialCode, quantity: line.issuedQuantity, returnRequirement: 'RETURNABLE' });
+            return all;
+          }, []);
+          await createInventoryGatePass(
+            {
+              purpose: input.assignmentType === 'LONG_TERM' ? 'ISSUE_PERMANENT' : 'ISSUE_RETURNABLE',
+              issueId: result.issue.issueId,
+              destination: { name: movement.destination, ...(movement.organization ? { organization: movement.organization } : {}), ...(movement.contact ? { contact: movement.contact } : {}) },
+              carrier: { name: movement.personCarryingMaterial, ...(movement.contact ? { contact: movement.contact } : {}), ...(movement.vehicleNumber ? { vehicleNumber: movement.vehicleNumber } : {}) },
+              items: gatePassItems,
+              ...(movement.expectedGateInAt ? { expectedGateInAt: movement.expectedGateInAt } : {}),
+              ...(movement.remarks ? { remarks: movement.remarks } : {}),
+            },
+            { userId: actor.userId, workerId: actor.workerId, role: actor.role, requestId: request.requestId },
+          );
+        }
         response.status(result.idempotentReplay ? 200 : 201).json({
           data: { issue: result.issue },
           meta: { idempotentReplay: result.idempotentReplay },

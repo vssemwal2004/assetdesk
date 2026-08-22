@@ -23,6 +23,8 @@ import { WorkerImportModel } from '../modules/workers/worker-import.model.js';
 import { CartridgeModel } from '../modules/cartridges/cartridge.model.js';
 import { CartridgeMovementModel } from '../modules/cartridges/cartridge-movement.model.js';
 import { GatePassModel } from '../modules/cartridges/gate-pass.model.js';
+import { InventoryGatePassModel } from '../modules/inventory-gate-passes/inventory-gate-pass.model.js';
+import { InventoryGatePassCounterModel } from '../modules/inventory-gate-passes/inventory-gate-pass-counter.model.js';
 
 const indexedModels: Array<{
   modelName: string;
@@ -49,6 +51,8 @@ const indexedModels: Array<{
   CartridgeModel,
   CartridgeMovementModel,
   GatePassModel,
+  InventoryGatePassModel,
+  InventoryGatePassCounterModel,
 ];
 
 export async function ensureDatabaseIndexes(): Promise<void> {

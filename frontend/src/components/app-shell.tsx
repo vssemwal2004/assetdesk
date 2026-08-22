@@ -1,5 +1,7 @@
 import {
   ChevronDown,
+  ArrowDownToLine,
+  ArrowUpFromLine,
   ClipboardList,
   ContactRound,
   Home,
@@ -73,6 +75,27 @@ const inventoryNavigation: NavigationItem[] = [
     permission: 'INVENTORY_VIEW',
   },
   { label: 'Add material', to: '/inventory/new', icon: PackagePlus, permission: 'INVENTORY_ADD' },
+];
+
+const gatePassNavigation: NavigationItem[] = [
+  {
+    label: 'Gate Pass Out',
+    to: '/inventory/gate-passes/out',
+    icon: ArrowUpFromLine,
+    permission: 'GATE_PASS_VIEW',
+  },
+  {
+    label: 'Gate Pass In',
+    to: '/inventory/gate-passes/in',
+    icon: ArrowDownToLine,
+    permission: 'GATE_PASS_VIEW',
+  },
+  {
+    label: 'Gate Pass Data',
+    to: '/inventory/gate-passes/data',
+    icon: ReceiptText,
+    permission: 'GATE_PASS_VIEW',
+  },
 ];
 
 const assetDetailsNavigation: NavigationItem[] = [
@@ -257,6 +280,11 @@ function pageTitle(pathname: string): string {
   if (pathname === '/audit') return 'Audit logs';
   if (pathname === '/reports') return 'Reports';
   if (pathname === '/inventory/new') return 'Add material';
+  if (pathname === '/inventory/gate-passes/out/new') return 'Create Gate Pass Out';
+  if (pathname === '/inventory/gate-passes/out') return 'Gate Pass Out';
+  if (pathname === '/inventory/gate-passes/in') return 'Gate Pass In';
+  if (pathname === '/inventory/gate-passes/data') return 'Gate Pass Data';
+  if (pathname.startsWith('/inventory/gate-passes/')) return 'Inventory Gate Pass';
   if (pathname === '/inventory/import') return 'Bulk inventory upload';
   if (pathname === '/inventory/asset-types/view') return 'View asset types';
   if (pathname.startsWith('/inventory/asset-types')) return 'Add asset types';
@@ -325,6 +353,92 @@ function IssueNavigationGroup({
             {...(onClick ? { onClick } : {})}
           />
         ))}
+      </div>
+    </details>
+  );
+}
+
+function InventoryNavigationGroup({
+  compact = false,
+  onClick,
+}: {
+  compact?: boolean;
+  onClick?: () => void;
+}) {
+  const auth = useAuth();
+  const location = useLocation();
+  const inventoryItems = inventoryNavigation.filter((item) => canShowItem(auth.user, item));
+  const gatePassItems = gatePassNavigation.filter((item) => canShowItem(auth.user, item));
+  const active =
+    location.pathname.startsWith('/inventory') &&
+    !location.pathname.startsWith('/inventory/asset-types');
+  const gatePassActive = location.pathname.startsWith('/inventory/gate-passes');
+
+  return (
+    <details className="group" open={active}>
+      <summary
+        className={cn(
+          'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
+          compact ? 'px-2.5' : 'px-3',
+          active
+            ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]'
+            : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-tint)] hover:text-[var(--color-primary)]',
+        )}
+      >
+        <Boxes aria-hidden="true" className="shrink-0" size={20} />
+        <span className={compact ? 'sidebar-label min-w-0 flex-1 truncate' : 'min-w-0 flex-1'}>
+          Inventory
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className="shrink-0 transition-transform group-open:rotate-180"
+          size={16}
+        />
+      </summary>
+      <div className={cn('sidebar-subnav mt-1 space-y-1', compact ? 'pl-0' : 'pl-4')}>
+        {inventoryItems.map((item) => (
+          <NavigationLink
+            compact={compact}
+            item={item}
+            key={item.to}
+            {...(onClick ? { onClick } : {})}
+          />
+        ))}
+        {gatePassItems.length ? (
+          <details className="group/gate-pass" open={gatePassActive}>
+            <summary
+              className={cn(
+                'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
+                compact ? 'px-2.5' : 'px-3',
+                gatePassActive
+                  ? 'bg-[var(--color-primary-soft)] text-[var(--color-primary-strong)]'
+                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface-tint)] hover:text-[var(--color-primary)]',
+              )}
+            >
+              <ReceiptText aria-hidden="true" className="shrink-0" size={20} />
+              <span
+                className={compact ? 'sidebar-label min-w-0 flex-1 truncate' : 'min-w-0 flex-1'}
+              >
+                Gate Pass
+              </span>
+              <ChevronDown
+                aria-hidden="true"
+                className="shrink-0 transition-transform group-open/gate-pass:rotate-180"
+                size={15}
+              />
+            </summary>
+            <div className={cn('sidebar-subnav mt-1 space-y-1', compact ? 'pl-0' : 'pl-4')}>
+              {gatePassItems.map((item) => (
+                <NavigationLink
+                  compact={compact}
+                  item={item}
+                  key={item.to}
+                  {...(onClick ? { onClick } : {})}
+                />
+              ))}
+            </div>
+          </details>
+        ) : null}
       </div>
     </details>
   );
@@ -634,16 +748,7 @@ export function AppShell() {
             <NavigationLink compact item={item} key={item.to} />
           ))}
           <IssueNavigationGroup compact />
-          <NavigationGroupMenu
-            compact
-            group={{
-              label: 'Inventory',
-              icon: Boxes,
-              items: inventoryNavigation,
-              activePath: (pathname) =>
-                pathname.startsWith('/inventory') && !pathname.startsWith('/inventory/asset-types'),
-            }}
-          />
+          <InventoryNavigationGroup compact />
           <NavigationGroupMenu
             compact
             group={{
@@ -717,17 +822,7 @@ export function AppShell() {
                 <NavigationLink item={item} key={item.to} onClick={() => setDrawerOpen(false)} />
               ))}
               <IssueNavigationGroup onClick={() => setDrawerOpen(false)} />
-              <NavigationGroupMenu
-                group={{
-                  label: 'Inventory',
-                  icon: Boxes,
-                  items: inventoryNavigation,
-                  activePath: (pathname) =>
-                    pathname.startsWith('/inventory') &&
-                    !pathname.startsWith('/inventory/asset-types'),
-                }}
-                onClick={() => setDrawerOpen(false)}
-              />
+              <InventoryNavigationGroup onClick={() => setDrawerOpen(false)} />
               <NavigationGroupMenu
                 group={{
                   label: 'Asset details',

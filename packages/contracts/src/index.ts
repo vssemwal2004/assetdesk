@@ -6,6 +6,7 @@ export * from './dashboard.js';
 export * from './domain.js';
 export * from './identifiers.js';
 export * from './inventory.js';
+export * from './inventory-gate-passes.js';
 export * from './issues.js';
 export * from './notifications.js';
 export * from './operations.js';

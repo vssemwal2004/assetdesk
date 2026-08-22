@@ -28,6 +28,7 @@ import {
 } from '../issues/issue.model.js';
 import { UserModel } from '../users/user.model.js';
 import { enqueueReturnNotifications } from '../notifications/notification.service.js';
+import { findOutsideGatePassForIssueReturn } from '../inventory-gate-passes/inventory-gate-pass.service.js';
 import {
   assertNoDuplicateReturnItems,
   assertReturnHistoryCapacity,
@@ -410,6 +411,10 @@ export async function recordReturn(
         );
       }
       assertIssueOutstandingInvariant(issue);
+      const selectedAssetTags = input.items.flatMap(item => item.trackingMode === 'SERIALIZED' ? [item.assetTag] : []);
+      const selectedQuantityCodes = input.items.flatMap(item => item.trackingMode === 'QUANTITY' ? [findLine(issue, item.lineId).material.materialCode] : []);
+      const outsideGatePass = await findOutsideGatePassForIssueReturn(issue.issueId, selectedAssetTags, selectedQuantityCodes);
+      if (outsideGatePass) throw new AppError(409, 'GATE_PASS_IN_REQUIRED_BEFORE_RETURN', `This material is outside the university under Gate Pass ${outsideGatePass}. Record Gate Pass In before processing the Material Return.`, { gatePassNumber: outsideGatePass });
 
       const performedBy = await actorSnapshot(actor, session);
       const materials = new Map<string, MaterialDocument>();

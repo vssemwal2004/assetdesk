@@ -117,7 +117,7 @@ export const CreateAssetUnitRequestSchema = z
   })
   .strict();
 
-export const ManualAssetUnitStatusSchema = AssetUnitStatusSchema.exclude(['ISSUED']);
+export const ManualAssetUnitStatusSchema = AssetUnitStatusSchema.exclude(['ISSUED', 'OUTSIDE']);
 
 export const UpdateAssetUnitRequestSchema = z
   .object({

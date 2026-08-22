@@ -58,6 +58,12 @@ const InventoryPage = lazy(() =>
     default: module.InventoryPage,
   })),
 );
+const InventoryGatePassOutPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.InventoryGatePassOutPage })));
+const InventoryGatePassInPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.InventoryGatePassInPage })));
+const InventoryGatePassDataPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.InventoryGatePassDataPage })));
+const CreateInventoryGatePassPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.CreateInventoryGatePassPage })));
+const InventoryGatePassDetailPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.InventoryGatePassDetailPage })));
+const InventoryGatePassPrintPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.InventoryGatePassPrintPage })));
 const LowStockPage = lazy(() =>
   import('../pages/inventory/low-stock-page').then((module) => ({ default: module.LowStockPage })),
 );
@@ -300,6 +306,18 @@ export function App() {
                   }
                   path="/inventory"
                 />
+                <Route element={<PermissionRoute permission="GATE_PASS_VIEW" />}>
+                  <Route element={<InventoryGatePassOutPage />} path="/inventory/gate-passes/out" />
+                  <Route element={<InventoryGatePassInPage />} path="/inventory/gate-passes/in" />
+                  <Route element={<InventoryGatePassDataPage />} path="/inventory/gate-passes/data" />
+                  <Route element={<InventoryGatePassDetailPage />} path="/inventory/gate-passes/:gatePassNumber" />
+                </Route>
+                <Route element={<PermissionRoute permission="GATE_PASS_CREATE" />}>
+                  <Route element={<CreateInventoryGatePassPage />} path="/inventory/gate-passes/out/new" />
+                </Route>
+                <Route element={<PermissionRoute permission="GATE_PASS_PRINT" />}>
+                  <Route element={<InventoryGatePassPrintPage />} path="/inventory/gate-passes/:gatePassNumber/print" />
+                </Route>
                 <Route
                   element={
                     <Suspense fallback={<FeatureRouteFallback />}>

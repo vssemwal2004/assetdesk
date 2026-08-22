@@ -87,6 +87,16 @@ export function CreateIssuePage() {
   const [customReturnAt, setCustomReturnAt] = useState('');
   const [purpose, setPurpose] = useState('');
   const [notes, setNotes] = useState('');
+  const [outsideUniversity, setOutsideUniversity] = useState(false);
+  const [gatePass, setGatePass] = useState({
+    destination: '',
+    organization: '',
+    personCarryingMaterial: '',
+    contact: '',
+    vehicleNumber: '',
+    expectedGateInAt: '',
+    remarks: '',
+  });
   const [message, setMessage] = useState<string | null>(null);
   const [created, setCreated] = useState<Issue | null>(null);
 
@@ -196,7 +206,7 @@ export function CreateIssuePage() {
     onError: (error) =>
       setMessage(
         isApiError(error)
-          ? firstIssueApiMessage(error.fields) ?? error.message
+          ? (firstIssueApiMessage(error.fields) ?? error.message)
           : 'The assignment could not be created.',
       ),
   });
@@ -258,6 +268,21 @@ export function CreateIssuePage() {
         : {}),
       ...(purpose.trim() ? { purpose } : {}),
       ...(notes.trim() ? { notes } : {}),
+      ...(outsideUniversity
+        ? {
+            outsideUniversity: {
+              destination: gatePass.destination,
+              ...(gatePass.organization.trim() ? { organization: gatePass.organization } : {}),
+              personCarryingMaterial: gatePass.personCarryingMaterial,
+              ...(gatePass.contact.trim() ? { contact: gatePass.contact } : {}),
+              ...(gatePass.vehicleNumber.trim() ? { vehicleNumber: gatePass.vehicleNumber } : {}),
+              ...(gatePass.expectedGateInAt
+                ? { expectedGateInAt: new Date(gatePass.expectedGateInAt).toISOString() }
+                : {}),
+              ...(gatePass.remarks.trim() ? { remarks: gatePass.remarks } : {}),
+            },
+          }
+        : {}),
     };
     const parsed = CreateIssueRequestSchema.safeParse(candidate);
     if (!parsed.success) {
@@ -605,6 +630,72 @@ export function CreateIssuePage() {
         </div>
       </AppCard>
 
+      <AppCard className="issue-panel">
+        <div className="flex items-start gap-3">
+          <input
+            checked={outsideUniversity}
+            className="mt-1 size-5 accent-[var(--color-primary)]"
+            id="outside-university"
+            onChange={(event) => setOutsideUniversity(event.target.checked)}
+            type="checkbox"
+          />
+          <label htmlFor="outside-university">
+            <span className="block font-extrabold text-[var(--color-text-strong)]">
+              Material is leaving the university
+            </span>
+            <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
+              Create a linked Gate Pass automatically when this assignment is submitted.
+            </span>
+          </label>
+        </div>
+        {outsideUniversity ? (
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Destination"
+              onChange={(value) => setGatePass((current) => ({ ...current, destination: value }))}
+              value={gatePass.destination}
+            />
+            <Field
+              label="Organization / vendor (optional)"
+              onChange={(value) => setGatePass((current) => ({ ...current, organization: value }))}
+              value={gatePass.organization}
+            />
+            <Field
+              label="Person carrying material"
+              onChange={(value) =>
+                setGatePass((current) => ({ ...current, personCarryingMaterial: value }))
+              }
+              value={gatePass.personCarryingMaterial}
+            />
+            <Field
+              label="Contact (optional)"
+              onChange={(value) => setGatePass((current) => ({ ...current, contact: value }))}
+              value={gatePass.contact}
+            />
+            <Field
+              label="Vehicle number (optional)"
+              onChange={(value) => setGatePass((current) => ({ ...current, vehicleNumber: value }))}
+              value={gatePass.vehicleNumber}
+            />
+            <Field
+              label="Expected Gate In (optional)"
+              onChange={(value) =>
+                setGatePass((current) => ({ ...current, expectedGateInAt: value }))
+              }
+              type="datetime-local"
+              value={gatePass.expectedGateInAt}
+            />
+            <div className="sm:col-span-2">
+              <TextArea
+                label="Gate Pass remarks (optional)"
+                onChange={(value) => setGatePass((current) => ({ ...current, remarks: value }))}
+                value={gatePass.remarks}
+              />
+            </div>
+          </div>
+        ) : null}
+      </AppCard>
+
       <StickyWorkflowActions>
         <Link className="button-secondary" to="/issues">
           Cancel
@@ -925,9 +1016,11 @@ export function firstIssueSchemaMessage(
   if (!first) return null;
   const path = first.path.join('.');
   if (path === 'receiver.fullName') return 'Enter the receiver name or department.';
-  if (path === 'receiver.contact') return 'Enter a valid receiver contact number with at least 5 digits.';
+  if (path === 'receiver.contact')
+    return 'Enter a valid receiver contact number with at least 5 digits.';
   if (path === 'receiver.email') return 'Enter a valid receiver email address.';
-  if (path === 'lines' || path.startsWith('lines.')) return 'Choose inventory material and serial numbers for item 1.';
+  if (path === 'lines' || path.startsWith('lines.'))
+    return 'Choose inventory material and serial numbers for item 1.';
   if (path === 'due' || path.startsWith('due.')) return 'Choose a valid expected return date.';
   return first.message;
 }

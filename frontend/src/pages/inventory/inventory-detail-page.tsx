@@ -1102,6 +1102,7 @@ function SerializedUnits({
           <option value="">All statuses</option>
           <option value="AVAILABLE">Available</option>
           <option value="ISSUED">Issued</option>
+          <option value="OUTSIDE">Outside university</option>
           <option value="RETURNED">Returned</option>
           <option value="UNDER_REPAIR">Under repair</option>
           <option value="DAMAGED">Damaged</option>
@@ -1196,7 +1197,7 @@ function UnitCard({
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
         Registered {formatIstDateTime(unit.createdAt)}
       </p>
-      {canEdit ? (
+      {canEdit && unit.status !== 'OUTSIDE' ? (
         <Button className="mt-3 w-full" onClick={() => onEdit(unit)} variant="secondary">
           <Pencil aria-hidden="true" size={17} />
           Edit unit
@@ -1259,7 +1260,7 @@ function UnitTable({
               <td className="px-4 text-sm text-[var(--color-text-muted)]">
                 {formatIstDateTime(unit.createdAt)}
               </td>
-              {canEdit ? (
+              {canEdit && unit.status !== 'OUTSIDE' ? (
                 <td className="px-4 text-right">
                   <Button onClick={() => onEdit(unit)} variant="quiet">
                     Edit
@@ -1696,6 +1697,7 @@ function QuantityDialog({
 }
 
 function validStatuses(unit: AssetUnit): ManualAssetUnitStatus[] {
+  if (unit.status === 'OUTSIDE') return [];
   if (unit.status === 'AVAILABLE') {
     return ['AVAILABLE', 'UNDER_REPAIR', 'DAMAGED', 'LOST', 'SCRAPPED'];
   }
@@ -1722,7 +1724,9 @@ function UnitDialog({
   const [serialNumber, setSerialNumber] = useState(unit?.serialNumber ?? '');
   const [condition, setCondition] = useState(unit?.condition ?? 'Good');
   const [status, setStatus] = useState<ManualAssetUnitStatus>(
-    unit?.status === 'ISSUED' ? 'AVAILABLE' : (unit?.status ?? 'AVAILABLE'),
+    unit?.status === 'ISSUED' || unit?.status === 'OUTSIDE'
+      ? 'AVAILABLE'
+      : (unit?.status ?? 'AVAILABLE'),
   );
   const [reason, setReason] = useState('');
   const statusOptions = unit ? validStatuses(unit) : [];
@@ -1731,9 +1735,11 @@ function UnitDialog({
     mutationFn: async () => {
       if (unit) {
         const result = UpdateAssetUnitRequestSchema.safeParse({
-          ...(unit.status !== 'ISSUED' ? { serialNumber: serialNumber.trim() } : {}),
+          ...(!['ISSUED', 'OUTSIDE'].includes(unit.status)
+            ? { serialNumber: serialNumber.trim() }
+            : {}),
           condition,
-          ...(unit.status !== 'ISSUED' ? { status } : {}),
+          ...(!['ISSUED', 'OUTSIDE'].includes(unit.status) ? { status } : {}),
           reason,
         });
         if (!result.success)

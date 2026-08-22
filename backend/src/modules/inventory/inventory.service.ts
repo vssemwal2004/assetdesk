@@ -1327,11 +1327,15 @@ export function assertManualTransition(
   currentStatus: AssetUnitStatus,
   requestedStatus: ManualAssetUnitStatus,
 ): void {
-  if (currentStatus === 'ISSUED') {
+  if (currentStatus === 'ISSUED' || currentStatus === 'OUTSIDE') {
     throw new AppError(
       409,
-      'ISSUED_ASSET_IS_SYSTEM_CONTROLLED',
-      'An issued asset unit can only change through the issue and return workflow.',
+      currentStatus === 'ISSUED'
+        ? 'ISSUED_ASSET_IS_SYSTEM_CONTROLLED'
+        : 'OUTSIDE_ASSET_IS_SYSTEM_CONTROLLED',
+      currentStatus === 'ISSUED'
+        ? 'An issued asset unit can only change through the issue and return workflow.'
+        : 'An outside asset unit can only change through the Gate Pass In workflow.',
     );
   }
   if (currentStatus === requestedStatus) return;
@@ -1369,6 +1373,13 @@ export async function updateAssetUnit(
     const unit = await AssetUnitModel.findOne({ assetTag, materialId: material._id });
     if (!unit) throw assetUnitNotFound();
     const previousUnit = toAssetUnit(unit);
+    if (unit.status === 'OUTSIDE') {
+      throw new AppError(
+        409,
+        'OUTSIDE_ASSET_IS_SYSTEM_CONTROLLED',
+        'An outside asset unit can only change through the Gate Pass In workflow.',
+      );
+    }
     if (
       unit.status === 'ISSUED' &&
       (input.status !== undefined || input.serialNumber !== undefined)

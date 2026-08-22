@@ -39,7 +39,7 @@ const AssetUnitSchema = new Schema<AssetUnitRecord>(
     condition: { type: String, required: true, trim: true, minlength: 1, maxlength: 120 },
     status: {
       type: String,
-      enum: ['AVAILABLE', 'ISSUED', 'RETURNED', 'UNDER_REPAIR', 'DAMAGED', 'LOST', 'SCRAPPED'],
+      enum: ['AVAILABLE', 'ISSUED', 'OUTSIDE', 'RETURNED', 'UNDER_REPAIR', 'DAMAGED', 'LOST', 'SCRAPPED'],
       required: true,
       default: 'AVAILABLE',
     },

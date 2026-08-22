@@ -1,5 +1,5 @@
 import { Router, type Request } from 'express';
-import { rateLimit } from 'express-rate-limit';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 
 import {
   ChangeInitialPasswordRequestSchema,
@@ -55,7 +55,7 @@ const loginLimiter = rateLimit({
     if (typeof identifier === 'string' && identifier.trim()) {
       return `account:${identifier.trim().toLocaleLowerCase('en-US')}`;
     }
-    return `ip:${request.ip}`;
+    return `ip:${ipKeyGenerator(request.ip ?? '')}`;
   },
   standardHeaders: 'draft-8',
   legacyHeaders: false,

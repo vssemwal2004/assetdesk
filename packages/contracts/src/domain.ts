@@ -29,6 +29,7 @@ export type ReturnPolicy = z.infer<typeof ReturnPolicySchema>;
 export const AssetUnitStatusSchema = z.enum([
   'AVAILABLE',
   'ISSUED',
+  'OUTSIDE',
   'RETURNED',
   'UNDER_REPAIR',
   'DAMAGED',
