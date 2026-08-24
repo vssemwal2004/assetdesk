@@ -50,6 +50,9 @@ interface TrendAggregationRow {
 
 const rangeDays: Record<DashboardRange, number> = { '7D': 7, '30D': 30, '90D': 90 };
 
+// Only these two stores are valid sources for issueable dashboard stock.
+const STORE_LOCATIONS = ['Param Centre Store', 'Aryabhatt Store'] as const;
+
 const emptyIssueStats: Omit<AdminDashboardStats, 'activeWorkers'> = {
   todayIssued: 0,
   totalIssues: 0,
@@ -334,6 +337,10 @@ async function getDashboard(
             ...(actor && Object.keys(inventoryAccessFilter(actor)).length
               ? [{ $match: inventoryAccessFilter(actor) }]
               : []),
+            // Dashboard availability represents stock that can actually be issued.
+            // Do not count faulty/scrapped, outdated/not-in-use, maintenance, or
+            // archived materials as available stock.
+            { $match: { status: 'ACTIVE', location: { $in: STORE_LOCATIONS } } },
             {
               $group: {
                 _id: { trackingMode: '$trackingMode', status: '$status' },
