@@ -106,10 +106,10 @@ export async function gatePassAction(
     json: json ?? {},
   });
 }
-export async function recordGateIn(id: string, serials: string[]) {
+export async function recordGateIn(id: string, serials: string[], remarks?: string) {
   return apiRequest<{ data: GatePass }>(`/api/v1/cartridges/gate-passes/${id}/gate-in`, {
     method: 'POST',
-    json: { cartridgeSerialNumbers: serials },
+    json: { cartridgeSerialNumbers: serials, ...(remarks ? { remarks } : {}) },
   });
 }
 export interface GatePass {

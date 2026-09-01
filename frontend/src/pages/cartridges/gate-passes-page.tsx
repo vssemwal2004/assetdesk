@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
-import { MoreVertical, Plus, Printer } from 'lucide-react';
+import { AlertCircle, LogIn, MoreVertical, Plus, Printer } from 'lucide-react';
 import {
   AppCard,
   Button,
@@ -28,9 +28,35 @@ const gatePassEligibleLabels: Record<(typeof gatePassEligibleStatuses)[number], 
 };
 
 export function GatePassesPage() {
+  const client = useQueryClient();
   const query = useQuery({ queryKey: ['cartridge-gate-passes'], queryFn: getGatePasses });
+  const [confirm, setConfirm] = useState<ConfirmDialogState>(null);
+  const gateIn = useMutation({
+    mutationFn: (pass: Awaited<ReturnType<typeof getGatePasses>>['data'][number]) =>
+      recordGateIn(pass._id, pendingGateInSerials(pass)),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
+        client.invalidateQueries({ queryKey: ['cartridges'] }),
+        client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
+      ]);
+    },
+  });
+
+  function confirmGateIn(pass: Awaited<ReturnType<typeof getGatePasses>>['data'][number]) {
+    const pendingSerials = pendingGateInSerials(pass);
+    if (pendingSerials.length === 0) return;
+    setConfirm({
+      title: 'Confirm Gate Pass In',
+      message: `${pass.gatePassNumber} will receive ${pendingSerials.length} cartridge(s).`,
+      actionLabel: 'Gate Pass In',
+      onConfirm: () => gateIn.mutate(pass),
+    });
+  }
+
   return (
     <div className="space-y-6">
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
       <PageHeader
         title="Gate Pass Out"
         description="Create and manage outward Gate Passes for cartridges going to the vendor."
@@ -61,6 +87,8 @@ export function GatePassesPage() {
         <LoadingPanel />
       ) : query.isError ? (
         <ErrorSummary message="Gate Pass register could not be loaded." />
+      ) : gateIn.isError ? (
+        <ErrorSummary message={(gateIn.error as Error).message} />
       ) : (
         <>
           <AppCard className="grid gap-3 md:grid-cols-4">
@@ -77,8 +105,11 @@ export function GatePassesPage() {
           </AppCard>
           <div className="grid gap-3">
             {query.data?.data.map((pass) => (
-              <Link key={pass._id} to={`/cartridges/gate-passes/${pass._id}`}>
-                <AppCard className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <AppCard
+                className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                key={pass._id}
+              >
+                <Link className="min-w-0 flex-1" to={`/cartridges/gate-passes/${pass._id}`}>
                   <div>
                     <p className="font-extrabold text-[var(--color-primary-strong)]">
                       {pass.gatePassNumber}
@@ -88,11 +119,23 @@ export function GatePassesPage() {
                       {pass.preparedByName}
                     </p>
                   </div>
+                </Link>
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  {['GATE_OUT', 'PARTIALLY_RETURNED'].includes(pass.status) ? (
+                    <Button
+                      loading={gateIn.isPending}
+                      onClick={() => confirmGateIn(pass)}
+                      variant="secondary"
+                    >
+                      <LogIn size={17} />
+                      Gate Pass In
+                    </Button>
+                  ) : null}
                   <span className="rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-bold text-[var(--color-primary)]">
                     {pass.status.replaceAll('_', ' ')}
                   </span>
-                </AppCard>
-              </Link>
+                </div>
+              </AppCard>
             ))}
           </div>
         </>
@@ -100,15 +143,16 @@ export function GatePassesPage() {
     </div>
   );
 }
+
 export function CreateGatePassPage() {
   const navigate = useNavigate();
   const client = useQueryClient();
+  const [confirm, setConfirm] = useState<ConfirmDialogState>(null);
   const [form, setForm] = useState({
     vendorName: '',
     personTakingMaterial: '',
     serials: [] as string[],
     remarks: '',
-    submitForVerification: true,
   });
   const eligibleQueries = useQueries({
     queries: gatePassEligibleStatuses.map((status) => ({
@@ -138,7 +182,7 @@ export function CreateGatePassPage() {
         personTakingMaterial: form.personTakingMaterial,
         cartridgeSerialNumbers: form.serials,
         remarks: form.remarks,
-        submitForVerification: form.submitForVerification,
+        submitForVerification: false,
       }),
     onSuccess: async (r) => {
       await Promise.all([
@@ -151,6 +195,7 @@ export function CreateGatePassPage() {
   });
   return (
     <div className="space-y-6">
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
       <PageHeader
         title="Create Gate Pass Out"
         description="Select cartridges leaving the store for refill or vendor work. Gate In will happen against this same pass when they return."
@@ -159,7 +204,12 @@ export function CreateGatePassPage() {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          mutation.mutate();
+          setConfirm({
+            title: 'Create Gate Pass Out',
+            message: `${form.serials.length} cartridge(s) will be sent to vendor now.`,
+            actionLabel: 'Create Gate Pass Out',
+            onConfirm: () => mutation.mutate(),
+          });
         }}
       >
         <AppCard className="space-y-5">
@@ -225,14 +275,6 @@ export function CreateGatePassPage() {
               )}
             </div>
           </label>
-          <label className="flex items-center gap-2 text-sm font-bold">
-            <input
-              checked={form.submitForVerification}
-              onChange={(e) => setForm({ ...form, submitForVerification: e.target.checked })}
-              type="checkbox"
-            />
-            Send for verification immediately
-          </label>
           <div className="flex justify-end">
             <Button
               disabled={form.serials.length === 0 || eligibleLoading}
@@ -246,9 +288,11 @@ export function CreateGatePassPage() {
     </div>
   );
 }
+
 export function GatePassDetailPage() {
   const { gatePassId = '' } = useParams();
   const client = useQueryClient();
+  const [confirm, setConfirm] = useState<ConfirmDialogState>(null);
   const query = useQuery({
     queryKey: ['cartridge-gate-pass', gatePassId],
     queryFn: () => getGatePass(gatePassId),
@@ -304,8 +348,28 @@ export function GatePassDetailPage() {
     else selected.delete(serialNumber);
     setGateInSerials(Array.from(selected).join('\n'));
   }
+  function confirmAllGateIn() {
+    if (pendingGateInSerials.length === 0) return;
+    setConfirm({
+      title: 'Confirm Gate Pass In',
+      message: `${p.gatePassNumber} will receive ${pendingGateInSerials.length} cartridge(s).`,
+      actionLabel: 'Gate Pass In',
+      onConfirm: () => {
+        setGateInSerials(pendingGateInSerials.join('\n'));
+        recordGateIn(p._id, pendingGateInSerials).then(async () => {
+          await Promise.all([
+            client.invalidateQueries({ queryKey: ['cartridge-gate-pass', gatePassId] }),
+            client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
+            client.invalidateQueries({ queryKey: ['cartridges'] }),
+            client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
+          ]);
+        });
+      },
+    });
+  }
   return (
     <div className="space-y-6">
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
       <PageHeader
         title={p.gatePassNumber}
         description={`${p.vendorName} · ${p.quantity} cartridges`}
@@ -336,16 +400,6 @@ export function GatePassDetailPage() {
         </ol>
       </AppCard>
       <div className="flex flex-wrap gap-2">
-        {['DRAFT', 'AWAITING_VERIFICATION'].includes(p.status) ? (
-          <Button loading={action.isPending} onClick={() => action.mutate('verify')}>
-            Verify Gate Pass
-          </Button>
-        ) : null}
-        {p.status === 'VERIFIED' ? (
-          <Button loading={action.isPending} onClick={() => action.mutate('gate-out')}>
-            Confirm Gate Pass Out
-          </Button>
-        ) : null}
         {['DRAFT', 'AWAITING_VERIFICATION', 'VERIFIED'].includes(p.status) ? (
           <Button
             loading={action.isPending}
@@ -353,6 +407,12 @@ export function GatePassDetailPage() {
             variant="danger"
           >
             Cancel Gate Pass
+          </Button>
+        ) : null}
+        {['GATE_OUT', 'PARTIALLY_RETURNED'].includes(p.status) ? (
+          <Button loading={gateIn.isPending} onClick={confirmAllGateIn} variant="secondary">
+            <LogIn size={17} />
+            Gate Pass In
           </Button>
         ) : null}
       </div>
@@ -394,6 +454,75 @@ export function GatePassDetailPage() {
     </div>
   );
 }
+
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  actionLabel: string;
+  onConfirm: () => void;
+} | null;
+
+function ConfirmDialog({
+  state,
+  onClose,
+}: {
+  state: ConfirmDialogState;
+  onClose: () => void;
+}) {
+  if (!state) return null;
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4">
+      <div
+        aria-modal="true"
+        className="w-full max-w-md rounded-[12px] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-overlay)]"
+        role="dialog"
+      >
+        <div className="flex gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+            <AlertCircle size={21} />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+              {state.title}
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
+              {state.message}
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button onClick={onClose} type="button" variant="secondary">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              state.onConfirm();
+              onClose();
+            }}
+            type="button"
+          >
+            {state.actionLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function pendingGateInSerials(pass: {
+  cartridgeSerialNumbers: string[];
+  gateInEvents: Array<{ serialNumbers: string[] }>;
+}): string[] {
+  const received = new Set(
+    pass.gateInEvents.flatMap((event) =>
+      event.serialNumbers.map((serialNumber) => serialNumber.toUpperCase()),
+    ),
+  );
+  return pass.cartridgeSerialNumbers.filter(
+    (serialNumber) => !received.has(serialNumber.toUpperCase()),
+  );
+}
+
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <div>

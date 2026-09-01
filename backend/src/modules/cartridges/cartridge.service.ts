@@ -338,6 +338,7 @@ export async function createGatePass(
     );
   const name = await actorName(actor);
   const gatePassNumber = `GP-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
+  const gateOutAt = new Date();
   const pass = await GatePassModel.create({
     gatePassNumber,
     vendorName: input.vendorName,
@@ -345,21 +346,27 @@ export async function createGatePass(
     cartridgeIds: cartridges.map((x) => x._id),
     cartridgeSerialNumbers: cartridges.map((x) => x.serialNumber),
     quantity: cartridges.length,
-    status: input.submitForVerification ? 'AWAITING_VERIFICATION' : 'DRAFT',
+    status: 'GATE_OUT',
     preparedByUserId: new Types.ObjectId(actor.userId),
     preparedByWorkerId: actor.workerId,
     preparedByName: name,
+    verifiedByUserId: new Types.ObjectId(actor.userId),
+    verifiedByWorkerId: actor.workerId,
+    verifiedByName: name,
+    verifiedAt: gateOutAt,
+    gateOutAt,
+    gateOutByName: name,
     ...(input.expectedReturnDate ? { expectedReturnDate: new Date(input.expectedReturnDate) } : {}),
     ...(input.remarks ? { remarks: input.remarks } : {}),
   });
   const fromStatuses = new Map(cartridges.map((item) => [item._id.toString(), item.status]));
   await CartridgeModel.updateMany(
     { _id: { $in: pass.cartridgeIds } },
-    { $set: { status: 'READY_FOR_GATE_OUT' } },
+    { $set: { status: 'WITH_VENDOR' } },
   );
   const updatedCartridges = await CartridgeModel.find({ _id: { $in: pass.cartridgeIds } });
-  await movements(updatedCartridges, 'GATE_PASS_CREATED', fromStatuses, actor, {
-    remarks: `Added to Gate Pass ${pass.gatePassNumber}.`,
+  await movements(updatedCartridges, 'GATE_OUT', fromStatuses, actor, {
+    remarks: `Gate Pass ${pass.gatePassNumber} created and sent out.`,
   });
   return pass;
 }
@@ -466,7 +473,7 @@ export async function gateIn(
 ) {
   const pass = await GatePassModel.findById(id);
   if (!pass) throw new AppError(404, 'GATE_PASS_NOT_FOUND', 'Gate Pass was not found.');
-  if (!['GATE_OUT', 'PARTIALLY_RETURNED'].includes(pass.status))
+  if (!['VERIFIED', 'GATE_OUT', 'PARTIALLY_RETURNED'].includes(pass.status))
     throw new AppError(
       409,
       'INVALID_GATE_PASS_STATE',
@@ -493,9 +500,32 @@ export async function gateIn(
       'CARTRIDGE_ALREADY_GATE_IN',
       'A cartridge was already recorded at Gate In.',
     );
+  const name = await actorName(actor);
+  const now = new Date();
+  if (pass.status === 'VERIFIED') {
+    pass.gateOutAt = now;
+    pass.gateOutByName = name;
+    const gateOutCartridges = await CartridgeModel.find({
+      _id: { $in: pass.cartridgeIds },
+      status: 'READY_FOR_GATE_OUT',
+    });
+    const gateOutFromStatuses = new Map(
+      gateOutCartridges.map((item) => [item._id.toString(), item.status]),
+    );
+    await CartridgeModel.updateMany(
+      { _id: { $in: pass.cartridgeIds }, status: 'READY_FOR_GATE_OUT' },
+      { $set: { status: 'WITH_VENDOR' } },
+    );
+    const updatedGateOutCartridges = await CartridgeModel.find({
+      _id: { $in: pass.cartridgeIds },
+    });
+    await movements(updatedGateOutCartridges, 'GATE_OUT', gateOutFromStatuses, actor, {
+      remarks: `Gate Out recorded on ${pass.gatePassNumber}.`,
+    });
+  }
   pass.gateInEvents.push({
-    at: new Date(),
-    byName: await actorName(actor),
+    at: now,
+    byName: name,
     serialNumbers,
     ...(remarks ? { remarks } : {}),
   });
