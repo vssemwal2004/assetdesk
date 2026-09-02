@@ -37,6 +37,7 @@ import {
 import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import { isApiError } from '../../lib/api-client';
 import { deleteIssue, getIssues, updateIssue } from '../../lib/issues-api';
+import { getAssetDetails } from '../../lib/inventory-api';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
 
 const statuses: IssueStatus[] = [
@@ -77,13 +78,25 @@ export function IssuesPage() {
   const status = issueStatus(parameters.get('status') ?? '');
   const period = issuePeriod(parameters.get('period') ?? '');
   const returnState = issueReturnState(parameters.get('returnState') ?? '');
+  const location = parameters.get('location') ?? '';
+  const trackingMode = parameters.get('trackingMode') === 'SERIALIZED' || parameters.get('trackingMode') === 'QUANTITY'
+    ? (parameters.get('trackingMode') as 'SERIALIZED' | 'QUANTITY') : '';
+  const category = parameters.get('category') ?? '';
   const issueAssignmentType =
     assignmentType(parameters.get('assignmentType') ?? '') ??
     (returnState === 'PENDING' ? 'SHORT_TERM' : undefined);
+  const locationQuery = useQuery({
+    queryKey: ['asset-details', 'LOCATION'],
+    queryFn: ({ signal }) => getAssetDetails('LOCATION', signal),
+  });
+  const catalogQuery = useQuery({
+    queryKey: ['asset-details'],
+    queryFn: ({ signal }) => getAssetDetails(undefined, signal),
+  });
   const query = useQuery({
     queryKey: [
       'issues',
-      { page, search, status, period, returnState, assignmentType: issueAssignmentType },
+      { page, search, status, period, returnState, assignmentType: issueAssignmentType, location, trackingMode, category },
     ],
     queryFn: ({ signal }) =>
       getIssues(
@@ -94,6 +107,9 @@ export function IssuesPage() {
           ...(period ? { period } : {}),
           ...(returnState ? { returnState } : {}),
           ...(issueAssignmentType ? { assignmentType: issueAssignmentType } : {}),
+          ...(location ? { destinationLocation: location } : {}),
+          ...(trackingMode ? { trackingMode } : {}),
+          ...(category && trackingMode ? { category } : {}),
         },
         signal,
       ),
@@ -113,7 +129,7 @@ export function IssuesPage() {
   }
 
   const issues = query.data?.data ?? [];
-  const filtered = Boolean(search || status || period || returnState || issueAssignmentType);
+  const filtered = Boolean(search || status || period || returnState || issueAssignmentType || location || trackingMode || category);
   const admin = user?.role === 'ADMIN';
   const canCreateIssue = hasPermission(user, 'ASSIGNMENTS_CREATE');
   const deleteMutation = useMutation({
@@ -178,9 +194,10 @@ export function IssuesPage() {
             value={search}
           />
           <FilterPopover
-            activeCount={[status, period, returnState, issueAssignmentType].filter(Boolean).length}
+            panelClassName="w-[min(94vw,620px)]"
+            activeCount={[status, period, returnState, issueAssignmentType, location, trackingMode, category].filter(Boolean).length}
             onClear={() =>
-              updateParameters({ status: '', period: '', returnState: '', assignmentType: '' })
+              updateParameters({ status: '', period: '', returnState: '', assignmentType: '', location: '', trackingMode: '', category: '' })
             }
           >
             <FilterField label="Issue status">
@@ -227,6 +244,35 @@ export function IssuesPage() {
                 <option value="">All assignment types</option>
                 <option value="SHORT_TERM">Return by date</option>
                 <option value="LONG_TERM">Permanent</option>
+              </select>
+            </FilterField>
+            <FilterField label="Issued location">
+              <select
+                className="field-input"
+                onChange={(event) => updateParameters({ location: event.target.value })}
+                value={location}
+              >
+                <option value="">All locations</option>
+                {locationQuery.data?.map((detail) => (
+                  <option key={detail.id} value={detail.name}>
+                    {detail.name}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+            <FilterField label="Asset type">
+              <select className="field-input" onChange={(event) => updateParameters({ trackingMode: event.target.value, category: '' })} value={trackingMode}>
+                <option value="">All types</option>
+                <option value="SERIALIZED">Asset</option>
+                <option value="QUANTITY">Consumable</option>
+              </select>
+            </FilterField>
+            <FilterField label="Category">
+              <select className="field-input" disabled={!trackingMode} onChange={(event) => updateParameters({ category: event.target.value })} value={trackingMode ? category : ''}>
+                <option value="">{trackingMode ? 'All categories' : 'Select asset type first'}</option>
+                {catalogQuery.data?.filter((detail) => detail.kind === (trackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE')).map((detail) => (
+                  <option key={detail.id} value={detail.name}>{detail.name}</option>
+                ))}
               </select>
             </FilterField>
           </FilterPopover>
@@ -598,6 +644,9 @@ function IssueTable({
               Material
             </th>
             <th className="h-11 px-4 font-bold" scope="col">
+              Issued Location
+            </th>
+            <th className="h-11 px-4 font-bold" scope="col">
               Expected Return
             </th>
             <th className="h-11 px-4 font-bold" scope="col">
@@ -629,6 +678,9 @@ function IssueTable({
               </td>
               <td className="px-4 text-sm text-[var(--color-text-muted)]">
                 {materialSummary(issue)}
+              </td>
+              <td className="px-4 text-sm font-semibold text-[var(--color-text-strong)]">
+                {issue.destinationLocation ?? 'Not set'}
               </td>
               <td className="px-4 text-sm text-[var(--color-text-muted)]">
                 {formatIstDateTime(issue.expectedReturnAt)}
@@ -729,6 +781,10 @@ function IssueQuickViewDialog({
         <dl className="mt-5 grid gap-3 sm:grid-cols-2">
           <DetailItem label="Receiver" value={issue.receiver.fullName} />
           <DetailItem label="Material" value={materialSummary(issue)} />
+          <DetailItem
+            label="Issued location"
+            value={issue.destinationLocation ?? 'Not set'}
+          />
           <DetailItem label="Assignment state" value={displayIssueStatus(issue)} />
           <DetailItem label="Expected return" value={formatIstDateTime(issue.expectedReturnAt)} />
           <DetailItem label="Return status" value={returnStateText(issue)} />

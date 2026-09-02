@@ -36,6 +36,7 @@ type Field =
   | 'category'
   | 'typeModelName'
   | 'configuration'
+  | 'store'
   | 'location'
   | 'block'
   | 'department'
@@ -76,6 +77,9 @@ const HEADER_ALIASES: Record<string, Field> = {
   'it asset configuration': 'configuration',
   'configuration details': 'configuration',
   config: 'configuration',
+  store: 'store',
+  stores: 'store',
+  'store name': 'store',
   'location block': 'locationBlock',
   'location / block': 'locationBlock',
   location: 'location',
@@ -163,8 +167,9 @@ export function parseInventoryImportTable(
   });
   const required: Field[] =
     mode === 'SERIALIZED'
-      ? ['category', 'configuration', 'location', 'block', 'serialNumber']
-      : ['category', 'location', 'block', 'quantity', 'unitLabel'];
+      ? ['category', 'configuration', 'serialNumber']
+      : ['category', 'quantity', 'unitLabel'];
+  if (!columns.has('store') && !columns.has('location')) required.push('store');
   const missing = required.filter((field) => !columns.has(field));
   if (missing.length)
     throw new AppError(
@@ -243,13 +248,15 @@ export function importInputToCreateMaterialRequest(
       ? (input as { toObject: () => unknown }).toObject()
       : input;
   const record = source as InventoryImportInput;
+  const store = record.store ?? record.locationBlock ?? record.location ?? '';
   const common = {
     name: record.name,
     category: record.category,
     typeModelName: record.typeModelName,
     ...(record.trackingMode === 'SERIALIZED' ? { configuration: record.configuration } : {}),
-    location: record.location,
-    block: record.block,
+    store,
+    location: record.location ?? store,
+    ...(record.block ? { block: record.block } : {}),
     ...(record.department ? { department: record.department } : {}),
     ...(record.vendorName ? { vendorName: record.vendorName } : {}),
     ...(record.locationBlock ? { locationBlock: record.locationBlock } : {}),
@@ -304,7 +311,7 @@ export function normalizeImportConfiguration(value: string): string {
 }
 
 async function savedLookup(
-  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
+  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'STORE' | 'DEPARTMENT',
   value: string,
 ): Promise<string | null> {
   const detail = await AssetDetailModel.findOne({ kind, normalizedName: normalizedLookup(value) });
@@ -317,17 +324,18 @@ async function savedLookup(
 }
 
 function detailKindLabel(
-  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
+  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'STORE' | 'DEPARTMENT',
 ): string {
   if (kind === 'ASSET_TYPE') return 'IT asset type';
   if (kind === 'CONSUMABLE_TYPE') return 'IT consumable type';
   if (kind === 'LOCATION') return 'Location';
+  if (kind === 'STORE') return 'Store';
   if (kind === 'DEPARTMENT') return 'Department';
   return 'Block';
 }
 
 function missingDropdownValue(
-  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'DEPARTMENT',
+  kind: 'ASSET_TYPE' | 'CONSUMABLE_TYPE' | 'LOCATION' | 'BLOCK' | 'STORE' | 'DEPARTMENT',
   value: string,
 ): Error {
   return new Error(
@@ -405,9 +413,10 @@ export async function previewInventoryImport(
   const groups = Object.values(
     rows.reduce<Record<string, ImportRow[]>>((result, row) => {
       const itemName = row.values.typeModelName || row.values.name;
+      const storeValue = row.values.store || row.values.location;
       const configuration =
         mode === 'SERIALIZED' ? `\0${normalizeImportConfiguration(row.values.configuration)}` : '';
-      const key = `${itemName.trim().toUpperCase()}\0${row.values.category.trim().toUpperCase()}\0${normalizedLookup(row.values.location)}\0${normalizedLookup(row.values.block)}${configuration}`;
+      const key = `${itemName.trim().toUpperCase()}\0${row.values.category.trim().toUpperCase()}\0${normalizedLookup(storeValue)}${configuration}`;
       (result[key] ??= []).push(row);
       return result;
     }, {}),
@@ -422,6 +431,9 @@ export async function previewInventoryImport(
         category: row.values.category,
         ...(row.values.typeModelName ? { typeModelName: row.values.typeModelName } : {}),
         ...(row.values.configuration ? { configuration: row.values.configuration } : {}),
+        ...(row.values.store || row.values.location
+          ? { store: row.values.store || row.values.location }
+          : {}),
         ...(row.values.location ? { location: row.values.location } : {}),
         ...(row.values.block ? { block: row.values.block } : {}),
         ...(row.values.department ? { department: row.values.department } : {}),
@@ -485,6 +497,9 @@ export async function previewInventoryImport(
           ...(material?.category ? { category: material.category } : {}),
           ...(material?.typeModelName ? { typeModelName: material.typeModelName } : {}),
           ...(material?.configuration ? { configuration: material.configuration } : {}),
+          ...(material?.store ?? material?.locationBlock ?? material?.location
+            ? { store: material.store ?? material.locationBlock ?? material.location }
+            : {}),
           ...(material?.location ? { location: material.location } : {}),
           ...(material?.block ? { block: material.block } : {}),
           ...(material?.status ? { status: material.status } : {}),
@@ -505,14 +520,9 @@ export async function previewInventoryImport(
         ] as const,
     ),
   );
-  const locationEntries = await Promise.all(
-    [...new Set(rows.map((row) => row.values.location))].map(
-      async (value) => [normalizedLookup(value), await savedLookup('LOCATION', value)] as const,
-    ),
-  );
-  const blockEntries = await Promise.all(
-    [...new Set(rows.map((row) => row.values.block))].map(
-      async (value) => [normalizedLookup(value), await savedLookup('BLOCK', value)] as const,
+  const storeEntries = await Promise.all(
+    [...new Set(rows.map((row) => row.values.store || row.values.location))].map(
+      async (value) => [normalizedLookup(value), await savedLookup('STORE', value)] as const,
     ),
   );
   const departmentEntries = await Promise.all(
@@ -521,8 +531,7 @@ export async function previewInventoryImport(
     ),
   );
   const categories = new Map(categoryEntries);
-  const locations = new Map(locationEntries);
-  const blocks = new Map(blockEntries);
+  const stores = new Map(storeEntries);
   const departments = new Map(departmentEntries);
   const registeredModelEntries = await Promise.all(
     [...new Set(rows.map((row) => normalizedLookup(row.values.category)))].map(async (key) => {
@@ -548,10 +557,10 @@ export async function previewInventoryImport(
     try {
       const values = first.values;
       const itemName = values.typeModelName || values.name;
+      const storeValue = values.store || values.location;
       requireRowValue(itemName, 'Type/model name');
       requireRowValue(values.category, mode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable');
-      requireRowValue(values.location, 'Location');
-      requireRowValue(values.block, 'Block');
+      requireRowValue(storeValue, 'Store');
       if (mode === 'SERIALIZED') {
         requireRowValue(values.configuration, 'Configuration');
         group.forEach((row) => requireRowValue(row.values.serialNumber, 'Serial number'));
@@ -560,8 +569,7 @@ export async function previewInventoryImport(
         requireRowValue(values.unitLabel, 'Unit label');
       }
       const category = categories.get(normalizedLookup(values.category));
-      const location = locations.get(normalizedLookup(values.location));
-      const block = blocks.get(normalizedLookup(values.block));
+      const store = stores.get(normalizedLookup(storeValue));
       const department = values.department
         ? departments.get(normalizedLookup(values.department))
         : undefined;
@@ -574,13 +582,11 @@ export async function previewInventoryImport(
           `Model "${itemName}" is not present in the database under ${category}. Add this model in Add asset details → Add Models, then upload the file again.`,
         );
       }
-      if (!location) throw missingDropdownValue('LOCATION', values.location);
-      if (!block) throw missingDropdownValue('BLOCK', values.block);
+      if (!store) throw missingDropdownValue('STORE', storeValue);
       if (values.department && !department) {
         throw missingDropdownValue('DEPARTMENT', values.department);
       }
       const displayName = materialName(category, registeredModel);
-      const locationBlock = `${location} / ${block}`;
       let draft: CreateMaterialRequest;
       if (mode === 'SERIALIZED') {
         const uploadableRows = group.filter((row) => {
@@ -602,10 +608,10 @@ export async function previewInventoryImport(
           name: displayName,
           category,
           typeModelName: registeredModel,
-          location,
-          block,
+          store,
+          location: store,
           ...(department ? { department } : {}),
-          locationBlock,
+          locationBlock: store,
           ...(values.vendorName ? { vendorName: values.vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
           status: materialStatus(values.status),
@@ -618,8 +624,7 @@ export async function previewInventoryImport(
       } else {
         const comparableFields: Field[] = [
           'unitLabel',
-          'location',
-          'block',
+          'store',
           'department',
           'vendorName',
           'description',
@@ -636,7 +641,7 @@ export async function previewInventoryImport(
           )
         ) {
           throw new Error(
-            'Repeated consumable rows must use the same unit, location, block, return policy, status, vendor, and description.',
+            'Repeated consumable rows must use the same unit, store, return policy, status, vendor, and description.',
           );
         }
         const totalQuantity = group.reduce((sum, row) => {
@@ -649,10 +654,10 @@ export async function previewInventoryImport(
           name: displayName,
           category,
           typeModelName: registeredModel,
-          location,
-          block,
+          store,
+          location: store,
           ...(department ? { department } : {}),
-          locationBlock,
+          locationBlock: store,
           ...(values.vendorName ? { vendorName: values.vendorName } : {}),
           ...(values.description ? { description: values.description } : {}),
           status: materialStatus(values.status),
@@ -776,8 +781,8 @@ export async function commitInventoryImport(
         parsed.trackingMode,
         parsed.name,
         parsed.category,
-        parsed.location,
-        parsed.block,
+        parsed.store,
+        '',
         parsed.trackingMode === 'SERIALIZED' ? parsed.configuration : undefined,
       );
       const existing = await MaterialModel.findOne({
@@ -787,8 +792,11 @@ export async function commitInventoryImport(
             trackingMode: parsed.trackingMode,
             name: exactText(parsed.name),
             category: exactText(parsed.category),
-            location: exactText(parsed.location),
-            block: exactText(parsed.block),
+            $or: [
+              { store: exactText(parsed.store) },
+              { location: exactText(parsed.store) },
+              { locationBlock: exactText(parsed.store) },
+            ],
             ...(parsed.trackingMode === 'SERIALIZED'
               ? { configuration: exactText(parsed.configuration) }
               : {}),

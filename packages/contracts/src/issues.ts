@@ -108,6 +108,8 @@ export const CreateCatalogIssueRequestSchema = z
     receiverCode: ReceiverCodeSchema.optional(),
     receiver: CreateIssueReceiverRequestSchema.optional(),
     lines: z.array(CreateIssueLineSchema).min(1).max(50),
+    destinationLocation: z.string().trim().min(1).max(120),
+    destinationBlock: z.string().trim().min(1).max(120).optional(),
     due: DueSelectionSchema.optional(),
     purpose: OptionalPurposeSchema,
     notes: OptionalNotesSchema,
@@ -253,6 +255,7 @@ export const IssueMaterialSnapshotSchema = z
     trackingMode: TrackingModeSchema,
     returnPolicy: ReturnPolicySchema,
     unitLabel: z.string().nullable(),
+    store: z.string().nullable().optional().default(null),
   })
   .strict();
 
@@ -419,6 +422,8 @@ const IssueBaseSchema = z
     status: IssueStatusSchema,
     purpose: z.string().nullable(),
     notes: z.string().nullable(),
+    destinationLocation: z.string().nullable().default(null),
+    destinationBlock: z.string().nullable().default(null),
     lines: z.array(IssueLineSchema).min(1),
     returnEvents: z.array(ReturnEventSchema),
     totalIssuedQuantity: z.number().int().positive(),
@@ -527,6 +532,8 @@ export const ReturnableIssueSchema = z
     receiver: IssueReceiverSnapshotSchema,
     issuedBy: IssueActorSnapshotSchema,
     issuedAt: z.string().datetime({ offset: true }),
+    destinationLocation: z.string().nullable().default(null),
+    destinationBlock: z.string().nullable().default(null),
     expectedReturnAt: z.string().datetime({ offset: true }).nullable(),
     duePreset: DuePresetSchema.nullable(),
     assignmentType: AssignmentTypeSchema.default('SHORT_TERM'),

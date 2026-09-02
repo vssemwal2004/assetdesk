@@ -50,8 +50,7 @@ export interface InventoryFilters {
   returnPolicy?: ReturnPolicy;
   stockState?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
   category?: string;
-  location?: string;
-  block?: string;
+  store?: string;
   department?: string;
   vendorName?: string;
   createdFrom?: string;
@@ -76,8 +75,7 @@ export async function getInventory(
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
   if (filters.category) parameters.set('category', filters.category);
-  if (filters.location) parameters.set('location', filters.location);
-  if (filters.block) parameters.set('block', filters.block);
+  if (filters.store) parameters.set('store', filters.store);
   if (filters.department) parameters.set('department', filters.department);
   if (filters.vendorName) parameters.set('vendorName', filters.vendorName);
   if (filters.createdFrom) parameters.set('createdFrom', filters.createdFrom);
@@ -218,8 +216,7 @@ export async function downloadInventoryCsv(
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
   if (filters.category) parameters.set('category', filters.category);
-  if (filters.location) parameters.set('location', filters.location);
-  if (filters.block) parameters.set('block', filters.block);
+  if (filters.store) parameters.set('store', filters.store);
   if (filters.department) parameters.set('department', filters.department);
   if (filters.vendorName) parameters.set('vendorName', filters.vendorName);
   if (filters.createdFrom) parameters.set('createdFrom', filters.createdFrom);
@@ -333,8 +330,7 @@ export interface InventoryImportPreview {
     serialNumber?: string;
     typeModelName?: string;
     configuration?: string;
-    location?: string;
-    block?: string;
+    store?: string;
     department?: string;
     vendorName?: string;
     locationBlock?: string;
@@ -354,6 +350,7 @@ export interface InventoryImportPreview {
       category?: string;
       typeModelName?: string;
       configuration?: string;
+      store?: string;
       location?: string;
       block?: string;
       status?: string;

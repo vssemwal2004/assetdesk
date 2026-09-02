@@ -35,8 +35,7 @@ export interface MaterialForm {
   category: string;
   typeModelName: string;
   configuration: string;
-  location: string;
-  block: string;
+  store: string;
   department: string;
   vendorName: string;
   description: string;
@@ -53,8 +52,7 @@ const initialForm: MaterialForm = {
   category: '',
   typeModelName: '',
   configuration: '',
-  location: '',
-  block: '',
+  store: '',
   department: '',
   vendorName: '',
   description: '',
@@ -90,8 +88,7 @@ function materialFormMessage(form: MaterialForm): string | null {
     return 'Enter a type/model name with at least 2 characters.';
   if (form.trackingMode === 'SERIALIZED' && !form.configuration.trim())
     return 'Enter the IT Asset configuration.';
-  if (form.location.trim().length < 1) return 'Choose a location from Add asset details.';
-  if (form.block.trim().length < 1) return 'Choose a block from Add asset details.';
+  if (form.store.trim().length < 1) return 'Choose a store from Add asset details.';
   if (form.trackingMode === 'SERIALIZED') {
     const quantity = Number(form.totalQuantity);
     const serialNumbers = normalizedSerialNumbers(form.serialNumbers);
@@ -184,8 +181,7 @@ export function buildCreateMaterialDraft(
     name: materialRequestName(form.category, selectedModelName),
     category: form.category,
     typeModelName: selectedModelName,
-    location: form.location,
-    block: form.block,
+    store: form.store,
     ...(form.department.trim() ? { department: form.department } : {}),
     ...(form.vendorName.trim() ? { vendorName: form.vendorName } : {}),
     ...(form.description.trim() ? { description: form.description } : {}),
@@ -234,8 +230,7 @@ export function CreateMaterialPage() {
     queryKey: ['asset-details'],
     queryFn: ({ signal }) => getAssetDetails(undefined, signal),
   });
-  const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
-  const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
+  const stores = detailsQuery.data?.filter((detail) => detail.kind === 'STORE') ?? [];
   const departments = detailsQuery.data?.filter((detail) => detail.kind === 'DEPARTMENT') ?? [];
   const modelsQuery = useQuery({
     queryKey: ['inventory-models', form.category, form.trackingMode],
@@ -457,28 +452,15 @@ export function CreateMaterialPage() {
                   ))}
                 </SelectField>
                 <SelectField
-                  id="material-location"
-                  label="Location"
-                  onChange={(location) => setForm((value) => ({ ...value, location }))}
-                  value={form.location}
+                  id="material-store"
+                  label="Store"
+                  onChange={(store) => setForm((value) => ({ ...value, store }))}
+                  value={form.store}
                 >
-                  <option value="">Choose location</option>
-                  {locations.map((location) => (
-                    <option key={location.id} value={location.name}>
-                      {location.name}
-                    </option>
-                  ))}
-                </SelectField>
-                <SelectField
-                  id="material-block"
-                  label="Block"
-                  onChange={(block) => setForm((value) => ({ ...value, block }))}
-                  value={form.block}
-                >
-                  <option value="">Choose block</option>
-                  {blocks.map((block) => (
-                    <option key={block.id} value={block.name}>
-                      {block.name}
+                  <option value="">Choose store</option>
+                  {stores.map((store) => (
+                    <option key={store.id} value={store.name}>
+                      {store.name}
                     </option>
                   ))}
                 </SelectField>

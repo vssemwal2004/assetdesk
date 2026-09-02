@@ -88,7 +88,9 @@ describe('Issue routes', () => {
 
   it('passes exact dashboard drill-down filters to the list service', async () => {
     await request(testApp())
-      .get('/api/v1/issues?period=TODAY&returnState=DUE_TODAY&assignmentType=LONG_TERM')
+      .get(
+        '/api/v1/issues?period=TODAY&returnState=DUE_TODAY&assignmentType=LONG_TERM&store=Main%20Store&destinationLocation=CSIT%20Lab%201',
+      )
       .expect(200);
 
     expect(service.listIssues).toHaveBeenCalledWith(
@@ -96,6 +98,20 @@ describe('Issue routes', () => {
         period: 'TODAY',
         returnState: 'DUE_TODAY',
         assignmentType: 'LONG_TERM',
+        store: 'Main Store',
+        location: 'CSIT Lab 1',
+      }),
+    );
+  });
+
+  it('does not reject stale issue filter aliases in the query string', async () => {
+    await request(testApp())
+      .get('/api/v1/issues?page=1&destinationLocation=Aryabhatt%20Lab%201&location=Legacy%20Lab&unexpected=value')
+      .expect(200);
+
+    expect(service.listIssues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        location: 'Legacy Lab',
       }),
     );
   });
@@ -112,6 +128,7 @@ describe('Issue routes', () => {
       .send({
         assignmentType: 'SHORT_TERM',
         receiverCode: 'GEU-RCV-000001',
+        destinationLocation: 'CSIT Lab 1',
         lines: [{ trackingMode: 'QUANTITY', materialCode: 'GEU-MAT-000001', quantity: 2 }],
         due: { preset: 'ONE_WEEK' },
       })

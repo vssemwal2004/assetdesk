@@ -10,9 +10,9 @@ import { isApiError } from '../../lib/api-client';
 import { previewInventoryImport } from '../../lib/inventory-api';
 
 const ASSET_TEMPLATE =
-  'IT Asset,Type/Model Name,Configuration,Serial Number,Location,Block,Department,Vendor Name,Description,Inventory Status\r\nComputer,Dell Latitude 5450,Intel Core i5 / 16 GB RAM / 512 GB SSD,DL5450-001,Computer Centre,A Block,IT Department,Dell,Staff laptop,Active / in use\r\nComputer,Dell Latitude 5450,Intel Core i5 / 16 GB RAM / 512 GB SSD,DL5450-002,Computer Centre,A Block,IT Department,Dell,Service required,Under maintenance\r\nPrinter,HP LaserJet 1020,Monochrome laser / USB,HPLJ1020-OLD-01,Store Room,B Block,Computer Centre,HP,Old printer not in regular use,Outdated (not in use)\r\n';
+  'IT Asset,Type/Model Name,Configuration,Serial Number,Store,Department,Vendor Name,Description,Inventory Status\r\nComputer,Dell Latitude 5450,Intel Core i5 / 16 GB RAM / 512 GB SSD,DL5450-001,Computer Store,IT Department,Dell,Staff laptop,Active / in use\r\nComputer,Dell Latitude 5450,Intel Core i5 / 16 GB RAM / 512 GB SSD,DL5450-002,Computer Store,IT Department,Dell,Service required,Under maintenance\r\nPrinter,HP LaserJet 1020,Monochrome laser / USB,HPLJ1020-OLD-01,Main Store,Computer Centre,HP,Old printer not in regular use,Outdated (not in use)\r\n';
 const CONSUMABLE_TEMPLATE =
-  'IT Consumable,Type/Model Name,Quantity,Unit Label,Return Policy,Location,Block,Department,Vendor Name,Description,Inventory Status\r\nCable,USB-C Cable,50,pieces,CONSUMABLE,Computer Centre,A Block,IT Department,Local Vendor,One metre cable,Active / in use\r\nCartridge,Printer Toner,12,pieces,CONSUMABLE,Store Room,B Block,Computer Centre,HP,Stock inspection in progress,Under maintenance\r\n';
+  'IT Consumable,Type/Model Name,Quantity,Unit Label,Return Policy,Store,Department,Vendor Name,Description,Inventory Status\r\nCable,USB-C Cable,50,pieces,CONSUMABLE,Computer Store,IT Department,Local Vendor,One metre cable,Active / in use\r\nCartridge,Printer Toner,12,pieces,CONSUMABLE,Main Store,Computer Centre,HP,Stock inspection in progress,Under maintenance\r\n';
 
 export function InventoryImportPage() {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -155,11 +155,11 @@ export function InventoryImportPage() {
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
               CSV and XLSX, maximum 5 MB and 1,000 rows.
               {mode === 'SERIALIZED'
-                ? ' Required columns: IT Asset, Type/Model Name, Serial Number, Location, Block. Optional columns: Department, Vendor Name, Description, Inventory Status.'
-                : ' Required columns: IT Consumable, Type/Model Name, Quantity, Unit Label, Location, Block. Optional columns: Department, Vendor Name, Return Policy, Description, Inventory Status.'}
+                ? ' Required columns: IT Asset, Type/Model Name, Serial Number, Store. Optional columns: Department, Vendor Name, Description, Inventory Status.'
+                : ' Required columns: IT Consumable, Type/Model Name, Quantity, Unit Label, Store. Optional columns: Department, Vendor Name, Return Policy, Description, Inventory Status.'}
             </p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              IT Asset, IT Consumable, Location, Block, and Department are matched from saved asset
+              IT Asset, IT Consumable, Store, and Department are matched from saved asset
               details; spacing and letter case are ignored. Vendor Name is saved as entered.
             </p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">

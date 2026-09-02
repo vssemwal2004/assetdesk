@@ -54,11 +54,12 @@ describe('inventory access filters', () => {
     });
 
     expect(filter.status).toBe('ACTIVE');
-    expect(filter.$or).toHaveLength(11);
+    expect(filter.$or).toHaveLength(12);
     expect(filter.$or).toEqual(
       expect.arrayContaining([
         { typeModelName: /switch\.\*/i },
         { configuration: /switch\.\*/i },
+        { store: /switch\.\*/i },
         { location: /switch\.\*/i },
         { block: /switch\.\*/i },
         { vendorName: /switch\.\*/i },
@@ -94,7 +95,7 @@ describe('inventory access filters', () => {
       availableQuantity: { $gt: 0 },
       createdAt: { $gte: createdFrom, $lte: createdTo },
     });
-    expect(filter.$or).toHaveLength(11);
+    expect(filter.$or).toHaveLength(12);
     expect(filter.category).toEqual(/^CPU$/i);
     expect(filter.location).toEqual(/^Civil Lab$/i);
     expect(filter.block).toEqual(/^Civil Block$/i);
@@ -127,7 +128,7 @@ describe('inventory access filters', () => {
       pageSize: 20,
       role: 'ADMIN',
       issueable: true,
-      location: 'Aryabhatt Store / Aryabhatt Centre',
+      store: 'Aryabhatt Store / Aryabhatt Centre',
     });
 
     expect(filter.status).toEqual({ $in: ['ACTIVE', 'NOT_IN_USE'] });
@@ -135,6 +136,7 @@ describe('inventory access filters', () => {
     expect(filter.$and).toEqual([
       {
         $or: [
+          { store: /^Aryabhatt\s+Store\s+\/\s+Aryabhatt\s+Centre$/i },
           { location: /^Aryabhatt\s+Store$/i, block: /^Aryabhatt\s+Centre$/i },
           { locationBlock: /^Aryabhatt\s+Store\s+\/\s+Aryabhatt\s+Centre$/i },
         ],
@@ -148,13 +150,14 @@ describe('inventory access filters', () => {
       pageSize: 20,
       role: 'ADMIN',
       issueable: true,
-      location: 'Param Centre Store / Param Computer Centre',
+      store: 'Param Centre Store / Param Computer Centre',
     });
 
     const storeFilter = (filter.$and as Array<{ $or: Array<Record<string, RegExp>> }>)[0];
-    expect(storeFilter?.$or[0]?.location?.test('Param Centre Store')).toBe(true);
-    expect(storeFilter?.$or[0]?.block?.test('Param Computer Centre')).toBe(true);
-    expect(storeFilter?.$or[1]?.locationBlock?.test('Param Centre Store / Param Computer Centre')).toBe(
+    expect(storeFilter?.$or[0]?.store?.test('Param Centre Store / Param Computer Centre')).toBe(true);
+    expect(storeFilter?.$or[1]?.location?.test('Param Centre Store')).toBe(true);
+    expect(storeFilter?.$or[1]?.block?.test('Param Computer Centre')).toBe(true);
+    expect(storeFilter?.$or[2]?.locationBlock?.test('Param Centre Store / Param Computer Centre')).toBe(
       true,
     );
   });

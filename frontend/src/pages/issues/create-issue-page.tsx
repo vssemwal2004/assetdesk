@@ -82,6 +82,7 @@ export function CreateIssuePage() {
   });
   const [materialSearch, setMaterialSearch] = useState('');
   const [storeFilter, setStoreFilter] = useState<StoreFilter>('');
+  const [issueLocation, setIssueLocation] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([blankLine()]);
   const [duePreset, setDuePreset] = useState<DuePreset>('ONE_WEEK');
   const [customReturnAt, setCustomReturnAt] = useState('');
@@ -109,6 +110,7 @@ export function CreateIssuePage() {
           pageSize: 500,
           issueable: true,
           trackingMode: materialType,
+          ...(storeFilter ? { store: storeFilter } : {}),
           ...(materialSearch ? { search: materialSearch } : {}),
         },
         signal,
@@ -122,10 +124,18 @@ export function CreateIssuePage() {
     queryKey: ['asset-details', 'STORE'],
     queryFn: ({ signal }) => getAssetDetails('STORE', signal),
   });
+  const locationQuery = useQuery({
+    queryKey: ['asset-details', 'LOCATION'],
+    queryFn: ({ signal }) => getAssetDetails('LOCATION', signal),
+  });
   const departments = departmentQuery.data ?? [];
   const storeNames = useMemo(
     () => (storeQuery.data ?? []).map((store) => store.name),
     [storeQuery.data],
+  );
+  const locationNames = useMemo(
+    () => (locationQuery.data ?? []).map((location) => location.name),
+    [locationQuery.data],
   );
   const allIssueableMaterials = useMemo(
     () =>
@@ -226,6 +236,10 @@ export function CreateIssuePage() {
       setMessage(receiverIssue);
       return null;
     }
+    if (!issueLocation.trim()) {
+      setMessage('Choose the issue location.');
+      return null;
+    }
     const stockIssue = firstStockIssue(lines, materialByCode);
     if (stockIssue) {
       setMessage(stockIssue);
@@ -243,6 +257,7 @@ export function CreateIssuePage() {
         ...(issuedTo.contact.trim() ? { contact: issuedTo.contact } : {}),
         ...(issuedTo.email.trim() ? { email: issuedTo.email } : {}),
       },
+      destinationLocation: issueLocation,
       lines: lines.map((line) => {
         const material = materialByCode.get(line.materialCode);
         if (material?.trackingMode === 'SERIALIZED') {
@@ -482,9 +497,31 @@ export function CreateIssuePage() {
       </AppCard>
 
       <AppCard className="issue-panel">
+        <SectionTitle number="2" title="Issue Location" />
+        <label className="mt-3 block max-w-xl space-y-1.5">
+          <span className="field-label">Location</span>
+          <select
+            className="field-input field-input-compact"
+            onChange={(event) => {
+              setIssueLocation(event.target.value);
+              setMessage(null);
+            }}
+            value={issueLocation}
+          >
+            <option value="">Choose location</option>
+            {locationNames.map((location) => (
+              <option key={location} value={location}>
+                {location}
+              </option>
+            ))}
+          </select>
+        </label>
+      </AppCard>
+
+      <AppCard className="issue-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <SectionTitle
-            number="2"
+            number="3"
             title={materialType === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'}
           />
           <Button

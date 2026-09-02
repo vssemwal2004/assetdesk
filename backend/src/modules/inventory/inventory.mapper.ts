@@ -11,6 +11,7 @@ export function toMaterial(material: MaterialDocument): Material {
     category: material.category,
     typeModelName: material.typeModelName ?? null,
     configuration: material.configuration ?? null,
+    store: material.store ?? material.locationBlock ?? material.location ?? null,
     location: material.location ?? null,
     block: material.block ?? null,
     department: material.department ?? null,

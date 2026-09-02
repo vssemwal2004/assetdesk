@@ -39,6 +39,7 @@ export interface IssueMaterialSnapshotRecord {
   trackingMode: TrackingMode;
   returnPolicy: ReturnPolicy;
   unitLabel?: string;
+  store?: string;
 }
 
 export interface IssueAssetRecord {
@@ -108,6 +109,8 @@ export interface IssueRecord {
   status: IssueStatus;
   purpose?: string;
   notes?: string;
+  destinationLocation?: string;
+  destinationBlock?: string;
   lines: IssueLineRecord[];
   returnEvents: ReturnEventRecord[];
   totalIssuedQuantity: number;
@@ -180,6 +183,7 @@ const MaterialSnapshotSchema = new Schema<IssueMaterialSnapshotRecord>(
       immutable: true,
     },
     unitLabel: { type: String, immutable: true, maxlength: 40 },
+    store: { type: String, immutable: true, maxlength: 120 },
   },
   { _id: false },
 );
@@ -366,6 +370,8 @@ const IssueSchema = new Schema<IssueRecord>(
     },
     purpose: { type: String, maxlength: 240 },
     notes: { type: String, maxlength: 2_000 },
+    destinationLocation: { type: String, maxlength: 120 },
+    destinationBlock: { type: String, maxlength: 120 },
     lines: {
       type: [IssueLineSchema],
       required: true,
@@ -453,6 +459,7 @@ IssueSchema.index({ status: 1, expectedReturnAt: 1, issuedAt: -1 });
 IssueSchema.index({ status: 1, totalOutstandingQuantity: 1, issuedAt: -1 });
 IssueSchema.index({ issuedAt: -1, _id: -1 });
 IssueSchema.index({ status: 1, totalOutstandingQuantity: 1 });
+IssueSchema.index({ destinationLocation: 1, destinationBlock: 1, issuedAt: -1 });
 IssueSchema.index({ 'receiver.receiverCode': 1 });
 IssueSchema.index({ 'receiver.fullName': 1 });
 IssueSchema.index({ 'lines.material.materialCode': 1 });

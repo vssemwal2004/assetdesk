@@ -148,16 +148,14 @@ export function groupMaterials(materials: Material[]): MaterialGroup[] {
         [
           left.typeModelName ?? left.name,
           left.configuration ?? '',
-          left.location ?? '',
-          left.block ?? '',
+          left.store ?? left.locationBlock ?? left.location ?? '',
         ]
           .join('|')
           .localeCompare(
             [
               right.typeModelName ?? right.name,
               right.configuration ?? '',
-              right.location ?? '',
-              right.block ?? '',
+              right.store ?? right.locationBlock ?? right.location ?? '',
             ].join('|'),
           ),
       ),
@@ -279,8 +277,7 @@ export function InventoryPage() {
   const [downloading, setDownloading] = useState(false);
   const search = parameters.get('search') ?? '';
   const category = parameters.get('category') ?? '';
-  const location = parameters.get('location') ?? '';
-  const block = parameters.get('block') ?? '';
+  const store = parameters.get('store') ?? '';
   const department = parameters.get('department') ?? '';
   const vendorName = parameters.get('vendorName') ?? '';
   const createdFrom = parameters.get('createdFrom') ?? '';
@@ -307,8 +304,7 @@ export function InventoryPage() {
       {
         search,
         category,
-        location,
-        block,
+        store,
         department,
         vendorName,
         createdFrom,
@@ -323,8 +319,7 @@ export function InventoryPage() {
       const filters = {
         ...(search ? { search } : {}),
         ...(category ? { category } : {}),
-        ...(location ? { location } : {}),
-        ...(block ? { block } : {}),
+        ...(store ? { store } : {}),
         ...(department ? { department } : {}),
         ...(vendorName ? { vendorName } : {}),
         ...(createdFrom ? { createdFrom } : {}),
@@ -440,8 +435,7 @@ export function InventoryPage() {
         : ['ASSET_TYPE', 'CONSUMABLE_TYPE'],
     category,
   );
-  const locationOptions = assetDetailOptions(assetDetails, 'LOCATION', location);
-  const blockOptions = assetDetailOptions(assetDetails, 'BLOCK', block);
+  const storeOptions = assetDetailOptions(assetDetails, 'STORE', store);
   const departmentOptions = assetDetailOptions(assetDetails, 'DEPARTMENT', department);
   const materialGroups = groupMaterials(materials);
   const summary = inventorySummary(materials);
@@ -451,8 +445,7 @@ export function InventoryPage() {
   const filtered = Boolean(
     search ||
     category ||
-    location ||
-    block ||
+    store ||
     department ||
     vendorName ||
     createdFrom ||
@@ -489,8 +482,7 @@ export function InventoryPage() {
       const blob = await downloadInventoryCsv({
         ...(search ? { search } : {}),
         ...(category ? { category } : {}),
-        ...(location ? { location } : {}),
-        ...(block ? { block } : {}),
+        ...(store ? { store } : {}),
         ...(department ? { department } : {}),
         ...(vendorName ? { vendorName } : {}),
         ...(createdFrom ? { createdFrom } : {}),
@@ -594,15 +586,14 @@ export function InventoryPage() {
                 key={search}
                 label="Search Inventory"
                 onSearch={(value) => updateParameters({ search: value })}
-                placeholder={`${selectedInventoryLabel}, code, category, location or description`}
+                placeholder={`${selectedInventoryLabel}, code, category, store or description`}
                 value={search}
               />
               <FilterPopover
                 activeCount={
                   [
                     category,
-                    location,
-                    block,
+                    store,
                     department,
                     vendorName,
                     createdFrom,
@@ -615,8 +606,7 @@ export function InventoryPage() {
                 onClear={() =>
                   updateParameters({
                     category: '',
-                    location: '',
-                    block: '',
+                    store: '',
                     department: '',
                     vendorName: '',
                     createdFrom: '',
@@ -645,30 +635,15 @@ export function InventoryPage() {
                         ))}
                       </FilterSelect>
                     </FilterField>
-                    <FilterField label="Location">
+                    <FilterField label="Store">
                       <FilterSelect
-                        id="inventory-location-filter"
-                        label="Filter by location"
-                        onChange={(value) => updateParameters({ location: value })}
-                        value={location}
+                        id="inventory-store-filter"
+                        label="Filter by store"
+                        onChange={(value) => updateParameters({ store: value })}
+                        value={store}
                       >
-                        <option value="">Any location</option>
-                        {locationOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </FilterSelect>
-                    </FilterField>
-                    <FilterField label="Block">
-                      <FilterSelect
-                        id="inventory-block-filter"
-                        label="Filter by block"
-                        onChange={(value) => updateParameters({ block: value })}
-                        value={block}
-                      >
-                        <option value="">Any block</option>
-                        {blockOptions.map((option) => (
+                        <option value="">Any store</option>
+                        {storeOptions.map((option) => (
                           <option key={option} value={option}>
                             {option}
                           </option>
@@ -952,7 +927,7 @@ export function InventoryPage() {
                 <PackagePlus className="text-[var(--color-primary)]" size={22} />
                 <p className="mt-3 font-extrabold">Individual material</p>
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  Add configuration, location, vendor and serials/quantity.
+                  Add configuration, store, vendor and serials/quantity.
                 </p>
               </Link>
               <Link
@@ -1004,7 +979,7 @@ export function InventoryPage() {
             {mergeStep === 1 ? (
               <>
                 <p className="mt-4 text-sm text-[var(--color-text-muted)]">
-                  Select at least two duplicate models. Their configurations, locations, quantities,
+                  Select at least two duplicate models. Their configurations, stores, quantities,
                   serials and history will remain separate.
                 </p>
                 <div className="mt-4 flex items-center justify-between">
@@ -1501,7 +1476,10 @@ function MaterialQuickViewDialog({
           <DetailItem label="Tracking" value={humanizeCatalogValue(material.trackingMode)} />
           <DetailItem label="Asset type" value={material.category} />
           <DetailItem label="Type/model name" value={material.typeModelName ?? material.name} />
-          <DetailItem label="Location / block" value={material.locationBlock ?? 'Not provided'} />
+          <DetailItem
+            label="Store"
+            value={material.store ?? material.locationBlock ?? material.location ?? 'Not provided'}
+          />
           <DetailItem label="Return policy" value={humanizeCatalogValue(material.returnPolicy)} />
           <DetailItem label="Stats" value={materialStatsLabel(material)} />
           <DetailItem label="Availability" value={quantityLabel(material)} />
@@ -2022,7 +2000,7 @@ function GroupedMaterialRows({
                             {model.label}
                           </p>
                           <p className="text-xs text-[var(--color-text-muted)]">
-                            {model.materials.length} configuration/location variant
+                            {model.materials.length} configuration/store variant
                             {model.materials.length === 1 ? '' : 's'}
                           </p>
                         </div>
@@ -2161,7 +2139,7 @@ function MaterialVariantRows({
               </span>
               <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
                 {material.materialCode} ·{' '}
-                {[material.location, material.block].filter(Boolean).join(' · ')}
+                {material.store ?? material.locationBlock ?? material.location ?? 'Not provided'}
               </span>
             </span>
           </button>

@@ -14,6 +14,7 @@ export interface MaterialRecord {
   category: string;
   typeModelName?: string;
   configuration?: string;
+  store?: string;
   location?: string;
   block?: string;
   department?: string;
@@ -50,6 +51,7 @@ const MaterialSchema = new Schema<MaterialRecord>(
     category: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
     typeModelName: { type: String, trim: true, minlength: 2, maxlength: 120 },
     configuration: { type: String, trim: true, minlength: 1, maxlength: 1_000 },
+    store: { type: String, trim: true, minlength: 1, maxlength: 120 },
     location: { type: String, trim: true, minlength: 1, maxlength: 120 },
     block: { type: String, trim: true, minlength: 1, maxlength: 120 },
     department: { type: String, trim: true, minlength: 1, maxlength: 120 },
@@ -120,6 +122,7 @@ MaterialSchema.pre('validate', function validateInventoryInvariants() {
 
 MaterialSchema.index({ status: 1, trackingMode: 1, category: 1 });
 MaterialSchema.index({ status: 1, trackingMode: 1, availableQuantity: 1, createdAt: -1 });
+MaterialSchema.index({ store: 1, status: 1, trackingMode: 1 });
 MaterialSchema.index({ name: 1 });
 MaterialSchema.index(
   { name: 'text', category: 'text', description: 'text' },

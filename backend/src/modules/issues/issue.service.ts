@@ -21,6 +21,8 @@ import {
 import { AppError } from '../../middleware/error-handler.js';
 import { appendAuditEvent } from '../audit/audit.service.js';
 import { AssetUnitModel } from '../inventory/asset-unit.model.js';
+import { AssetDetailModel } from '../inventory/asset-detail.model.js';
+import { normalizeLookupValue } from '../inventory/inventory.service.js';
 import { MaterialModel } from '../inventory/material.model.js';
 import { ReceiverModel } from '../receivers/receiver.model.js';
 import { findOrCreateReceiverForIssue } from '../receivers/receiver.service.js';
@@ -61,6 +63,11 @@ export interface IssueListInput {
   period?: IssuePeriod;
   returnState?: IssueReturnState;
   assignmentType?: AssignmentType;
+  store?: string;
+  location?: string;
+  block?: string;
+  trackingMode?: 'SERIALIZED' | 'QUANTITY';
+  category?: string;
 }
 
 export interface IssueListResult {
@@ -120,7 +127,11 @@ function materialSnapshot(material: {
   trackingMode: 'SERIALIZED' | 'QUANTITY';
   returnPolicy: 'REUSABLE' | 'CONSUMABLE';
   unitLabel?: string;
+  store?: string;
+  location?: string;
+  locationBlock?: string;
 }): IssueMaterialSnapshotRecord {
+  const store = material.store ?? material.locationBlock ?? material.location;
   return {
     materialId: material._id,
     materialCode: material.materialCode,
@@ -130,6 +141,7 @@ function materialSnapshot(material: {
     trackingMode: material.trackingMode,
     returnPolicy: material.returnPolicy,
     ...(material.unitLabel ? { unitLabel: material.unitLabel } : {}),
+    ...(store ? { store } : {}),
   };
 }
 
@@ -347,6 +359,13 @@ export async function createIssue(
   requestFingerprint: string,
 ): Promise<CreateIssueResult> {
   const actorUserId = objectId(actor.userId);
+  const locationDetail = await AssetDetailModel.findOne({
+    kind: 'LOCATION',
+    normalizedName: normalizeLookupValue(input.destinationLocation),
+  }).lean();
+  if (!locationDetail) {
+    throw new AppError(422, 'INVALID_ISSUE_LOCATION', 'Select a location added by an administrator.');
+  }
   let result: CreateIssueResult | undefined;
   const claimedLines: IssueLineRecord[] = [];
 
@@ -417,6 +436,8 @@ export async function createIssue(
       status: 'ISSUED',
       ...(input.purpose ? { purpose: input.purpose } : {}),
       ...(input.notes ? { notes: input.notes } : {}),
+      destinationLocation: locationDetail.name,
+      ...(input.destinationBlock ? { destinationBlock: input.destinationBlock } : {}),
       lines: claimedLines,
       returnEvents: [],
       totalIssuedQuantity,
@@ -443,6 +464,8 @@ export async function createIssue(
         status: 'ISSUED',
         duePreset: input.due?.preset ?? null,
         assignmentType: input.assignmentType,
+        destinationLocation: locationDetail.name,
+        destinationBlock: input.destinationBlock ?? null,
       },
     });
     for (const line of claimedLines) {
@@ -579,6 +602,21 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
   }
   if (input.status) filter.status = input.status;
   if (input.assignmentType) filter.assignmentType = input.assignmentType;
+  if (input.store) {
+    filter['lines.material.store'] = new RegExp(`^${escapeSearchRegex(input.store)}$`, 'i');
+  }
+  if (input.trackingMode) filter['lines.material.trackingMode'] = input.trackingMode;
+  if (input.category) {
+    filter['lines.material.category'] = new RegExp(`^${escapeSearchRegex(input.category)}$`, 'i');
+  }
+  if (input.location) {
+    const location = new RegExp(`^${escapeSearchRegex(input.location)}$`, 'i');
+    accessClauses.push({
+      $or: [
+        { destinationLocation: location },
+      ],
+    });
+  }
   if (input.period === 'TODAY') {
     filter.issuedAt = { $gte: today.start, $lt: today.end };
   }
@@ -602,6 +640,8 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
           'receiver',
           'issuedBy',
           'issuedAt',
+          'destinationLocation',
+          'destinationBlock',
           'expectedReturnAt',
           'duePreset',
           'status',

@@ -8,6 +8,7 @@ export interface InventoryImportPreviewRow {
   category: string;
   typeModelName?: string;
   configuration?: string;
+  store?: string;
   location?: string;
   block?: string;
   department?: string;
@@ -33,6 +34,7 @@ export interface InventoryImportDuplicate {
   category?: string;
   typeModelName?: string;
   configuration?: string;
+  store?: string;
   location?: string;
   block?: string;
   status?: string;
@@ -43,6 +45,7 @@ export interface InventoryImportInput {
   category: string;
   typeModelName?: string | undefined;
   configuration?: string | undefined;
+  store: string;
   location?: string | undefined;
   block?: string | undefined;
   department?: string | undefined;
@@ -79,6 +82,7 @@ const PreviewRowSchema = new Schema<InventoryImportPreviewRow>(
     category: { type: String, default: '' },
     typeModelName: { type: String },
     configuration: { type: String },
+    store: { type: String },
     location: { type: String },
     block: { type: String },
     department: { type: String },
@@ -123,6 +127,7 @@ const ImportInputSchema = new Schema<InventoryImportInput>(
     category: { type: String, required: true },
     typeModelName: { type: String },
     configuration: { type: String },
+    store: { type: String, required: true },
     location: { type: String },
     block: { type: String },
     department: { type: String },

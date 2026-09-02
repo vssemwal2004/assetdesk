@@ -16,6 +16,7 @@ const AssetTypeNameSchema = z.string().trim().min(2).max(120);
 const LocationBlockSchema = z.string().trim().min(1).max(120);
 const LocationSchema = z.string().trim().min(1).max(120);
 const BlockSchema = z.string().trim().min(1).max(120);
+const StoreSchema = z.string().trim().min(1).max(120);
 const DepartmentSchema = z.string().trim().min(1).max(120);
 const VendorNameSchema = z.string().trim().max(120);
 const UnitLabelSchema = z.string().trim().min(1).max(40);
@@ -36,8 +37,9 @@ const CreateMaterialBaseSchema = z.object({
   name: MaterialDisplayNameSchema,
   category: CategorySchema,
   typeModelName: NameSchema,
-  location: LocationSchema,
-  block: BlockSchema,
+  store: StoreSchema,
+  location: LocationSchema.optional(),
+  block: BlockSchema.optional(),
   department: DepartmentSchema.optional(),
   vendorName: VendorNameSchema.optional(),
   locationBlock: LocationBlockSchema.optional(),
@@ -75,6 +77,7 @@ export const UpdateMaterialRequestSchema = z
     category: CategorySchema.optional(),
     typeModelName: NameSchema.optional(),
     configuration: ConfigurationSchema.optional(),
+    store: StoreSchema.optional(),
     location: LocationSchema.optional(),
     block: BlockSchema.optional(),
     department: DepartmentSchema.optional(),
@@ -139,6 +142,7 @@ export const MaterialSchema = z
     configuration: z.string().nullable().optional(),
     location: z.string().nullable().optional().default(null),
     block: z.string().nullable().optional().default(null),
+    store: z.string().nullable().optional().default(null),
     department: z.string().nullable().optional().default(null),
     vendorName: z.string().nullable().optional().default(null),
     locationBlock: z.string().nullable().optional().default(null),

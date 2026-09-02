@@ -131,6 +131,7 @@ const MaterialListQuerySchema = z
       z.enum(['AVAILABLE', 'LOW_STOCK', 'OUT_OF_STOCK', 'ISSUED', 'FULLY_ISSUED']).optional(),
     ),
     category: OptionalQueryTextSchema,
+    store: OptionalQueryTextSchema,
     location: OptionalQueryTextSchema,
     block: OptionalQueryTextSchema,
     department: OptionalQueryTextSchema,
@@ -284,6 +285,7 @@ export function createInventoryRouter(): Router {
   router.get('/', async (request, response, next) => {
     try {
       const input = MaterialListQuerySchema.parse(request.query);
+      const store = input.store ?? input.location;
       ensureInventoryListAccess(request, input.issueable);
       const actor = authenticated(request);
       const result = await listMaterials({
@@ -302,7 +304,7 @@ export function createInventoryRouter(): Router {
         ...(input.returnPolicy ? { returnPolicy: input.returnPolicy } : {}),
         ...(input.stockState ? { stockState: input.stockState } : {}),
         ...(input.category ? { category: input.category } : {}),
-        ...(input.location ? { location: input.location } : {}),
+        ...(store ? { store } : {}),
         ...(input.block ? { block: input.block } : {}),
         ...(input.department ? { department: input.department } : {}),
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),
@@ -552,6 +554,7 @@ export function createInventoryRouter(): Router {
   router.get('/export', requirePermission('INVENTORY_EXPORT'), async (request, response, next) => {
     try {
       const input = MaterialListQuerySchema.parse(request.query);
+      const store = input.store ?? input.location;
       const actor = authenticated(request);
       const csv = await exportMaterialsCsv({
         role: actor.role,
@@ -564,7 +567,7 @@ export function createInventoryRouter(): Router {
         ...(input.returnPolicy ? { returnPolicy: input.returnPolicy } : {}),
         ...(input.stockState ? { stockState: input.stockState } : {}),
         ...(input.category ? { category: input.category } : {}),
-        ...(input.location ? { location: input.location } : {}),
+        ...(store ? { store } : {}),
         ...(input.block ? { block: input.block } : {}),
         ...(input.department ? { department: input.department } : {}),
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),

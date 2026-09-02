@@ -33,6 +33,7 @@ describe('Issue and Return idempotency', () => {
         {
           assignmentType: 'LONG_TERM',
           receiverCode: 'GEU-RCV-000125',
+          destinationLocation: 'Computer Lab',
           lines: [
             {
               trackingMode: 'QUANTITY',

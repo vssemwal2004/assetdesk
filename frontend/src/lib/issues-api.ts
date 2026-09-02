@@ -36,6 +36,9 @@ export interface IssueFilters {
   period?: IssuePeriod;
   returnState?: IssueReturnState;
   assignmentType?: AssignmentType;
+  destinationLocation?: string;
+  trackingMode?: 'SERIALIZED' | 'QUANTITY';
+  category?: string;
 }
 
 export async function getIssues(
@@ -51,6 +54,9 @@ export async function getIssues(
   if (filters.period) parameters.set('period', filters.period);
   if (filters.returnState) parameters.set('returnState', filters.returnState);
   if (filters.assignmentType) parameters.set('assignmentType', filters.assignmentType);
+  if (filters.destinationLocation) parameters.set('destinationLocation', filters.destinationLocation);
+  if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
+  if (filters.category) parameters.set('category', filters.category);
   const payload = await apiRequest<unknown>(`/api/v1/issues?${parameters.toString()}`, {
     ...(signal ? { signal } : {}),
   });

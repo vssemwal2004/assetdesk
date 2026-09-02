@@ -242,6 +242,10 @@ export function IssueDetailPage() {
             </div>
             <dl className="mt-3 divide-y divide-[var(--color-border)]">
               <DetailRow label="Name" value={issue.receiver.fullName} />
+              <DetailRow
+                label="Issued location"
+                value={full?.destinationLocation ?? 'Not set'}
+              />
               <DetailRow label="Receiver code" value={issue.receiver.receiverCode} />
               <DetailRow
                 label="University ID"

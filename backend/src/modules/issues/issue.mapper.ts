@@ -35,6 +35,7 @@ function toIssueLine(line: IssueLineRecord, outstandingOnly = false): IssueLine 
       trackingMode: line.material.trackingMode,
       returnPolicy: line.material.returnPolicy,
       unitLabel: line.material.unitLabel ?? null,
+      store: line.material.store ?? null,
     },
     issuedQuantity: line.issuedQuantity,
     outstandingQuantity: line.outstandingQuantity,
@@ -98,6 +99,10 @@ function receiver(issue: IssueDocument) {
   };
 }
 
+function issuedLocation(issue: IssueDocument): string | null {
+  return issue.destinationLocation?.trim() || null;
+}
+
 export function toIssue(issue: IssueDocument): Issue {
   return {
     id: issue._id.toString(),
@@ -105,6 +110,8 @@ export function toIssue(issue: IssueDocument): Issue {
     receiver: receiver(issue),
     issuedBy: toIssueActor(issue.issuedBy),
     issuedAt: issue.issuedAt.toISOString(),
+    destinationLocation: issuedLocation(issue),
+    destinationBlock: issue.destinationBlock ?? null,
     expectedReturnAt: issue.expectedReturnAt?.toISOString() ?? null,
     duePreset: issue.duePreset ?? null,
     assignmentType: issue.assignmentType ?? 'SHORT_TERM',
@@ -142,6 +149,8 @@ export function toIssueSummary(issue: IssueDocument): IssueSummary {
     status: issue.status,
     purpose: issue.purpose ?? null,
     notes: issue.notes ?? null,
+    destinationLocation: issuedLocation(issue),
+    destinationBlock: issue.destinationBlock ?? null,
     totalIssuedQuantity: issue.totalIssuedQuantity,
     totalOutstandingQuantity: issue.totalOutstandingQuantity,
     hasDamagedOutcome: issue.hasDamagedOutcome,
@@ -161,6 +170,8 @@ export function toReturnableIssue(issue: IssueDocument): ReturnableIssue {
     receiver: receiver(issue),
     issuedBy: toIssueActor(issue.issuedBy),
     issuedAt: issue.issuedAt.toISOString(),
+    destinationLocation: issuedLocation(issue),
+    destinationBlock: issue.destinationBlock ?? null,
     expectedReturnAt: issue.expectedReturnAt?.toISOString() ?? null,
     duePreset: issue.duePreset ?? null,
     assignmentType: issue.assignmentType ?? 'SHORT_TERM',

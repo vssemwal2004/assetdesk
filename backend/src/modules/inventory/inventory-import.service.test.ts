@@ -134,8 +134,8 @@ describe('inventory import parsing', () => {
   it('preserves blank required cells so preview can report the exact missing value', () => {
     const rows = parseInventoryImportTable(
       [
-        ['IT Consumable', 'Type/Model Name', 'Quantity', 'Unit Label', 'Location', 'Block'],
-        ['Cartridge', 'CARTRIDGE 05A', 10, 'pieces', 'Param Centre Store', ''],
+      ['IT Consumable', 'Type/Model Name', 'Quantity', 'Unit Label', 'Store'],
+      ['Cartridge', 'CARTRIDGE 05A', 10, 'pieces', ''],
       ],
       'QUANTITY',
     );
@@ -143,7 +143,7 @@ describe('inventory import parsing', () => {
     expect(rows[0]?.values).toMatchObject({
       category: 'Cartridge',
       typeModelName: 'CARTRIDGE 05A',
-      block: '',
+      store: '',
     });
   });
 
@@ -152,9 +152,7 @@ describe('inventory import parsing', () => {
       name: 'Consumable USB-C Cable',
       category: 'Consumable',
       typeModelName: 'USB-C Cable',
-      location: 'Store Room',
-      block: 'B Block',
-      locationBlock: 'Store Room / B Block',
+      store: 'Store Room',
       assignmentTypes: ['SHORT_TERM'],
       trackingMode: 'QUANTITY',
       returnPolicy: 'CONSUMABLE',
@@ -167,8 +165,7 @@ describe('inventory import parsing', () => {
     expect(input).toMatchObject({
       name: 'Consumable USB-C Cable',
       trackingMode: 'QUANTITY',
-      location: 'Store Room',
-      block: 'B Block',
+      store: 'Store Room',
       totalQuantity: 50,
       unitLabel: 'pieces',
     });

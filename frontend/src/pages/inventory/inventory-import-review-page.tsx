@@ -90,8 +90,7 @@ function downloadErrorReport(preview: InventoryImportPreview) {
       'Serial number': row.serialNumber ?? '',
       Quantity: row.quantity ?? '',
       Unit: row.unitLabel ?? '',
-      Location: row.location ?? '',
-      Block: row.block ?? '',
+      Store: row.store ?? '',
       Department: row.department ?? '',
       Vendor: row.vendorName ?? '',
       'Inventory status': row.status ?? '',
@@ -116,8 +115,7 @@ function duplicateReportRows(rows: PreviewRow[]): Record<string, string | number
       'Existing category': duplicate.category ?? '',
       'Existing model': duplicate.typeModelName ?? '',
       'Existing configuration': duplicate.configuration ?? '',
-      'Existing location': duplicate.location ?? '',
-      'Existing block': duplicate.block ?? '',
+      'Existing store': duplicate.store ?? duplicate.location ?? duplicate.block ?? '',
       'Existing status': duplicate.status ?? '',
       Resolution:
         duplicate.source === 'EXISTING_INVENTORY'
@@ -167,8 +165,7 @@ export function InventoryImportReviewPage() {
         row.name,
         row.category,
         row.typeModelName,
-        row.location,
-        row.block,
+        row.store,
         row.department,
         row.vendorName,
         row.locationBlock,
@@ -405,7 +402,7 @@ function DuplicateComparisonDialog({
                 <th className="w-40 p-3">Duplicate found in</th>
                 <th className="w-48 p-3">Asset / material code</th>
                 <th className="w-56 p-3">Existing material</th>
-                <th className="w-44 p-3">Location</th>
+                <th className="w-44 p-3">Store</th>
                 <th className="p-3">What to do</th>
               </tr>
             </thead>
@@ -434,7 +431,9 @@ function DuplicateComparisonDialog({
                       </span>
                     </td>
                     <td className="break-words p-3">
-                      {[duplicate.location, duplicate.block].filter(Boolean).join(' / ') || 'Same upload file'}
+                      {duplicate.store ||
+                        [duplicate.location, duplicate.block].filter(Boolean).join(' / ') ||
+                        'Same upload file'}
                     </td>
                     <td className="break-words p-3 text-xs font-semibold">
                       {duplicate.source === 'EXISTING_INVENTORY'
@@ -516,8 +515,7 @@ function ReviewTable({
               {mode === 'SERIALIZED' ? 'Asset type' : 'Consumable type'}
             </th>
             <th className="w-36 p-3 font-bold">Inventory status</th>
-            <th className="w-36 p-3 font-bold">Location</th>
-            <th className="w-36 p-3 font-bold">Block</th>
+            <th className="w-36 p-3 font-bold">Store</th>
             <th className="w-40 p-3 font-bold">Department</th>
             <th className="w-40 p-3 font-bold">Vendor</th>
             <th className="w-44 p-3 font-bold">
@@ -554,8 +552,7 @@ function ReviewTable({
               ) : null}
               <td className="break-words p-3">{row.category || 'Missing'}</td>
               <td className="break-words p-3">{inventoryStatusLabel(row.status ?? 'ACTIVE')}</td>
-              <td className="break-words p-3">{row.location || 'Missing'}</td>
-              <td className="break-words p-3">{row.block || 'Missing'}</td>
+              <td className="break-words p-3">{row.store || 'Missing'}</td>
               <td className="break-words p-3">{row.department || 'Not provided'}</td>
               <td className="break-words p-3">{row.vendorName || 'Not provided'}</td>
               <td className="break-words p-3">
@@ -603,8 +600,7 @@ function UploadResult({
                       Configuration: source?.configuration ?? '',
                       'Serial number': source?.serialNumber ?? '',
                       Quantity: source?.quantity ?? '',
-                      Location: source?.location ?? '',
-                      Block: source?.block ?? '',
+                      Store: source?.store ?? '',
                       Department: source?.department ?? '',
                     };
                   }),

@@ -62,8 +62,15 @@ const IssueListQuerySchema = z
       (value) => (value === '' ? undefined : value),
       AssignmentTypeSchema.optional(),
     ),
+    store: OptionalQueryTextSchema,
+    location: OptionalQueryTextSchema,
+    block: OptionalQueryTextSchema,
+    destinationLocation: OptionalQueryTextSchema,
+    destinationBlock: OptionalQueryTextSchema,
+    trackingMode: z.enum(['SERIALIZED', 'QUANTITY']).optional(),
+    category: OptionalQueryTextSchema,
   })
-  .strict();
+  .strip();
 
 const ReturnSearchQuerySchema = z
   .object({
@@ -109,6 +116,8 @@ export function createIssuesRouter(): Router {
       try {
         const actor = authenticated(request);
         const input = IssueListQuerySchema.parse(request.query);
+        const location = input.location ?? input.destinationLocation;
+        const block = input.block ?? input.destinationBlock;
         const result = await listIssues({
           page: input.page,
           pageSize: input.pageSize,
@@ -120,6 +129,11 @@ export function createIssuesRouter(): Router {
           ...(input.period ? { period: input.period } : {}),
           ...(input.returnState ? { returnState: input.returnState } : {}),
           ...(input.assignmentType ? { assignmentType: input.assignmentType } : {}),
+          ...(input.store ? { store: input.store } : {}),
+          ...(location ? { location } : {}),
+          ...(block ? { block } : {}),
+          ...(input.trackingMode ? { trackingMode: input.trackingMode } : {}),
+          ...(input.category ? { category: input.category } : {}),
         });
         response.json({ data: result.issues, meta: pageMeta(result) });
       } catch (error) {

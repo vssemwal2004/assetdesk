@@ -13,6 +13,7 @@ function material(materialCode: string, trackingMode: TrackingMode): Material {
     typeModelName: 'Marker Pen',
     location: null,
     block: null,
+    store: null,
     department: null,
     vendorName: null,
     locationBlock: null,

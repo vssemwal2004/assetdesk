@@ -20,6 +20,7 @@ const assetMaterial: Material = {
   typeModelName: null,
   location: 'Param Centre Store',
   block: null,
+  store: 'Param Centre Store',
   department: null,
   vendorName: null,
   locationBlock: null,

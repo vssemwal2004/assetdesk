@@ -277,8 +277,8 @@ export function InventoryDetailPage() {
                 <DetailRow label="Configuration" value={material.configuration ?? 'Not provided'} />
               ) : null}
               <DetailRow
-                label="Location / block"
-                value={material.locationBlock ?? 'Not provided'}
+                label="Store"
+                value={material.store ?? material.locationBlock ?? material.location ?? 'Not provided'}
               />
               <DetailRow label="Department" value={material.department ?? 'Not provided'} />
               <DetailRow label="Vendor name" value={material.vendorName ?? 'Not provided'} />
@@ -819,8 +819,7 @@ function editMaterialMessage(
     name: string;
     category: string;
     typeModelName: string;
-    location: string;
-    block: string;
+    store: string;
     department: string;
     unitLabel: string;
   },
@@ -829,8 +828,7 @@ function editMaterialMessage(
   if (form.category.trim().length < 2) return 'Choose an asset type, or add a new asset type.';
   if (form.typeModelName.trim().length < 2)
     return 'Enter a type/model name with at least 2 characters.';
-  if (form.location.trim().length < 1) return 'Choose a location from Add asset details.';
-  if (form.block.trim().length < 1) return 'Choose a block from Add asset details.';
+  if (form.store.trim().length < 1) return 'Choose a store from Add asset details.';
   if (form.department.trim().length < 1) return 'Choose a department from Add asset details.';
   if (material.trackingMode === 'QUANTITY' && form.unitLabel.trim().length < 1) {
     return 'Enter a unit label, for example units, boxes, meters, or pieces.';
@@ -851,8 +849,7 @@ function EditMaterialForm({
     name: material.name,
     category: material.category,
     typeModelName: material.typeModelName ?? material.name,
-    location: material.location ?? '',
-    block: material.block ?? '',
+    store: material.store ?? material.locationBlock ?? material.location ?? '',
     department: material.department ?? '',
     vendorName: material.vendorName ?? '',
     description: material.description ?? '',
@@ -864,8 +861,7 @@ function EditMaterialForm({
     queryKey: ['asset-details'],
     queryFn: ({ signal }) => getAssetDetails(undefined, signal),
   });
-  const locations = detailsQuery.data?.filter((detail) => detail.kind === 'LOCATION') ?? [];
-  const blocks = detailsQuery.data?.filter((detail) => detail.kind === 'BLOCK') ?? [];
+  const stores = detailsQuery.data?.filter((detail) => detail.kind === 'STORE') ?? [];
   const departments = detailsQuery.data?.filter((detail) => detail.kind === 'DEPARTMENT') ?? [];
   const modelsQuery = useQuery({
     queryKey: ['inventory-models', form.category, material.trackingMode],
@@ -902,8 +898,7 @@ function EditMaterialForm({
       name: selectedModelName,
       category: form.category,
       typeModelName: selectedModelName,
-      location: form.location,
-      block: form.block,
+      store: form.store,
       department: form.department,
       vendorName: form.vendorName.trim() || null,
       description: form.description.trim() || null,
@@ -960,28 +955,15 @@ function EditMaterialForm({
           value={form.category}
         />
         <SelectField
-          id="edit-material-location"
-          label="Location"
-          onChange={(location) => setForm((value) => ({ ...value, location }))}
-          value={form.location}
+          id="edit-material-store"
+          label="Store"
+          onChange={(store) => setForm((value) => ({ ...value, store }))}
+          value={form.store}
         >
-          <option value="">Choose location</option>
-          {locations.map((location) => (
-            <option key={location.id} value={location.name}>
-              {location.name}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
-          id="edit-material-block"
-          label="Block"
-          onChange={(block) => setForm((value) => ({ ...value, block }))}
-          value={form.block}
-        >
-          <option value="">Choose block</option>
-          {blocks.map((block) => (
-            <option key={block.id} value={block.name}>
-              {block.name}
+          <option value="">Choose store</option>
+          {stores.map((store) => (
+            <option key={store.id} value={store.name}>
+              {store.name}
             </option>
           ))}
         </SelectField>

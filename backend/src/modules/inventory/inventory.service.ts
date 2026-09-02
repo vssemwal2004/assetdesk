@@ -56,6 +56,7 @@ export interface MaterialListInput {
   returnPolicy?: ReturnPolicy;
   stockState?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
   category?: string;
+  store?: string;
   location?: string;
   block?: string;
   department?: string;
@@ -244,14 +245,16 @@ function storeMatches(
       : storeNames;
   return names.flatMap((name): Array<Record<string, unknown>> => {
     const [location, block] = name.split('/').map((part) => part.trim());
+    const exactStore = exactCaseInsensitiveWhitespace(name);
     const exactLocation = exactCaseInsensitiveWhitespace(location ?? name);
     if (location && block) {
       return [
+        { store: exactStore },
         { location: exactLocation, block: exactCaseInsensitiveWhitespace(block) },
-        { locationBlock: exactCaseInsensitiveWhitespace(name) },
+        { locationBlock: exactStore },
       ];
     }
-    return [{ location: exactCaseInsensitive(name) }];
+    return [{ store: exactStore }, { location: exactCaseInsensitive(name) }, { locationBlock: exactStore }];
   });
 }
 
@@ -291,13 +294,21 @@ export async function deleteAssetDetail(assetDetailId: string): Promise<AssetDet
   const inUse =
     detail.kind === 'ASSET_TYPE' || detail.kind === 'CONSUMABLE_TYPE'
       ? await MaterialModel.exists({ category: exactCaseInsensitive(detail.name) })
-      : await MaterialModel.exists({
-          [detail.kind === 'LOCATION' || detail.kind === 'STORE'
-            ? 'location'
-            : detail.kind === 'BLOCK'
-              ? 'block'
-              : 'department']: exactCaseInsensitive(detail.name),
-        });
+      : detail.kind === 'STORE'
+        ? await MaterialModel.exists({
+            $or: [
+              { store: exactCaseInsensitive(detail.name) },
+              { location: exactCaseInsensitive(detail.name) },
+              { locationBlock: exactCaseInsensitive(detail.name) },
+            ],
+          })
+        : await MaterialModel.exists({
+            [detail.kind === 'LOCATION'
+              ? 'location'
+              : detail.kind === 'BLOCK'
+                ? 'block'
+                : 'department']: exactCaseInsensitive(detail.name),
+          });
   if (inUse) {
     throw new AppError(
       409,
@@ -520,7 +531,21 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
     };
   }
   if (input.category) filter.category = exactCaseInsensitive(input.category);
-  if (input.location && !input.issueable) filter.location = exactCaseInsensitive(input.location);
+  if (input.store && !input.issueable) {
+    const store = exactCaseInsensitiveWhitespace(input.store);
+    filter.$and = [
+      ...((filter.$and as Record<string, unknown>[] | undefined) ?? []),
+      {
+        $or: [
+          { store },
+          { location: store },
+          { locationBlock: store },
+        ],
+      },
+    ];
+  } else if (input.location && !input.issueable) {
+    filter.location = exactCaseInsensitive(input.location);
+  }
   if (input.block) filter.block = exactCaseInsensitive(input.block);
   if (input.department) filter.department = exactCaseInsensitive(input.department);
   if (input.vendorName) filter.vendorName = exactCaseInsensitive(input.vendorName);
@@ -538,6 +563,7 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
       { category: search },
       { typeModelName: search },
       { configuration: search },
+      { store: search },
       { location: search },
       { block: search },
       { locationBlock: search },
@@ -554,7 +580,7 @@ export async function buildMaterialListFilterAsync(
 ): Promise<Record<string, unknown>> {
   const filter = buildMaterialListFilter(input);
   if (input.issueable || input.storeOnly) {
-    const stores = storeMatches(await issueableStoreNames(), input.location);
+    const stores = storeMatches(await issueableStoreNames(), input.store ?? input.location);
     filter.$and = [
       ...((filter.$and as Record<string, unknown>[] | undefined) ?? []),
       { $or: stores },
@@ -667,18 +693,19 @@ export async function createMaterial(
     session,
   );
   const name = materialDisplayName(category, typeModelName);
-  const location = await requireSavedDetail('LOCATION', input.location, session);
-  const block = await requireSavedDetail('BLOCK', input.block, session);
+  const store = await requireSavedDetail('STORE', input.store, session);
   const department = input.department
     ? await requireSavedDetail('DEPARTMENT', input.department, session)
     : undefined;
-  const locationBlock = `${location} / ${block}`;
   const existing = await MaterialModel.exists({
     trackingMode: input.trackingMode,
     typeModelName: exactCaseInsensitive(typeModelName),
     category: exactCaseInsensitive(category),
-    location: exactCaseInsensitive(location),
-    block: exactCaseInsensitive(block),
+    $or: [
+      { store: exactCaseInsensitive(store) },
+      { location: exactCaseInsensitive(store) },
+      { locationBlock: exactCaseInsensitive(store) },
+    ],
     ...(input.trackingMode === 'SERIALIZED'
       ? { configuration: exactCaseInsensitive(input.configuration) }
       : {}),
@@ -701,17 +728,17 @@ export async function createMaterial(
         category,
         typeModelName,
         ...(input.trackingMode === 'SERIALIZED' ? { configuration: input.configuration } : {}),
-        location,
-        block,
+        store,
+        location: store,
         ...(department ? { department } : {}),
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),
-        locationBlock,
+        locationBlock: store,
         identityKey: buildMaterialIdentity(
           input.trackingMode,
           name,
           category,
-          location,
-          block,
+          store,
+          '',
           input.trackingMode === 'SERIALIZED' ? input.configuration : undefined,
         ),
         ...(input.description ? { description: input.description } : {}),
@@ -835,7 +862,7 @@ export async function exportMaterialsCsv(input: MaterialExportInput): Promise<st
     'IT Asset',
     'Asset Type',
     'Type/Model Name',
-    'Location / Block',
+    'Store',
     'Department',
     'Vendor Name',
     'Inventory Type',
@@ -854,7 +881,7 @@ export async function exportMaterialsCsv(input: MaterialExportInput): Promise<st
     material.name,
     material.category,
     material.typeModelName ?? material.name,
-    material.locationBlock ?? '',
+    material.store ?? material.locationBlock ?? material.location ?? '',
     material.department ?? '',
     material.vendorName ?? '',
     material.trackingMode,
@@ -939,9 +966,17 @@ export async function updateMaterial(
       material.name = materialDisplayName(material.category, material.typeModelName);
     }
     if (input.configuration !== undefined) material.configuration = input.configuration;
-    if (input.location !== undefined)
-      material.location = await requireSavedDetail('LOCATION', input.location);
-    if (input.block !== undefined) material.block = await requireSavedDetail('BLOCK', input.block);
+    if (input.store !== undefined) {
+      const store = await requireSavedDetail('STORE', input.store);
+      material.store = store;
+      material.location = store;
+      material.set('block', undefined);
+      material.locationBlock = store;
+    } else {
+      if (input.location !== undefined)
+        material.location = await requireSavedDetail('LOCATION', input.location);
+      if (input.block !== undefined) material.block = await requireSavedDetail('BLOCK', input.block);
+    }
     if (input.department !== undefined)
       material.department = await requireSavedDetail('DEPARTMENT', input.department);
     if (Object.hasOwn(input, 'vendorName')) {
@@ -950,7 +985,8 @@ export async function updateMaterial(
     if (
       input.locationBlock !== undefined &&
       input.location === undefined &&
-      input.block === undefined
+      input.block === undefined &&
+      input.store === undefined
     ) {
       material.locationBlock = input.locationBlock;
     }
@@ -961,16 +997,21 @@ export async function updateMaterial(
       input.name !== undefined ||
       input.category !== undefined ||
       input.configuration !== undefined ||
+      input.store !== undefined ||
       input.location !== undefined ||
       input.block !== undefined
     ) {
+      const sourceStore = material.store ?? material.locationBlock ?? material.location ?? '';
       const duplicate = await MaterialModel.exists({
         _id: { $ne: material._id },
         trackingMode: material.trackingMode,
         name: exactCaseInsensitive(material.name),
         category: exactCaseInsensitive(material.category),
-        location: exactCaseInsensitive(material.location ?? ''),
-        block: exactCaseInsensitive(material.block ?? ''),
+        $or: [
+          { store: exactCaseInsensitive(sourceStore) },
+          { location: exactCaseInsensitive(sourceStore) },
+          { locationBlock: exactCaseInsensitive(sourceStore) },
+        ],
         ...(material.trackingMode === 'SERIALIZED' && material.configuration
           ? { configuration: exactCaseInsensitive(material.configuration) }
           : {}),
@@ -980,8 +1021,8 @@ export async function updateMaterial(
         material.trackingMode,
         material.name,
         material.category,
-        material.location ?? '',
-        material.block ?? '',
+        sourceStore,
+        '',
         material.configuration,
       );
       if (input.category !== undefined)
