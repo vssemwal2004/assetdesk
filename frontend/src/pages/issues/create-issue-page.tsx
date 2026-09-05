@@ -82,6 +82,7 @@ export function CreateIssuePage() {
   });
   const [materialSearch, setMaterialSearch] = useState('');
   const [storeFilter, setStoreFilter] = useState<StoreFilter>('');
+  const [issueBlock, setIssueBlock] = useState('');
   const [issueLocation, setIssueLocation] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([blankLine()]);
   const [duePreset, setDuePreset] = useState<DuePreset>('ONE_WEEK');
@@ -124,6 +125,10 @@ export function CreateIssuePage() {
     queryKey: ['asset-details', 'STORE'],
     queryFn: ({ signal }) => getAssetDetails('STORE', signal),
   });
+  const blockQuery = useQuery({
+    queryKey: ['asset-details', 'BLOCK'],
+    queryFn: ({ signal }) => getAssetDetails('BLOCK', signal),
+  });
   const locationQuery = useQuery({
     queryKey: ['asset-details', 'LOCATION'],
     queryFn: ({ signal }) => getAssetDetails('LOCATION', signal),
@@ -136,6 +141,10 @@ export function CreateIssuePage() {
   const locationNames = useMemo(
     () => (locationQuery.data ?? []).map((location) => location.name),
     [locationQuery.data],
+  );
+  const blockNames = useMemo(
+    () => (blockQuery.data ?? []).map((block) => block.name),
+    [blockQuery.data],
   );
   const allIssueableMaterials = useMemo(
     () =>
@@ -258,6 +267,7 @@ export function CreateIssuePage() {
         ...(issuedTo.email.trim() ? { email: issuedTo.email } : {}),
       },
       destinationLocation: issueLocation,
+      ...(issueBlock ? { destinationBlock: issueBlock } : {}),
       lines: lines.map((line) => {
         const material = materialByCode.get(line.materialCode);
         if (material?.trackingMode === 'SERIALIZED') {
@@ -498,24 +508,44 @@ export function CreateIssuePage() {
 
       <AppCard className="issue-panel">
         <SectionTitle number="2" title="Issue Location" />
-        <label className="mt-3 block max-w-xl space-y-1.5">
-          <span className="field-label">Location</span>
-          <select
-            className="field-input field-input-compact"
-            onChange={(event) => {
-              setIssueLocation(event.target.value);
-              setMessage(null);
-            }}
-            value={issueLocation}
-          >
-            <option value="">Choose location</option>
-            {locationNames.map((location) => (
-              <option key={location} value={location}>
-                {location}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="space-y-1.5">
+            <span className="field-label">Block (optional)</span>
+            <select
+              className="field-input field-input-compact"
+              onChange={(event) => {
+                setIssueBlock(event.target.value);
+                setMessage(null);
+              }}
+              value={issueBlock}
+            >
+              <option value="">Choose block</option>
+              {blockNames.map((block) => (
+                <option key={block} value={block}>
+                  {block}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1.5">
+            <span className="field-label">Location</span>
+            <select
+              className="field-input field-input-compact"
+              onChange={(event) => {
+                setIssueLocation(event.target.value);
+                setMessage(null);
+              }}
+              value={issueLocation}
+            >
+              <option value="">Choose location</option>
+              {locationNames.map((location) => (
+                <option key={location} value={location}>
+                  {location}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </AppCard>
 
       <AppCard className="issue-panel">

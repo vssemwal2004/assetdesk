@@ -3,14 +3,16 @@ import {
   ArrowLeft,
   CalendarClock,
   ContactRound,
+  MoreVertical,
   PackageCheck,
   Pencil,
   Printer,
   RotateCcw,
   Trash2,
   UserRound,
+  X,
 } from 'lucide-react';
-import { useEffect, useRef, type FormEvent, type ReactNode, useState } from 'react';
+import { useEffect, useMemo, useRef, type FormEvent, type ReactNode, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import {
@@ -25,6 +27,7 @@ import { CatalogBadge, DetailRow } from '../../components/catalog-ui';
 import { AppCard, Button, ErrorState, LoadingPanel, PageHeader } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
 import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
+import { getAssetDetails } from '../../lib/inventory-api';
 import { returnedUnitCount } from '../../lib/issue-format';
 import { deleteIssue, getIssue, updateIssue } from '../../lib/issues-api';
 import { NotificationStatusCard } from './notification-status-card';
@@ -142,43 +145,75 @@ export function IssueDetailPage() {
     <div className="space-y-6">
       <PageHeader
         actions={
-          <>
-            <Link className="button-quiet" to="/issues">
-              <ArrowLeft aria-hidden="true" size={18} />
-              Back to Issues
-            </Link>
-            <Link
-              className="button-secondary"
-              to={full ? receiptTarget(full) : `/bills/${issue.issueId}`}
+          <details className="relative" data-action-menu>
+            <summary
+              aria-label={`Open actions for ${issue.issueId}`}
+              className="grid size-11 cursor-pointer list-none place-items-center rounded-[10px] border border-[var(--color-primary-border)] bg-white text-[var(--color-primary-strong)] transition hover:bg-[var(--color-primary-soft)] [&::-webkit-details-marker]:hidden"
+              title="Issue actions"
             >
-              <Printer aria-hidden="true" size={18} />
-              Generate receipt
-            </Link>
-            {full ? (
-              <Button onClick={() => setEditing(true)} variant="secondary">
-                <Pencil aria-hidden="true" size={18} />
-                Edit Issue
-              </Button>
-            ) : null}
-            {returnable ? (
-              <Link className="button-primary" to={`/issues/${issue.issueId}/return`}>
-                <RotateCcw aria-hidden="true" size={18} />
-                Record Return
+              <MoreVertical aria-hidden="true" size={20} />
+            </summary>
+            <div className="absolute right-0 top-full z-[80] mt-2 min-w-56 overflow-hidden rounded-[10px] border border-[var(--color-border)] bg-white py-1 text-left shadow-xl">
+              <Link className="menu-item w-full" to="/issues">
+                <ArrowLeft aria-hidden="true" size={16} />
+                Back to Issues
               </Link>
-            ) : null}
-            {full && canExtendReturnDate(issue) ? (
-              <Button onClick={() => setExtendDialogOpen(true)} variant="secondary">
-                <CalendarClock aria-hidden="true" size={18} />
-                Extend date
-              </Button>
-            ) : null}
-            {full ? (
-              <Button onClick={() => setDeleteDialogOpen(true)} variant="danger">
-                <Trash2 aria-hidden="true" size={18} />
-                Delete
-              </Button>
-            ) : null}
-          </>
+              <Link
+                className="menu-item w-full"
+                to={full ? receiptTarget(full) : `/bills/${issue.issueId}`}
+              >
+                <Printer aria-hidden="true" size={16} />
+                Generate receipt
+              </Link>
+              {full ? (
+                editing ? (
+                  <button
+                    className="menu-item w-full"
+                    onClick={() => setEditing(false)}
+                    type="button"
+                  >
+                    <X aria-hidden="true" size={16} />
+                    Close edit mode
+                  </button>
+                ) : (
+                  <button
+                    className="menu-item w-full"
+                    onClick={() => setEditing(true)}
+                    type="button"
+                  >
+                    <Pencil aria-hidden="true" size={16} />
+                    Edit Issue
+                  </button>
+                )
+              ) : null}
+              {returnable ? (
+                <Link className="menu-item w-full" to={`/issues/${issue.issueId}/return`}>
+                  <RotateCcw aria-hidden="true" size={16} />
+                  Record Return
+                </Link>
+              ) : null}
+              {full && canExtendReturnDate(issue) ? (
+                <button
+                  className="menu-item w-full"
+                  onClick={() => setExtendDialogOpen(true)}
+                  type="button"
+                >
+                  <CalendarClock aria-hidden="true" size={16} />
+                  Extend date
+                </button>
+              ) : null}
+              {full ? (
+                <button
+                  className="menu-item w-full text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
+                  onClick={() => setDeleteDialogOpen(true)}
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" size={16} />
+                  Delete Issue
+                </button>
+              ) : null}
+            </div>
+          </details>
         }
         description={`${issue.receiver.fullName} · Issued ${formatIstDateTime(issue.issuedAt)}`}
         title={issue.issueId}
@@ -488,12 +523,43 @@ function EditIssueCard({
   const [department, setDepartment] = useState(issue.receiver.department ?? '');
   const [contact, setContact] = useState(issue.receiver.contact ?? '');
   const [email, setEmail] = useState(issue.receiver.email ?? '');
+  const [destinationLocation, setDestinationLocation] = useState(issue.destinationLocation ?? '');
+  const [destinationBlock, setDestinationBlock] = useState(issue.destinationBlock ?? '');
   const [purpose, setPurpose] = useState(issue.purpose ?? '');
   const [notes, setNotes] = useState(issue.notes ?? '');
   const [error, setError] = useState<string | null>(null);
+  const blockQuery = useQuery({
+    queryKey: ['asset-details', 'BLOCK'],
+    queryFn: ({ signal }) => getAssetDetails('BLOCK', signal),
+  });
+  const locationQuery = useQuery({
+    queryKey: ['asset-details', 'LOCATION'],
+    queryFn: ({ signal }) => getAssetDetails('LOCATION', signal),
+  });
+  const blockOptions = useMemo(
+    () =>
+      [...(blockQuery.data ?? []).map((detail) => detail.name), destinationBlock]
+        .filter((value): value is string => Boolean(value.trim()))
+        .filter((value, index, values) => values.indexOf(value) === index)
+        .sort((left, right) => left.localeCompare(right)),
+    [blockQuery.data, destinationBlock],
+  );
+  const locationOptions = useMemo(
+    () =>
+      [...(locationQuery.data ?? []).map((detail) => detail.name), destinationLocation]
+        .filter((value): value is string => Boolean(value.trim()))
+        .filter((value, index, values) => values.indexOf(value) === index)
+        .sort((left, right) => left.localeCompare(right)),
+    [destinationLocation, locationQuery.data],
+  );
   const mutation = useMutation({
     mutationFn: () => {
+      if (!destinationLocation.trim()) {
+        throw new Error('Choose an issue location.');
+      }
       const input = UpdateIssueRequestSchema.parse({
+        destinationLocation,
+        destinationBlock,
         receiver: {
           fullName,
           universityId,
@@ -524,79 +590,158 @@ function EditIssueCard({
   }
 
   return (
-    <AppCard>
-      <form className="space-y-4" onSubmit={submit}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-              Edit Issue details
-            </h2>
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Materials and quantities stay locked after issue; use Return or re-issue for stock
-              movement.
+    <AppCard className="overflow-hidden !p-0">
+      <form className="space-y-0" onSubmit={submit}>
+        <div className="border-b border-[var(--color-border)] bg-[var(--color-primary-soft)] px-4 py-5 sm:px-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-white text-[var(--color-primary)] shadow-sm">
+                <Pencil aria-hidden="true" size={18} />
+              </span>
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-primary)]">
+                  Editing issue record
+                </p>
+                <h2 className="mt-1 font-extrabold text-[var(--color-primary-strong)]">
+                  Update Issue details
+                </h2>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--color-text-muted)]">
+                  Correct receiver or destination information. Materials, quantities, and stock
+                  movement stay locked after issue.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button disabled={mutation.isPending} onClick={onCancel} type="button" variant="quiet">
+                Cancel
+              </Button>
+              <Button disabled={mutation.isPending} type="submit" variant="primary">
+                {mutation.isPending ? 'Saving...' : 'Save changes'}
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="space-y-6 p-4 sm:p-6">
+          {error ? (
+            <p className="rounded-[10px] border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+              {error}
             </p>
-          </div>
-          <div className="flex gap-2">
-            <Button disabled={mutation.isPending} onClick={onCancel} type="button" variant="quiet">
-              Cancel
-            </Button>
-            <Button disabled={mutation.isPending} type="submit" variant="primary">
-              {mutation.isPending ? 'Saving...' : 'Save changes'}
-            </Button>
-          </div>
-        </div>
-        {error ? (
-          <p className="rounded-[10px] border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-            {error}
-          </p>
-        ) : null}
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <EditField label="Issued to" onChange={setFullName} value={fullName} />
-          <EditField
-            label="University ID"
-            onChange={setUniversityId}
-            optional
-            value={universityId}
-          />
-          <label className="block">
-            <span className="field-label">Type</span>
-            <select
-              className="field-input field-input-compact"
-              onChange={(event) => setType(event.target.value as ReceiverType)}
-              value={type}
-            >
-              <option value="STUDENT">Student</option>
-              <option value="FACULTY">Faculty</option>
-              <option value="STAFF">Staff</option>
-              <option value="DEPARTMENT">Department</option>
-              <option value="AUTHORIZED_EXTERNAL">Authorized external</option>
-              <option value="MANAGEMENT">Management</option>
-              <option value="GEHU">GEHU</option>
-            </select>
-          </label>
-          <EditField label="Department" onChange={setDepartment} optional value={department} />
-          <EditField label="Contact" onChange={setContact} optional value={contact} />
-          <EditField label="Email" onChange={setEmail} optional value={email} />
-        </div>
-        <div className="grid gap-3 lg:grid-cols-2">
-          <label className="block">
-            <span className="field-label">Purpose</span>
-            <textarea
-              className="field-input field-input-compact min-h-20 resize-y"
-              maxLength={240}
-              onChange={(event) => setPurpose(event.target.value)}
-              value={purpose}
-            />
-          </label>
-          <label className="block">
-            <span className="field-label">Notes</span>
-            <textarea
-              className="field-input field-input-compact min-h-20 resize-y"
-              maxLength={2000}
-              onChange={(event) => setNotes(event.target.value)}
-              value={notes}
-            />
-          </label>
+          ) : null}
+          <section>
+            <div>
+              <h3 className="font-extrabold text-[var(--color-primary-strong)]">
+                Receiver information
+              </h3>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Keep the person or department receiving the issued materials accurate.
+              </p>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <EditField label="Issued to" onChange={setFullName} value={fullName} />
+              <EditField
+                label="University ID"
+                onChange={setUniversityId}
+                optional
+                value={universityId}
+              />
+              <label className="block">
+                <span className="field-label">Type</span>
+                <select
+                  className="field-input field-input-compact"
+                  onChange={(event) => setType(event.target.value as ReceiverType)}
+                  value={type}
+                >
+                  <option value="STUDENT">Student</option>
+                  <option value="FACULTY">Faculty</option>
+                  <option value="STAFF">Staff</option>
+                  <option value="DEPARTMENT">Department</option>
+                  <option value="AUTHORIZED_EXTERNAL">Authorized external</option>
+                  <option value="MANAGEMENT">Management</option>
+                  <option value="GEHU">GEHU</option>
+                </select>
+              </label>
+              <EditField label="Department" onChange={setDepartment} optional value={department} />
+              <EditField label="Contact" onChange={setContact} optional value={contact} />
+              <EditField label="Email" onChange={setEmail} optional value={email} />
+            </div>
+          </section>
+          <section className="border-t border-[var(--color-border)] pt-6">
+            <div>
+              <h3 className="font-extrabold text-[var(--color-primary-strong)]">Issue destination</h3>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Correct the Block or Location if it was entered incorrectly. This updates the Issue
+                Record only; issued materials and quantities remain unchanged.
+              </p>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="block">
+                <span className="field-label">Block (optional)</span>
+                <select
+                  className="field-input field-input-compact"
+                  disabled={mutation.isPending}
+                  onChange={(event) => setDestinationBlock(event.target.value)}
+                  value={destinationBlock}
+                >
+                  <option value="">No block</option>
+                  {blockOptions.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="field-label">Location</span>
+                <select
+                  className="field-input field-input-compact"
+                  disabled={mutation.isPending}
+                  onChange={(event) => setDestinationLocation(event.target.value)}
+                  value={destinationLocation}
+                >
+                  <option value="">Choose location</option>
+                  {locationOptions.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {blockQuery.isError || locationQuery.isError ? (
+              <p className="mt-3 text-xs font-semibold text-[var(--color-danger)]">
+                Configured destination options could not be loaded. Your current values are still
+                available; refresh and try again if you need another option.
+              </p>
+            ) : null}
+          </section>
+          <section className="border-t border-[var(--color-border)] pt-6">
+            <div>
+              <h3 className="font-extrabold text-[var(--color-primary-strong)]">Purpose and notes</h3>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Add context for the updated Issue Record when needed.
+              </p>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              <label className="block">
+                <span className="field-label">Purpose</span>
+                <textarea
+                  className="field-input field-input-compact min-h-20 resize-y"
+                  maxLength={240}
+                  onChange={(event) => setPurpose(event.target.value)}
+                  value={purpose}
+                />
+              </label>
+              <label className="block">
+                <span className="field-label">Notes</span>
+                <textarea
+                  className="field-input field-input-compact min-h-20 resize-y"
+                  maxLength={2000}
+                  onChange={(event) => setNotes(event.target.value)}
+                  value={notes}
+                />
+              </label>
+            </div>
+          </section>
         </div>
       </form>
     </AppCard>

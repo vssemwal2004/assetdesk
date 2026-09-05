@@ -145,6 +145,18 @@ function materialSnapshot(material: {
   };
 }
 
+export interface IssueFilterOptionsInput {
+  actorUserId: string;
+  actorRole: UserRole;
+  issueDataScope?: 'OWN' | 'ALL';
+  block?: string;
+}
+
+export interface IssueFilterOptionsResult {
+  blocks: string[];
+  locations: string[];
+}
+
 async function claimActor(
   actor: IssueActorContext,
   session?: ClientSession,
@@ -617,6 +629,9 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
       ],
     });
   }
+  if (input.block) {
+    filter.destinationBlock = new RegExp(`^${escapeSearchRegex(input.block)}$`, 'i');
+  }
   if (input.period === 'TODAY') {
     filter.issuedAt = { $gte: today.start, $lt: today.end };
   }
@@ -669,6 +684,47 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
     pageSize: input.pageSize,
     total,
     totalPages: total === 0 ? 0 : Math.ceil(total / input.pageSize),
+  };
+}
+
+function uniqueIssueFilterValues(values: Array<string | null | undefined>): string[] {
+  return [
+    ...new Set(
+      values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+}
+
+export async function listIssueFilterOptions(
+  input: IssueFilterOptionsInput,
+): Promise<IssueFilterOptionsResult> {
+  const filter: QueryFilter<unknown> = {};
+  const accessClauses: QueryFilter<unknown>[] = [];
+  if (input.actorRole === 'WORKER' && input.issueDataScope !== 'ALL') {
+    const actorUserId = objectId(input.actorUserId);
+    accessClauses.push({
+      $or: [{ createdByUserId: actorUserId }, { 'returnEvents.performedBy.userId': actorUserId }],
+    });
+  }
+  if (input.block) {
+    filter.destinationBlock = new RegExp(`^${escapeSearchRegex(input.block)}$`, 'i');
+  }
+  if (accessClauses.length > 0) filter.$and = accessClauses;
+
+  const savedBlocksQuery =
+    input.actorRole === 'WORKER' && input.issueDataScope !== 'ALL'
+      ? Promise.resolve([] as Array<{ name?: string }>)
+      : AssetDetailModel.find({ kind: 'BLOCK' }).select('name').lean().exec();
+  const [records, savedBlocks] = await Promise.all([
+    IssueModel.find(filter).select('destinationBlock destinationLocation').lean().exec(),
+    savedBlocksQuery,
+  ]);
+  return {
+    blocks: uniqueIssueFilterValues([
+      ...savedBlocks.map((record) => record.name),
+      ...records.map((record) => record.destinationBlock),
+    ]),
+    locations: uniqueIssueFilterValues(records.map((record) => record.destinationLocation)),
   };
 }
 
@@ -746,6 +802,44 @@ export async function updateIssue(
   }
 
   const changedFields: string[] = [];
+  if (input.destinationLocation !== undefined || input.destinationBlock !== undefined) {
+    const [locationDetail, blockDetail] = await Promise.all([
+      input.destinationLocation !== undefined
+        ? AssetDetailModel.findOne({
+            kind: 'LOCATION',
+            normalizedName: normalizeLookupValue(input.destinationLocation),
+          })
+            .select('name')
+            .lean()
+        : null,
+      input.destinationBlock
+        ? AssetDetailModel.findOne({
+            kind: 'BLOCK',
+            normalizedName: normalizeLookupValue(input.destinationBlock),
+          })
+            .select('name')
+            .lean()
+        : null,
+    ]);
+    if (input.destinationLocation !== undefined) {
+      if (!locationDetail) {
+        throw new AppError(
+          422,
+          'INVALID_ISSUE_LOCATION',
+          'Select a location added by an administrator.',
+        );
+      }
+      issue.destinationLocation = locationDetail.name;
+      changedFields.push('destinationLocation');
+    }
+    if (input.destinationBlock !== undefined) {
+      if (input.destinationBlock && !blockDetail) {
+        throw new AppError(422, 'INVALID_ISSUE_BLOCK', 'Select a block added by an administrator.');
+      }
+      issue.set('destinationBlock', blockDetail?.name ?? null);
+      changedFields.push('destinationBlock');
+    }
+  }
   if (input.receiver) {
     issue.receiver.fullName = input.receiver.fullName;
     issue.receiver.type = input.receiver.type;

@@ -2,6 +2,7 @@ import {
   CreateIssueResponseSchema,
   CreateReturnResponseSchema,
   IssueDetailResponseSchema,
+  IssueFilterOptionsResponseSchema,
   IssueResponseSchema,
   IssueNotificationsResponseSchema,
   IssuesListResponseSchema,
@@ -15,6 +16,7 @@ import {
   type IssueDetailResponse,
   type IssueResponse,
   type IssuesListResponse,
+  type IssueFilterOptionsResponse,
   type IssueStatus,
   type IssuePeriod,
   type IssueReturnState,
@@ -36,6 +38,8 @@ export interface IssueFilters {
   period?: IssuePeriod;
   returnState?: IssueReturnState;
   assignmentType?: AssignmentType;
+  store?: string;
+  block?: string;
   destinationLocation?: string;
   trackingMode?: 'SERIALIZED' | 'QUANTITY';
   category?: string;
@@ -54,13 +58,29 @@ export async function getIssues(
   if (filters.period) parameters.set('period', filters.period);
   if (filters.returnState) parameters.set('returnState', filters.returnState);
   if (filters.assignmentType) parameters.set('assignmentType', filters.assignmentType);
-  if (filters.destinationLocation) parameters.set('destinationLocation', filters.destinationLocation);
+  if (filters.store) parameters.set('store', filters.store);
+  if (filters.block) parameters.set('destinationBlock', filters.block);
+  if (filters.destinationLocation)
+    parameters.set('destinationLocation', filters.destinationLocation);
   if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
   if (filters.category) parameters.set('category', filters.category);
   const payload = await apiRequest<unknown>(`/api/v1/issues?${parameters.toString()}`, {
     ...(signal ? { signal } : {}),
   });
   return IssuesListResponseSchema.parse(payload);
+}
+
+export async function getIssueFilterOptions(
+  block?: string,
+  signal?: AbortSignal,
+): Promise<IssueFilterOptionsResponse['data']> {
+  const parameters = new URLSearchParams();
+  if (block) parameters.set('block', block);
+  const payload = await apiRequest<unknown>(
+    `/api/v1/issues/filter-options${parameters.size ? `?${parameters.toString()}` : ''}`,
+    { ...(signal ? { signal } : {}) },
+  );
+  return IssueFilterOptionsResponseSchema.parse(payload).data;
 }
 
 export async function createIssue(

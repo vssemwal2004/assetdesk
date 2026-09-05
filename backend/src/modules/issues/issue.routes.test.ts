@@ -8,6 +8,7 @@ const service = vi.hoisted(() => ({
   createIssue: vi.fn(),
   getIssueDetail: vi.fn(),
   listIssues: vi.fn(),
+  listIssueFilterOptions: vi.fn(),
   searchReturnableIssues: vi.fn(),
   updateIssue: vi.fn(),
 }));
@@ -70,6 +71,10 @@ describe('Issue routes', () => {
       total: 0,
       totalPages: 0,
     });
+    service.listIssueFilterOptions.mockResolvedValue({
+      blocks: ['Btech Block'],
+      locations: ['Placement Office'],
+    });
   });
 
   it('allows a Worker to list only through their actor-scoped service input', async () => {
@@ -114,6 +119,23 @@ describe('Issue routes', () => {
         location: 'Legacy Lab',
       }),
     );
+  });
+
+  it('loads block-scoped Issue filter options through the actor-scoped service', async () => {
+    const response = await request(testApp())
+      .get('/api/v1/issues/filter-options?block=Btech%20Block')
+      .expect(200);
+
+    expect(service.listIssueFilterOptions).toHaveBeenCalledWith({
+      block: 'Btech Block',
+      actorUserId: '507f1f77bcf86cd799439011',
+      actorRole: 'WORKER',
+      issueDataScope: 'ALL',
+    });
+    expect(response.body.data).toEqual({
+      blocks: ['Btech Block'],
+      locations: ['Placement Office'],
+    });
   });
 
   it('creates an Issue with hashed idempotency data and reports a new write', async () => {
@@ -170,6 +192,8 @@ describe('Issue routes', () => {
           contact: '9999999999',
           email: 'updated@example.com',
         },
+        destinationBlock: 'Btech Block',
+        destinationLocation: 'Placement Office',
         purpose: 'Lab practical',
         notes: null,
       })
@@ -178,6 +202,8 @@ describe('Issue routes', () => {
     expect(service.updateIssue).toHaveBeenCalledWith(
       'GEU-ISS-2026-000001',
       expect.objectContaining({
+        destinationBlock: 'Btech Block',
+        destinationLocation: 'Placement Office',
         purpose: 'Lab practical',
         receiver: expect.objectContaining({ fullName: 'Updated Receiver' }),
       }),

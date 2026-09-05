@@ -200,6 +200,15 @@ export const UpdateIssueReceiverSchema = z
 
 export const UpdateIssueRequestSchema = z
   .object({
+    destinationLocation: z.string().trim().min(1).max(120).optional(),
+    destinationBlock: z
+      .string()
+      .trim()
+      .max(120)
+      .optional()
+      .nullable()
+      .transform((value) => value || null)
+      .optional(),
     receiver: UpdateIssueReceiverSchema.optional(),
     purpose: z
       .string()
@@ -565,6 +574,17 @@ export const IssuesListResponseSchema = z
   .object({ data: z.array(IssueSummarySchema), meta: PaginationMetaSchema })
   .strict();
 
+export const IssueFilterOptionsResponseSchema = z
+  .object({
+    data: z
+      .object({
+        blocks: z.array(z.string().min(1)),
+        locations: z.array(z.string().min(1)),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const IssueDetailResponseSchema = z.discriminatedUnion('accessScope', [
   z
     .object({
@@ -623,6 +643,7 @@ export type ReturnableIssue = z.infer<typeof ReturnableIssueSchema>;
 export type CreateIssueResponse = z.infer<typeof CreateIssueResponseSchema>;
 export type IssueResponse = z.infer<typeof IssueResponseSchema>;
 export type IssuesListResponse = z.infer<typeof IssuesListResponseSchema>;
+export type IssueFilterOptionsResponse = z.infer<typeof IssueFilterOptionsResponseSchema>;
 export type IssueDetailResponse = z.infer<typeof IssueDetailResponseSchema>;
 export type ReturnSearchResponse = z.infer<typeof ReturnSearchResponseSchema>;
 export type CreateReturnResponse = z.infer<typeof CreateReturnResponseSchema>;

@@ -31,6 +31,7 @@ import {
   deleteIssue,
   getIssueDetail,
   listIssues,
+  listIssueFilterOptions,
   searchReturnableIssues,
   updateIssue,
 } from './issue.service.js';
@@ -79,6 +80,8 @@ const ReturnSearchQuerySchema = z
     search: z.string().trim().min(2).max(120),
   })
   .strict();
+
+const IssueFilterOptionsQuerySchema = z.object({ block: OptionalQueryTextSchema }).strip();
 
 function authenticated(request: Request): NonNullable<Request['auth']> {
   if (!request.auth) throw new AppError(401, 'AUTH_REQUIRED', 'Sign in to continue.');
@@ -136,6 +139,29 @@ export function createIssuesRouter(): Router {
           ...(input.category ? { category: input.category } : {}),
         });
         response.json({ data: result.issues, meta: pageMeta(result) });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    '/filter-options',
+    requireAuth,
+    requireFullAccess,
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ISSUES_VIEW'),
+    async (request, response, next) => {
+      try {
+        const actor = authenticated(request);
+        const input = IssueFilterOptionsQuerySchema.parse(request.query);
+        const result = await listIssueFilterOptions({
+          actorUserId: actor.userId,
+          actorRole: actor.role,
+          issueDataScope: actor.dataAccess.issues,
+          ...(input.block ? { block: input.block } : {}),
+        });
+        response.json({ data: result });
       } catch (error) {
         next(error);
       }

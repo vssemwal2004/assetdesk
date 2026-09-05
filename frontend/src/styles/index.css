@@ -1969,3 +1969,95 @@ dialog::backdrop {
     display: none;
   }
 }
+
+.issue-list-toolbar details > summary,
+.issue-columns-popover,
+.issue-filter-popover {
+  user-select: none;
+}
+
+.issue-columns-popover,
+.issue-filter-popover {
+  max-height: min(78vh, 720px);
+  overflow-y: auto;
+}
+
+.issue-column-option {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0 10px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.issue-column-option:hover,
+.issue-column-option-selected {
+  border-color: var(--color-primary-border);
+  background: var(--color-primary-soft);
+}
+
+.issue-column-check {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1.5px solid var(--color-border-control);
+  border-radius: 5px;
+  background: white;
+  color: white;
+}
+
+.issue-column-check-selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.issue-column-option input:focus-visible + .issue-column-check {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.issue-table-shell {
+  overflow: visible;
+}
+
+.issue-table-scroll {
+  overflow-x: auto;
+  border-radius: 14px;
+  scrollbar-color: var(--color-primary-border) transparent;
+}
+
+.issue-table-scroll th,
+.issue-table-scroll td {
+  white-space: nowrap;
+}
+
+.issue-detail-drawer {
+  inset: 0 0 0 auto;
+  width: min(100%, 590px);
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0 0 0 auto;
+  border-radius: 20px 0 0 20px;
+  overflow: hidden;
+}
+
+.issue-detail-drawer-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+@media (max-width: 600px) {
+  .issue-detail-drawer {
+    width: 100%;
+    border-radius: 0;
+  }
+}
