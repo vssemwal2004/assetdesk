@@ -1,7 +1,6 @@
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import {
-  CartridgeQcRequestSchema,
   CartridgeStatusSchema,
   CreateCartridgesRequestSchema,
   CreateGatePassRequestSchema,
@@ -30,14 +29,13 @@ import {
   listCartridgeActivity,
   listCartridges,
   listGatePasses,
-  recordQc,
   returnCartridge,
   verifyGatePass,
 } from './cartridge.service.js';
 
 const ListQuery = z.object({
   page: z.coerce.number().int().positive().default(1),
-  // Gate Pass and QC screens load up to 500 eligible serials at once.
+  // Operational cartridge screens may load a large serial-number batch.
   pageSize: z.coerce.number().int().min(1).max(500).default(20),
   search: z.string().trim().max(120).optional(),
   status: CartridgeStatusSchema.optional(),
@@ -226,19 +224,6 @@ export function createCartridgeRouter(): Router {
             input.conditions,
           ),
         });
-      } catch (e) {
-        next(e);
-      }
-    },
-  );
-  router.post(
-    '/qc',
-    requirePermission('CARTRIDGE_QC'),
-    requireTrustedOrigin,
-    requireCsrf,
-    async (req, res, next) => {
-      try {
-        res.json({ data: await recordQc(CartridgeQcRequestSchema.parse(req.body), actor(req)) });
       } catch (e) {
         next(e);
       }

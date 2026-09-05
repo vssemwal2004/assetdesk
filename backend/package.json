@@ -13,6 +13,7 @@
     "worker:start": "node dist/worker.js",
     "cartridges:reset": "tsx src/scripts/reset-cartridge-workflow.ts --confirm-reset-cartridges",
     "cartridges:clear-activity": "tsx src/scripts/clear-cartridge-activity.ts --confirm-clear-cartridge-activity",
+    "cartridges:repair-qc": "tsx src/scripts/repair-legacy-cartridge-qc.ts",
     "verify:phase5:atlas": "tsx src/scripts/verify-phase5-transactions.ts",
     "verify:phase6:atlas": "tsx src/scripts/verify-phase5-transactions.ts",
     "verify:phase7:atlas": "tsx src/scripts/verify-phase5-transactions.ts",

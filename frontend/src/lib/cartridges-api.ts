@@ -111,9 +111,6 @@ export async function getCartridge(serial: string) {
     };
   }>(`/api/v1/cartridges/${encodeURIComponent(serial)}`);
 }
-export async function recordCartridgeQc(input: Record<string, unknown>) {
-  return apiRequest<{ data: unknown }>('/api/v1/cartridges/qc', { method: 'POST', json: input });
-}
 export async function gatePassAction(
   id: string,
   action: 'verify' | 'gate-out' | 'cancel',

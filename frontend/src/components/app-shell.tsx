@@ -22,7 +22,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import type { WorkerPermission } from '@assetdesk/contracts';
 
@@ -303,6 +303,18 @@ function canShowItem(user: ReturnType<typeof useAuth>['user'], item: NavigationI
   return !item.permission || hasPermission(user, item.permission);
 }
 
+function closeSiblingDetails(event: ReactMouseEvent<HTMLElement>) {
+  const summary = event.currentTarget;
+  const details = summary.parentElement;
+  const parent = details?.parentElement;
+  if (!parent) return;
+  for (const sibling of parent.children) {
+    if (sibling instanceof HTMLDetailsElement && sibling !== details && sibling.open) {
+      sibling.open = false;
+    }
+  }
+}
+
 function IssueNavigationGroup({
   compact = false,
   onClick,
@@ -318,6 +330,7 @@ function IssueNavigationGroup({
   return (
     <details className="group" open={active}>
       <summary
+        onClick={closeSiblingDetails}
         className={cn(
           'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
           compact ? 'px-2.5' : 'px-3',
@@ -372,6 +385,7 @@ function InventoryNavigationGroup({
   return (
     <details className="group" open={active}>
       <summary
+        onClick={closeSiblingDetails}
         className={cn(
           'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
           compact ? 'px-2.5' : 'px-3',
@@ -402,6 +416,7 @@ function InventoryNavigationGroup({
         {gatePassItems.length ? (
           <details className="group/gate-pass" open={gatePassActive}>
             <summary
+              onClick={closeSiblingDetails}
               className={cn(
                 'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
                 compact ? 'px-2.5' : 'px-3',
@@ -457,6 +472,7 @@ function NavigationGroupMenu({
   return (
     <details className="group" open={active}>
       <summary
+        onClick={closeSiblingDetails}
         className={cn(
           'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
           compact ? 'px-2.5' : 'px-3',
@@ -642,6 +658,7 @@ function CartridgeNavigationGroup({
   return (
     <details className="group" open={active}>
       <summary
+        onClick={closeSiblingDetails}
         className={cn(
           'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
           compact ? 'px-2.5' : 'px-3',
@@ -665,8 +682,13 @@ function CartridgeNavigationGroup({
           const SectionIcon = section.icon;
           const sectionActive = section.activePath(location.pathname, location.search);
           return (
-            <details className="group/cartridge" key={section.label} open={sectionActive}>
+            <details
+              className="group/cartridge"
+              key={section.label}
+              open={sectionActive}
+            >
               <summary
+                onClick={closeSiblingDetails}
                 className={cn(
                   'sidebar-nav-link flex min-h-10 cursor-pointer list-none items-center gap-3 rounded-[10px] text-xs font-extrabold uppercase tracking-[0.02em] transition-colors [&::-webkit-details-marker]:hidden',
                   compact ? 'px-2.5' : 'px-3',

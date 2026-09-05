@@ -337,7 +337,7 @@ function statusLabel(status: string) {
     {
       GATE_OUT: 'Gate Out',
       PARTIALLY_RETURNED: 'Partially received',
-      QC_PENDING: 'Gate In successful · QC pending',
+      QC_PENDING: 'Gate In successful',
       CLOSED: 'Gate In successful',
       CANCELLED: 'Cancelled',
       DRAFT: 'Draft',
@@ -348,9 +348,9 @@ function statusLabel(status: string) {
 }
 
 function statusClass(status: string) {
-  if (status === 'CLOSED') return 'bg-emerald-50 text-emerald-700';
+  if (status === 'CLOSED' || status === 'QC_PENDING') return 'bg-emerald-50 text-emerald-700';
   if (status === 'CANCELLED') return 'bg-red-50 text-red-700';
-  if (status === 'QC_PENDING' || status === 'PARTIALLY_RETURNED') {
+  if (status === 'PARTIALLY_RETURNED') {
     return 'bg-amber-50 text-amber-700';
   }
   return 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]';
