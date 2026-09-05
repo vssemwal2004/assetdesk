@@ -168,7 +168,12 @@ export function IssuesPage() {
   });
   const blockOptions = useMemo(
     () =>
-      [...(issueFilterOptionsQuery.data?.blocks ?? [])]
+      [
+        ...(issueFilterOptionsQuery.data?.blocks ?? []),
+        ...(catalogQuery.data ?? [])
+          .filter((detail) => detail.kind === 'BLOCK')
+          .map((detail) => detail.name),
+      ]
         .filter((value, index, values) => values.indexOf(value) === index)
         .sort((left, right) => left.localeCompare(right)),
     [catalogQuery.data, issueFilterOptionsQuery.data?.blocks],
