@@ -29,6 +29,7 @@ import { buildMaterialIdentity, materialDisplayName } from './inventory-identity
 import { toAssetUnit, toMaterial } from './inventory.mapper.js';
 import { MaterialModel, type MaterialDocument } from './material.model.js';
 import { InventoryModelModel } from './inventory-model.model.js';
+import { recordInventoryQuantityEntry } from './inventory-quantity-entry.service.js';
 import { reconcileInventoryCategory } from './inventory-model.service.js';
 
 const MAX_IDENTIFIER_COLLISION_ATTEMPTS = 32;
@@ -254,8 +255,18 @@ function storeMatches(
         { locationBlock: exactStore },
       ];
     }
-    return [{ store: exactStore }, { location: exactCaseInsensitive(name) }, { locationBlock: exactStore }];
+    return [
+      { store: exactStore },
+      { location: exactCaseInsensitive(name) },
+      { locationBlock: exactStore },
+    ];
   });
+}
+
+function parseEntryDate(value?: string): Date {
+  if (!value) return new Date();
+  const parsed = new Date(`${value}T00:00:00.000+05:30`);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 export async function createAssetDetail(
@@ -536,11 +547,7 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
     filter.$and = [
       ...((filter.$and as Record<string, unknown>[] | undefined) ?? []),
       {
-        $or: [
-          { store },
-          { location: store },
-          { locationBlock: store },
-        ],
+        $or: [{ store }, { location: store }, { locationBlock: store }],
       },
     ];
   } else if (input.location && !input.issueable) {
@@ -678,6 +685,7 @@ export async function createMaterial(
   input: CreateMaterialRequest,
   createdByUserId: string,
   session?: ClientSession,
+  actor?: { workerId?: string; role?: 'ADMIN' | 'WORKER' },
 ): Promise<Material> {
   const createdBy = objectId(createdByUserId);
   const category = await requireSavedDetail(
@@ -731,6 +739,7 @@ export async function createMaterial(
         location: store,
         ...(department ? { department } : {}),
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),
+        entryDate: parseEntryDate(input.entryDate),
         locationBlock: store,
         identityKey: buildMaterialIdentity(
           input.trackingMode,
@@ -767,6 +776,8 @@ export async function createMaterial(
             serialNumberNormalized: normalizeSerial(serialNumber),
             condition: 'Good',
             status: 'AVAILABLE',
+            entryDate: parseEntryDate(input.entryDate),
+            ...(input.vendorName ? { vendorName: input.vendorName } : {}),
             createdBy,
           };
         });
@@ -776,6 +787,25 @@ export async function createMaterial(
           await AssetUnitModel.insertMany(unitDocuments);
         }
       }
+
+      await recordInventoryQuantityEntry(
+        {
+          materialId: createdMaterial._id.toString(),
+          materialCode: createdMaterial.materialCode,
+          trackingMode: createdMaterial.trackingMode,
+          action: 'INITIAL',
+          quantityDelta: initialQuantity,
+          previousTotalQuantity: 0,
+          totalQuantity: initialQuantity,
+          ...(input.entryDate ? { entryDate: input.entryDate } : {}),
+          ...(input.vendorName ? { vendorName: input.vendorName } : {}),
+          reason: 'Initial inventory entry',
+          actorUserId: createdByUserId,
+          ...(actor?.workerId ? { actorWorkerId: actor.workerId } : {}),
+          ...(actor?.role ? { actorRole: actor.role } : {}),
+        },
+        session,
+      );
 
       return toMaterial(createdMaterial);
     } catch (error) {
@@ -974,13 +1004,15 @@ export async function updateMaterial(
     } else {
       if (input.location !== undefined)
         material.location = await requireSavedDetail('LOCATION', input.location);
-      if (input.block !== undefined) material.block = await requireSavedDetail('BLOCK', input.block);
+      if (input.block !== undefined)
+        material.block = await requireSavedDetail('BLOCK', input.block);
     }
     if (input.department !== undefined)
       material.department = await requireSavedDetail('DEPARTMENT', input.department);
     if (Object.hasOwn(input, 'vendorName')) {
       material.set('vendorName', input.vendorName || undefined);
     }
+    if (input.entryDate !== undefined) material.entryDate = parseEntryDate(input.entryDate);
     if (
       input.locationBlock !== undefined &&
       input.location === undefined &&
@@ -1270,6 +1302,8 @@ export async function createAssetUnit(
             : {}),
           condition: input.condition,
           status: 'AVAILABLE',
+          entryDate: parseEntryDate(input.entryDate),
+          ...(input.vendorName ? { vendorName: input.vendorName } : {}),
           createdBy,
         });
         updatedMaterial = currentMaterial;
@@ -1439,6 +1473,10 @@ export async function updateAssetUnit(
       }
     }
     if (input.condition !== undefined) unit.condition = input.condition;
+    if (input.entryDate !== undefined) unit.entryDate = parseEntryDate(input.entryDate);
+    if (Object.hasOwn(input, 'vendorName')) {
+      unit.set('vendorName', input.vendorName || undefined);
+    }
     if (Object.hasOwn(input, 'serialNumber')) {
       if (input.serialNumber === null) {
         unit.set('serialNumber', undefined);

@@ -1,7 +1,17 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
-import { AlertCircle, LogIn, MoreVertical, Plus, Printer } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  CheckCircle2,
+  Clock3,
+  Database,
+  PackagePlus,
+  Printer,
+  Plus,
+} from 'lucide-react';
 import {
   AppCard,
   Button,
@@ -12,11 +22,9 @@ import {
 } from '../../components/ui';
 import {
   createGatePass,
-  gatePassAction,
   getCartridges,
   getGatePass,
   getGatePasses,
-  recordGateIn,
 } from '../../lib/cartridges-api';
 
 const gatePassEligibleStatuses = ['EMPTY', 'DEFECTIVE', 'REFILL_FAILED'] as const;
@@ -28,58 +36,29 @@ const gatePassEligibleLabels: Record<(typeof gatePassEligibleStatuses)[number], 
 };
 
 export function GatePassesPage() {
-  const client = useQueryClient();
   const query = useQuery({ queryKey: ['cartridge-gate-passes'], queryFn: getGatePasses });
-  const [confirm, setConfirm] = useState<ConfirmDialogState>(null);
-  const gateIn = useMutation({
-    mutationFn: (pass: Awaited<ReturnType<typeof getGatePasses>>['data'][number]) =>
-      recordGateIn(pass._id, pendingGateInSerials(pass)),
-    onSuccess: async () => {
-      await Promise.all([
-        client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
-        client.invalidateQueries({ queryKey: ['cartridges'] }),
-        client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
-      ]);
-    },
-  });
-
-  function confirmGateIn(pass: Awaited<ReturnType<typeof getGatePasses>>['data'][number]) {
-    const pendingSerials = pendingGateInSerials(pass);
-    if (pendingSerials.length === 0) return;
-    setConfirm({
-      title: 'Confirm Gate Pass In',
-      message: `${pass.gatePassNumber} will receive ${pendingSerials.length} cartridge(s).`,
-      actionLabel: 'Gate Pass In',
-      onConfirm: () => gateIn.mutate(pass),
-    });
-  }
+  const passes = query.data?.data ?? [];
+  const outCount = passes.filter((pass) => pass.status === 'GATE_OUT').length;
+  const returnedCount = passes.filter((pass) =>
+    ['PARTIALLY_RETURNED', 'QC_PENDING'].includes(pass.status),
+  ).length;
+  const completedCount = passes.filter((pass) => pass.status === 'CLOSED').length;
 
   return (
     <div className="space-y-6">
-      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
       <PageHeader
         title="Gate Pass Out"
-        description="Create and manage outward Gate Passes for cartridges going to the vendor."
+        description="Create a pass for cartridges leaving the store. Every new pass is recorded as Gate Out automatically."
         actions={
           <>
             <Link className="button-primary" to="/cartridges/gate-passes/new">
               <Plus size={18} />
               Create Gate Pass Out
             </Link>
-            <Link className="button-secondary" to="/cartridges/gate-in">
-              Gate Pass In
+            <Link className="button-secondary" to="/cartridges/gate-passes/database">
+              <Database size={18} />
+              Gate Pass Database
             </Link>
-            <details className="relative" data-action-menu>
-              <summary className="button-secondary cursor-pointer list-none">
-                <MoreVertical size={18} />
-              </summary>
-              <div className="absolute right-0 z-20 mt-1 w-48 rounded-[8px] border bg-white p-1 shadow-lg">
-                <button className="menu-item w-full" onClick={() => window.print()}>
-                  <Printer size={16} />
-                  Print register
-                </button>
-              </div>
-            </details>
           </>
         }
       />
@@ -87,61 +66,303 @@ export function GatePassesPage() {
         <LoadingPanel />
       ) : query.isError ? (
         <ErrorSummary message="Gate Pass register could not be loaded." />
-      ) : gateIn.isError ? (
-        <ErrorSummary message={(gateIn.error as Error).message} />
       ) : (
         <>
-          <AppCard className="grid gap-3 md:grid-cols-4">
-            {['Create Gate Pass', 'Confirm Gate Out', 'Record Gate In', 'Complete QC'].map(
-              (step, index) => (
-                <div
-                  className="rounded-[10px] bg-[var(--color-surface-tint)] px-3 py-2 text-sm font-bold text-[var(--color-primary-strong)]"
-                  key={step}
-                >
-                  {index + 1}. {step}
-                </div>
-              ),
+          <div className="grid gap-3 sm:grid-cols-3">
+            <SummaryCard
+              icon={<ArrowUpFromLine size={19} />}
+              label="With vendor"
+              value={outCount}
+            />
+            <SummaryCard icon={<Clock3 size={19} />} label="Gate In / QC" value={returnedCount} />
+            <SummaryCard
+              icon={<CheckCircle2 size={19} />}
+              label="Completed"
+              value={completedCount}
+            />
+          </div>
+          <AppCard className="space-y-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+                  Recent Gate Pass Out
+                </h2>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  {passes.length} {passes.length === 1 ? 'pass' : 'passes'} recorded
+                </p>
+              </div>
+              <Link className="button-quiet" to="/cartridges/gate-in">
+                Open Gate Pass In
+              </Link>
+            </div>
+            {passes.length === 0 ? (
+              <EmptyState
+                icon={<PackagePlus size={24} />}
+                title="No Gate Pass Out records yet"
+                message="Create the first pass to send returned cartridges to a vendor."
+                action={
+                  <Link className="button-primary" to="/cartridges/gate-passes/new">
+                    <Plus size={17} />
+                    Create Gate Pass Out
+                  </Link>
+                }
+              />
+            ) : (
+              <div className="grid gap-3">
+                {passes.map((pass) => (
+                  <GatePassOutCard key={pass._id} pass={pass} />
+                ))}
+              </div>
             )}
           </AppCard>
-          <div className="grid gap-3">
-            {query.data?.data.map((pass) => (
-              <AppCard
-                className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-                key={pass._id}
-              >
-                <Link className="min-w-0 flex-1" to={`/cartridges/gate-passes/${pass._id}`}>
-                  <div>
-                    <p className="font-extrabold text-[var(--color-primary-strong)]">
-                      {pass.gatePassNumber}
-                    </p>
-                    <p className="text-sm text-[var(--color-text-muted)]">
-                      {pass.vendorName} · {pass.quantity} cartridges · Prepared by{' '}
-                      {pass.preparedByName}
-                    </p>
-                  </div>
-                </Link>
-                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                  {['GATE_OUT', 'PARTIALLY_RETURNED'].includes(pass.status) ? (
-                    <Button
-                      loading={gateIn.isPending}
-                      onClick={() => confirmGateIn(pass)}
-                      variant="secondary"
-                    >
-                      <LogIn size={17} />
-                      Gate Pass In
-                    </Button>
-                  ) : null}
-                  <span className="rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-bold text-[var(--color-primary)]">
-                    {pass.status.replaceAll('_', ' ')}
-                  </span>
-                </div>
-              </AppCard>
-            ))}
-          </div>
         </>
       )}
     </div>
   );
+}
+
+export function GatePassDatabasePage() {
+  const query = useQuery({ queryKey: ['cartridge-gate-passes'], queryFn: getGatePasses });
+  const passes = query.data?.data ?? [];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Gate Pass Database"
+        description="One register for every cartridge Gate Out and Gate In record."
+        actions={
+          <>
+            <Link className="button-secondary" to="/cartridges/gate-in">
+              <ArrowDownToLine size={18} />
+              Gate Pass In
+            </Link>
+            <Link className="button-primary" to="/cartridges/gate-passes/new">
+              <Plus size={18} />
+              Create Gate Pass Out
+            </Link>
+          </>
+        }
+      />
+      {query.isPending ? <LoadingPanel /> : null}
+      {query.isError ? <ErrorSummary message="Gate Pass database could not be loaded." /> : null}
+      {!query.isPending && !query.isError ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-4">
+            <SummaryCard icon={<Database size={19} />} label="All passes" value={passes.length} />
+            <SummaryCard
+              icon={<ArrowUpFromLine size={19} />}
+              label="Gate Out"
+              value={passes.filter((pass) => pass.status === 'GATE_OUT').length}
+            />
+            <SummaryCard
+              icon={<ArrowDownToLine size={19} />}
+              label="Gate In successful"
+              value={
+                passes.filter((pass) => ['PARTIALLY_RETURNED', 'QC_PENDING'].includes(pass.status))
+                  .length
+              }
+            />
+            <SummaryCard
+              icon={<CheckCircle2 size={19} />}
+              label="QC complete"
+              value={passes.filter((pass) => pass.status === 'CLOSED').length}
+            />
+          </div>
+          <AppCard className="overflow-hidden p-0">
+            {passes.length === 0 ? (
+              <div className="p-6">
+                <EmptyState
+                  icon={<Database size={24} />}
+                  title="No Gate Pass records"
+                  message="Created Gate Pass Out records will appear here automatically."
+                />
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] border-collapse text-left">
+                  <thead className="bg-[var(--color-surface-tint)] text-xs uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+                    <tr>
+                      <th className="px-5 py-3 font-extrabold">Gate Pass</th>
+                      <th className="px-5 py-3 font-extrabold">Vendor</th>
+                      <th className="px-5 py-3 font-extrabold">Cartridges</th>
+                      <th className="px-5 py-3 font-extrabold">Gate Out</th>
+                      <th className="px-5 py-3 font-extrabold">Gate In</th>
+                      <th className="px-5 py-3 font-extrabold">Status</th>
+                      <th className="px-5 py-3 font-extrabold">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {passes.map((pass) => (
+                      <tr className="border-t border-[var(--color-border)]" key={pass._id}>
+                        <td className="px-5 py-4">
+                          <Link
+                            className="font-extrabold text-[var(--color-primary)] hover:underline"
+                            to={`/cartridges/gate-passes/${pass._id}`}
+                          >
+                            {pass.gatePassNumber}
+                          </Link>
+                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                            {formatDate(pass.createdAt)}
+                          </p>
+                        </td>
+                        <td className="px-5 py-4 font-bold">{pass.vendorName}</td>
+                        <td className="px-5 py-4 font-bold">{pass.quantity}</td>
+                        <td className="px-5 py-4 text-sm font-semibold text-[var(--color-text-muted)]">
+                          {formatDate(pass.gateOutAt ?? pass.createdAt)}
+                        </td>
+                        <td className="px-5 py-4 text-sm font-semibold text-[var(--color-text-muted)]">
+                          {pass.gateInEvents.length
+                            ? formatDate(pass.gateInEvents.at(-1)?.at)
+                            : 'Not received'}
+                        </td>
+                        <td className="px-5 py-4">
+                          <StatusBadge status={pass.status} />
+                        </td>
+                        <td className="px-5 py-4">
+                          {isGateOutStatus(pass.status) ? (
+                            <Link
+                              className="button-quiet whitespace-nowrap"
+                              to={`/cartridges/gate-passes/${pass._id}/print`}
+                            >
+                              <Printer size={16} />
+                              Out receipt
+                            </Link>
+                          ) : (
+                            <span className="text-sm font-bold text-[var(--color-text-muted)]">
+                              —
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </AppCard>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function GatePassOutCard({
+  pass,
+}: {
+  pass: Awaited<ReturnType<typeof getGatePasses>>['data'][number];
+}) {
+  const gateInCount = new Set(
+    pass.gateInEvents.flatMap((event) => event.serialNumbers.map((serial) => serial.toUpperCase())),
+  ).size;
+  return (
+    <div className="flex flex-col gap-4 rounded-[12px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between">
+      <Link className="min-w-0 flex-1" to={`/cartridges/gate-passes/${pass._id}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-extrabold text-[var(--color-primary-strong)]">{pass.gatePassNumber}</p>
+          <StatusBadge status={pass.status} />
+        </div>
+        <p className="mt-1 text-sm font-bold text-[var(--color-text-muted)]">
+          {pass.vendorName} · {pass.quantity} cartridges · Created {formatDate(pass.createdAt)}
+        </p>
+        <p className="mt-2 text-xs font-bold text-[var(--color-text-muted)]">
+          {gateInCount} of {pass.quantity} received at Gate In
+        </p>
+      </Link>
+      <div className="flex flex-wrap gap-2 sm:justify-end">
+        <Link className="button-secondary" to={`/cartridges/gate-passes/${pass._id}`}>
+          View details
+        </Link>
+        {isGateOutStatus(pass.status) ? (
+          <Link className="button-quiet" to={`/cartridges/gate-passes/${pass._id}/print`}>
+            <Printer size={16} />
+            Out receipt
+          </Link>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
+  return (
+    <AppCard className="flex items-center gap-3">
+      <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+        {icon}
+      </span>
+      <span>
+        <span className="block text-xl font-extrabold text-[var(--color-primary-strong)]">
+          {value}
+        </span>
+        <span className="block text-sm font-bold text-[var(--color-text-muted)]">{label}</span>
+      </span>
+    </AppCard>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  message,
+  action,
+}: {
+  icon: ReactNode;
+  title: string;
+  message: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="grid justify-items-center gap-2 rounded-[12px] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-tint)] p-8 text-center">
+      <span className="grid size-12 place-items-center rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+        {icon}
+      </span>
+      <h3 className="font-extrabold text-[var(--color-primary-strong)]">{title}</h3>
+      <p className="max-w-md text-sm text-[var(--color-text-muted)]">{message}</p>
+      {action ? <div className="mt-2">{action}</div> : null}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-extrabold ${statusClass(status)}`}
+    >
+      {statusLabel(status)}
+    </span>
+  );
+}
+
+function statusLabel(status: string) {
+  return (
+    {
+      GATE_OUT: 'Gate Out',
+      PARTIALLY_RETURNED: 'Partially received',
+      QC_PENDING: 'Gate In successful · QC pending',
+      CLOSED: 'Gate In successful',
+      CANCELLED: 'Cancelled',
+      DRAFT: 'Draft',
+      AWAITING_VERIFICATION: 'Awaiting verification',
+      VERIFIED: 'Verified',
+    }[status] ?? status.replaceAll('_', ' ')
+  );
+}
+
+function statusClass(status: string) {
+  if (status === 'CLOSED') return 'bg-emerald-50 text-emerald-700';
+  if (status === 'CANCELLED') return 'bg-red-50 text-red-700';
+  if (status === 'QC_PENDING' || status === 'PARTIALLY_RETURNED') {
+    return 'bg-amber-50 text-amber-700';
+  }
+  return 'bg-[var(--color-primary-soft)] text-[var(--color-primary)]';
+}
+
+function isGateOutStatus(status: string) {
+  return ['GATE_OUT', 'PARTIALLY_RETURNED', 'QC_PENDING', 'CLOSED'].includes(status);
+}
+
+function formatDate(value: string | undefined) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 export function CreateGatePassPage() {
@@ -156,8 +377,8 @@ export function CreateGatePassPage() {
   });
   const eligibleQueries = useQueries({
     queries: gatePassEligibleStatuses.map((status) => ({
-      queryKey: ['cartridges', { status, page: 1, pageSize: 100 }],
-      queryFn: () => getCartridges({ status, page: 1, pageSize: 100 }),
+      queryKey: ['cartridges', { status, page: 1, pageSize: 500 }],
+      queryFn: () => getCartridges({ status, page: 1, pageSize: 500 }),
     })),
   });
   const eligibleCartridges = eligibleQueries
@@ -291,42 +512,9 @@ export function CreateGatePassPage() {
 
 export function GatePassDetailPage() {
   const { gatePassId = '' } = useParams();
-  const client = useQueryClient();
-  const [confirm, setConfirm] = useState<ConfirmDialogState>(null);
   const query = useQuery({
     queryKey: ['cartridge-gate-pass', gatePassId],
     queryFn: () => getGatePass(gatePassId),
-  });
-  const [gateInSerials, setGateInSerials] = useState('');
-  const action = useMutation({
-    mutationFn: (name: 'verify' | 'gate-out' | 'cancel') => gatePassAction(gatePassId, name),
-    onSuccess: async () => {
-      await Promise.all([
-        client.invalidateQueries({ queryKey: ['cartridge-gate-pass', gatePassId] }),
-        client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
-        client.invalidateQueries({ queryKey: ['cartridges'] }),
-        client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
-      ]);
-    },
-  });
-  const gateIn = useMutation({
-    mutationFn: () =>
-      recordGateIn(
-        gatePassId,
-        gateInSerials
-          .split(/\r?\n|,/)
-          .map((x) => x.trim())
-          .filter(Boolean),
-      ),
-    onSuccess: async () => {
-      setGateInSerials('');
-      await Promise.all([
-        client.invalidateQueries({ queryKey: ['cartridge-gate-pass', gatePassId] }),
-        client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
-        client.invalidateQueries({ queryKey: ['cartridges'] }),
-        client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
-      ]);
-    },
   });
   if (query.isPending) return <LoadingPanel />;
   if (query.isError || !query.data)
@@ -335,120 +523,109 @@ export function GatePassDetailPage() {
   const gateInRecorded = new Set(
     p.gateInEvents.flatMap((event) => event.serialNumbers.map((serial) => serial.toUpperCase())),
   );
-  const pendingGateInSerials = p.cartridgeSerialNumbers.filter(
-    (serial) => !gateInRecorded.has(serial.toUpperCase()),
-  );
-  const selectedGateInSerials = gateInSerials
-    .split(/\r?\n|,/)
-    .map((serial) => serial.trim())
-    .filter(Boolean);
-  function toggleGateInSerial(serialNumber: string, checked: boolean) {
-    const selected = new Set(selectedGateInSerials);
-    if (checked) selected.add(serialNumber);
-    else selected.delete(serialNumber);
-    setGateInSerials(Array.from(selected).join('\n'));
-  }
-  function confirmAllGateIn() {
-    if (pendingGateInSerials.length === 0) return;
-    setConfirm({
-      title: 'Confirm Gate Pass In',
-      message: `${p.gatePassNumber} will receive ${pendingGateInSerials.length} cartridge(s).`,
-      actionLabel: 'Gate Pass In',
-      onConfirm: () => {
-        setGateInSerials(pendingGateInSerials.join('\n'));
-        recordGateIn(p._id, pendingGateInSerials).then(async () => {
-          await Promise.all([
-            client.invalidateQueries({ queryKey: ['cartridge-gate-pass', gatePassId] }),
-            client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
-            client.invalidateQueries({ queryKey: ['cartridges'] }),
-            client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
-          ]);
-        });
-      },
-    });
-  }
   return (
     <div className="space-y-6">
-      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
       <PageHeader
         title={p.gatePassNumber}
-        description={`${p.vendorName} · ${p.quantity} cartridges`}
+        description={`Gate Pass Out · ${p.vendorName} · ${p.quantity} cartridges`}
         actions={
-          <Link className="button-secondary" to={`/cartridges/gate-passes/${p._id}/print`}>
-            <Printer size={18} />
-            Print Gate Pass
-          </Link>
+          <>
+            <Link className="button-secondary" to="/cartridges/gate-passes">
+              Back to Gate Pass Out
+            </Link>
+            {isGateOutStatus(p.status) ? (
+              <Link className="button-primary" to={`/cartridges/gate-passes/${p._id}/print`}>
+                <Printer size={18} />
+                Out receipt
+              </Link>
+            ) : null}
+          </>
         }
       />
-      <AppCard className="grid gap-4 md:grid-cols-2">
-        <Info label="Person taking material" value={p.personTakingMaterial} />
-        <Info label="Prepared By" value={`${p.preparedByName} (${p.preparedByWorkerId})`} />
-        <Info label="Verified By" value={p.verifiedByName ?? 'Awaiting verification'} />
-        <Info label="Status" value={p.status.replaceAll('_', ' ')} />
+      <AppCard className="space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border)] pb-4">
+          <div>
+            <p className="text-sm font-bold text-[var(--color-text-muted)]">Current pass status</p>
+            <div className="mt-2">
+              <StatusBadge status={p.status} />
+            </div>
+          </div>
+          <div className="rounded-[10px] bg-[var(--color-surface-tint)] px-4 py-3 text-sm font-bold text-[var(--color-text-muted)]">
+            {gateInRecorded.size} of {p.quantity} cartridges received at Gate In
+          </div>
+        </div>
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <Info label="Vendor" value={p.vendorName} />
+          <Info label="Person taking material" value={p.personTakingMaterial} />
+          <Info label="Prepared by" value={`${p.preparedByName} (${p.preparedByWorkerId})`} />
+          <Info label="Gate Out date" value={formatDate(p.gateOutAt ?? p.createdAt)} />
+        </div>
       </AppCard>
       <AppCard>
-        <h2 className="font-extrabold text-[var(--color-primary-strong)]">Cartridge numbers</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+              Cartridges on pass
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Gate In is recorded from the separate Gate Pass In page.
+            </p>
+          </div>
+          {['GATE_OUT', 'PARTIALLY_RETURNED'].includes(p.status) ? (
+            <Link className="button-secondary" to="/cartridges/gate-in">
+              Open Gate Pass In
+            </Link>
+          ) : null}
+        </div>
         <ol className="mt-3 grid gap-2 sm:grid-cols-2">
           {p.cartridgeSerialNumbers.map((x, i) => (
             <li
-              className="rounded-[8px] bg-[var(--color-surface-tint)] px-3 py-2 text-sm font-bold"
+              className="flex items-center justify-between gap-3 rounded-[8px] bg-[var(--color-surface-tint)] px-3 py-2 text-sm font-bold"
               key={x}
             >
-              {i + 1}. {x}
+              <span>
+                {i + 1}. {x}
+              </span>
+              <span
+                className={
+                  gateInRecorded.has(x.toUpperCase())
+                    ? 'text-emerald-700'
+                    : 'text-[var(--color-text-muted)]'
+                }
+              >
+                {gateInRecorded.has(x.toUpperCase()) ? 'Received' : 'With vendor'}
+              </span>
             </li>
           ))}
         </ol>
       </AppCard>
-      <div className="flex flex-wrap gap-2">
-        {['DRAFT', 'AWAITING_VERIFICATION', 'VERIFIED'].includes(p.status) ? (
-          <Button
-            loading={action.isPending}
-            onClick={() => action.mutate('cancel')}
-            variant="danger"
-          >
-            Cancel Gate Pass
-          </Button>
-        ) : null}
-        {['GATE_OUT', 'PARTIALLY_RETURNED'].includes(p.status) ? (
-          <Button loading={gateIn.isPending} onClick={confirmAllGateIn} variant="secondary">
-            <LogIn size={17} />
-            Gate Pass In
-          </Button>
-        ) : null}
-      </div>
-      {['GATE_OUT', 'PARTIALLY_RETURNED'].includes(p.status) ? (
+      {p.gateInEvents.length ? (
         <AppCard className="space-y-3">
-          <h2 className="font-extrabold">Record Gate In</h2>
-          <p className="text-sm leading-6 text-[var(--color-text-muted)]">
-            Select only the cartridges physically returning from this Gate Pass.
-          </p>
-          <div className="grid max-h-72 gap-2 overflow-y-auto rounded-[8px] border border-[var(--color-border)] p-2 sm:grid-cols-2">
-            {pendingGateInSerials.map((serialNumber) => (
-              <label
-                className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[8px] px-3 py-2 text-sm font-bold hover:bg-[var(--color-surface-tint)]"
-                key={serialNumber}
-              >
-                <input
-                  checked={selectedGateInSerials.includes(serialNumber)}
-                  onChange={(event) => toggleGateInSerial(serialNumber, event.target.checked)}
-                  type="checkbox"
-                />
-                {serialNumber}
-              </label>
-            ))}
-            {pendingGateInSerials.length === 0 ? (
-              <p className="px-3 py-2 text-sm font-bold text-[var(--color-success)]">
-                All Gate Out cartridges have been received.
-              </p>
-            ) : null}
+          <div>
+            <h2 className="font-extrabold text-[var(--color-primary-strong)]">Gate In history</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Each entry is saved when cartridges are received back.
+            </p>
           </div>
-          <Button
-            disabled={selectedGateInSerials.length === 0}
-            loading={gateIn.isPending}
-            onClick={() => gateIn.mutate()}
-          >
-            Save Gate In
-          </Button>
+          <div className="grid gap-2">
+            {p.gateInEvents.map((event, index) => (
+              <div
+                className="rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-sm"
+                key={`${event.at}-${index}`}
+              >
+                <div className="flex flex-wrap justify-between gap-2 font-extrabold text-[var(--color-primary-strong)]">
+                  <span>{event.serialNumbers.length} cartridge(s) received</span>
+                  <span>{formatDate(event.at)}</span>
+                </div>
+                <p className="mt-1 text-xs font-bold text-[var(--color-text-muted)]">
+                  Recorded by {event.byName}
+                </p>
+                {event.remarks ? (
+                  <p className="mt-2 text-sm text-[var(--color-text-muted)]">{event.remarks}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
         </AppCard>
       ) : null}
     </div>
@@ -462,13 +639,7 @@ type ConfirmDialogState = {
   onConfirm: () => void;
 } | null;
 
-function ConfirmDialog({
-  state,
-  onClose,
-}: {
-  state: ConfirmDialogState;
-  onClose: () => void;
-}) {
+function ConfirmDialog({ state, onClose }: { state: ConfirmDialogState; onClose: () => void }) {
   if (!state) return null;
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4">
@@ -485,9 +656,7 @@ function ConfirmDialog({
             <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
               {state.title}
             </h2>
-            <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
-              {state.message}
-            </p>
+            <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">{state.message}</p>
           </div>
         </div>
         <div className="mt-5 flex flex-wrap justify-end gap-2">
@@ -506,20 +675,6 @@ function ConfirmDialog({
         </div>
       </div>
     </div>
-  );
-}
-
-function pendingGateInSerials(pass: {
-  cartridgeSerialNumbers: string[];
-  gateInEvents: Array<{ serialNumbers: string[] }>;
-}): string[] {
-  const received = new Set(
-    pass.gateInEvents.flatMap((event) =>
-      event.serialNumbers.map((serialNumber) => serialNumber.toUpperCase()),
-    ),
-  );
-  return pass.cartridgeSerialNumbers.filter(
-    (serialNumber) => !received.has(serialNumber.toUpperCase()),
   );
 }
 

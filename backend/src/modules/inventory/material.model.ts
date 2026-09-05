@@ -19,6 +19,7 @@ export interface MaterialRecord {
   block?: string;
   department?: string;
   vendorName?: string;
+  entryDate?: Date;
   locationBlock?: string;
   identityKey?: string;
   description?: string;
@@ -56,6 +57,7 @@ const MaterialSchema = new Schema<MaterialRecord>(
     block: { type: String, trim: true, minlength: 1, maxlength: 120 },
     department: { type: String, trim: true, minlength: 1, maxlength: 120 },
     vendorName: { type: String, trim: true, maxlength: 120 },
+    entryDate: { type: Date },
     // This is derived as "location / block" from two independently valid 120-char values.
     locationBlock: { type: String, trim: true, minlength: 1, maxlength: 243 },
     identityKey: { type: String, maxlength: 300 },

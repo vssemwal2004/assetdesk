@@ -106,10 +106,26 @@ export const CreateGatePassRequestSchema = z.object({
 export const GateInRequestSchema = z.object({
   cartridgeSerialNumbers: z.array(Text).min(1),
   remarks: z.string().trim().max(500).optional(),
+  conditions: z
+    .array(
+      z.object({
+        serialNumber: Text,
+        condition: CartridgeReturnConditionSchema,
+      }),
+    )
+    .optional(),
 });
 export const CartridgeQcRequestSchema = z.object({
   serialNumber: Text,
-  result: z.enum(['PASS', 'REFILL_FAILED', 'DAMAGED']),
+  result: z.enum([
+    'PASS',
+    'REFILL_FAILED',
+    'DAMAGED',
+    'EMPTY',
+    'DEFECTIVE',
+    'FILLED_UNUSED',
+    'WRONG_MODEL',
+  ]),
   remarks: z.string().trim().max(500).optional(),
 });
 export const CartridgeListResponseSchema = z.object({

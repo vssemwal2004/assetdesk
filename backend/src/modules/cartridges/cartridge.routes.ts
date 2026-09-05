@@ -222,6 +222,7 @@ export function createCartridgeRouter(): Router {
             input.cartridgeSerialNumbers,
             input.remarks,
             actor(req),
+            input.conditions,
           ),
         });
       } catch (e) {

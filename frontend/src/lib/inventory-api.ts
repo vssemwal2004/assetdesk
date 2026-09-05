@@ -9,6 +9,7 @@ import {
   MaterialResponseSchema,
   MaterialSchema,
   MaterialsListResponseSchema,
+  InventoryQuantityEntriesResponseSchema,
   InventoryModelsResponseSchema,
   InventoryModelResponseSchema,
   InventoryModelMutationResponseSchema,
@@ -23,6 +24,7 @@ import {
   type CreateAssetUnitRequest,
   type CreateMaterialRequest,
   type Material,
+  type InventoryQuantityEntryAction,
   type InventoryModel,
   type MaterialStatus,
   type MaterialsListResponse,
@@ -70,7 +72,8 @@ export async function getInventory(
   if (filters.issueable) parameters.set('issueable', 'true');
   if (filters.storeOnly) parameters.set('storeOnly', 'true');
   if (filters.lowStockOnly) parameters.set('lowStockOnly', 'true');
-  if (filters.availableMax !== undefined) parameters.set('availableMax', String(filters.availableMax));
+  if (filters.availableMax !== undefined)
+    parameters.set('availableMax', String(filters.availableMax));
   if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
@@ -447,6 +450,28 @@ export async function adjustMaterialQuantity(
     { method: 'POST', json: input },
   );
   return AdjustQuantityResponseSchema.parse(payload).data.material;
+}
+
+export async function getInventoryQuantityEntries(
+  materialCode: string,
+  filters: {
+    from?: string;
+    to?: string;
+    vendorName?: string;
+    action?: InventoryQuantityEntryAction;
+  } = {},
+  signal?: AbortSignal,
+) {
+  const parameters = new URLSearchParams({ page: '1', pageSize: '100' });
+  if (filters.from) parameters.set('from', filters.from);
+  if (filters.to) parameters.set('to', filters.to);
+  if (filters.vendorName) parameters.set('vendorName', filters.vendorName);
+  if (filters.action) parameters.set('action', filters.action);
+  const payload = await apiRequest<unknown>(
+    `/api/v1/inventory/${encodeURIComponent(materialCode)}/quantity-entries?${parameters.toString()}`,
+    { ...(signal ? { signal } : {}) },
+  );
+  return InventoryQuantityEntriesResponseSchema.parse(payload);
 }
 
 export async function getAssetUnits(

@@ -470,6 +470,10 @@ export async function gateIn(
   serialNumbers: string[],
   remarks: string | undefined,
   actor: CartridgeActor,
+  conditions?: Array<{
+    serialNumber: string;
+    condition: 'EMPTY' | 'DEFECTIVE' | 'FILLED_UNUSED' | 'DAMAGED' | 'WRONG_MODEL';
+  }>,
 ) {
   const pass = await GatePassModel.findById(id);
   if (!pass) throw new AppError(404, 'GATE_PASS_NOT_FOUND', 'Gate Pass was not found.');
@@ -492,6 +496,19 @@ export async function gateIn(
       400,
       'GATE_IN_SERIAL_MISMATCH',
       'A returned serial is not on this Gate Pass.',
+    );
+  const conditionsBySerial = new Map(
+    (conditions ?? []).map((item) => [normalize(item.serialNumber), item.condition]),
+  );
+  if (
+    conditions &&
+    (conditionsBySerial.size !== normalized.length ||
+      normalized.some((serialNumber) => !conditionsBySerial.has(serialNumber)))
+  )
+    throw new AppError(
+      400,
+      'GATE_IN_CONDITION_MISMATCH',
+      'Choose one return condition for every cartridge being received.',
     );
   const already = new Set(pass.gateInEvents.flatMap((x) => x.serialNumbers.map(normalize)));
   if (normalized.some((x) => already.has(x)))
@@ -523,15 +540,7 @@ export async function gateIn(
       remarks: `Gate Out recorded on ${pass.gatePassNumber}.`,
     });
   }
-  pass.gateInEvents.push({
-    at: now,
-    byName: name,
-    serialNumbers,
-    ...(remarks ? { remarks } : {}),
-  });
   const returned = already.size + normalized.length;
-  pass.status = returned === pass.quantity ? 'QC_PENDING' : 'PARTIALLY_RETURNED';
-  await pass.save();
   const cartridges = await CartridgeModel.find({
     serialNumberNormalized: { $in: normalized },
     status: 'WITH_VENDOR',
@@ -554,6 +563,46 @@ export async function gateIn(
   await movements(updatedCartridges, 'GATE_IN', fromStatuses, actor, {
     remarks: `Gate In recorded on ${pass.gatePassNumber}.`,
   });
+  let nextStatus: 'PARTIALLY_RETURNED' | 'QC_PENDING' | 'CLOSED' =
+    returned === pass.quantity ? 'QC_PENDING' : 'PARTIALLY_RETURNED';
+  if (conditions) {
+    const qcFromStatuses = new Map(
+      updatedCartridges.map((item) => [item._id.toString(), item.status]),
+    );
+    await Promise.all(
+      updatedCartridges.map(async (item) => {
+        const condition = conditionsBySerial.get(normalize(item.serialNumber));
+        item.status =
+          condition === 'FILLED_UNUSED'
+            ? 'FILLED_AVAILABLE'
+            : condition === 'EMPTY'
+              ? 'EMPTY'
+              : condition === 'DAMAGED'
+                ? 'DAMAGED'
+                : condition === 'DEFECTIVE' || condition === 'WRONG_MODEL'
+                  ? 'DEFECTIVE'
+                  : 'REFILL_FAILED';
+        if (condition === 'FILLED_UNUSED') item.refillCount += 1;
+        await item.save();
+      }),
+    );
+    const conditionCartridges = await CartridgeModel.find({
+      serialNumberNormalized: { $in: normalized },
+    });
+    await movements(conditionCartridges, 'QC', qcFromStatuses, actor, {
+      remarks: `Condition recorded on Gate In for ${pass.gatePassNumber}.`,
+    });
+    nextStatus = returned === pass.quantity ? 'CLOSED' : 'PARTIALLY_RETURNED';
+  }
+  pass.gateInEvents.push({
+    at: now,
+    byName: name,
+    serialNumbers,
+    ...(conditions ? { conditions } : {}),
+    ...(remarks ? { remarks } : {}),
+  });
+  pass.status = nextStatus;
+  await pass.save();
   return pass;
 }
 export async function cartridgeDashboard(actor: CartridgeActor) {
@@ -576,7 +625,14 @@ export async function cartridgeDashboard(actor: CartridgeActor) {
 export async function recordQc(
   input: {
     serialNumber: string;
-    result: 'PASS' | 'REFILL_FAILED' | 'DAMAGED';
+    result:
+      | 'PASS'
+      | 'REFILL_FAILED'
+      | 'DAMAGED'
+      | 'EMPTY'
+      | 'DEFECTIVE'
+      | 'FILLED_UNUSED'
+      | 'WRONG_MODEL';
     remarks?: string | undefined;
   },
   actor: CartridgeActor,
@@ -585,13 +641,16 @@ export async function recordQc(
   if (item.status !== 'QC_PENDING')
     throw new AppError(409, 'QC_NOT_PENDING', 'This cartridge is not awaiting QC.');
   const from = item.status;
-  item.status =
-    input.result === 'PASS'
-      ? 'FILLED_AVAILABLE'
+  item.status = ['PASS', 'FILLED_UNUSED'].includes(input.result)
+    ? 'FILLED_AVAILABLE'
+    : input.result === 'EMPTY'
+      ? 'EMPTY'
       : input.result === 'DAMAGED'
         ? 'DAMAGED'
-        : 'REFILL_FAILED';
-  if (input.result === 'PASS') item.refillCount += 1;
+        : input.result === 'DEFECTIVE' || input.result === 'WRONG_MODEL'
+          ? 'DEFECTIVE'
+          : 'REFILL_FAILED';
+  if (['PASS', 'FILLED_UNUSED'].includes(input.result)) item.refillCount += 1;
   await item.save();
   await movement(item, 'QC', from, actor, { remarks: input.remarks, result: input.result });
   const pass = await GatePassModel.findOne({ cartridgeIds: item._id, status: 'QC_PENDING' });

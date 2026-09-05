@@ -59,6 +59,11 @@ import {
   updateMaterialStatus,
 } from './inventory.service.js';
 import {
+  listInventoryQuantityEntries,
+  recordInventoryQuantityEntry,
+} from './inventory-quantity-entry.service.js';
+import { InventoryQuantityEntryModel } from './inventory-quantity-entry.model.js';
+import {
   commitInventoryImport,
   getInventoryImportPreview,
   previewInventoryImport,
@@ -111,8 +116,14 @@ const MaterialListQuerySchema = z
       if (value === 'false' || value === false) return false;
       return undefined;
     }, z.boolean().optional()),
-    storeOnly: z.preprocess((value) => value === 'true' || value === true ? true : undefined, z.boolean().optional()),
-    lowStockOnly: z.preprocess((value) => value === 'true' || value === true ? true : undefined, z.boolean().optional()),
+    storeOnly: z.preprocess(
+      (value) => (value === 'true' || value === true ? true : undefined),
+      z.boolean().optional(),
+    ),
+    lowStockOnly: z.preprocess(
+      (value) => (value === 'true' || value === true ? true : undefined),
+      z.boolean().optional(),
+    ),
     availableMax: z.coerce.number().int().min(0).max(1_000_000_000).optional(),
     status: z.preprocess(
       (value) => (value === '' ? undefined : value),
@@ -147,6 +158,14 @@ function endOfDay(date: Date): Date {
   return next;
 }
 
+function startOfIstDay(date: Date): Date {
+  return new Date(`${date.toISOString().slice(0, 10)}T00:00:00.000+05:30`);
+}
+
+function startOfNextIstDay(date: Date): Date {
+  return new Date(startOfIstDay(date).getTime() + 86_400_000);
+}
+
 const AssetUnitListQuerySchema = z
   .object({
     page: z.coerce.number().int().positive().default(1),
@@ -155,6 +174,20 @@ const AssetUnitListQuerySchema = z
     status: z.preprocess(
       (value) => (value === '' ? undefined : value),
       AssetUnitStatusSchema.optional(),
+    ),
+  })
+  .strict();
+
+const QuantityEntryQuerySchema = z
+  .object({
+    page: z.coerce.number().int().positive().default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(100),
+    from: OptionalDateSchema,
+    to: OptionalDateSchema,
+    vendorName: OptionalQueryTextSchema,
+    action: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.enum(['INITIAL', 'INCREASE', 'DECREASE']).optional(),
     ),
   })
   .strict();
@@ -330,21 +363,16 @@ export function createInventoryRouter(): Router {
     },
   );
 
-  router.get(
-    '/asset-details',
-    async (request, response, next) => {
-      try {
-        ensureAssetDetailsAccess(request);
-        const kind = request.query.kind
-          ? AssetDetailKindSchema.parse(request.query.kind)
-          : undefined;
-        const result = await listAssetDetails(kind);
-        response.json({ data: result.assetDetails });
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
+  router.get('/asset-details', async (request, response, next) => {
+    try {
+      ensureAssetDetailsAccess(request);
+      const kind = request.query.kind ? AssetDetailKindSchema.parse(request.query.kind) : undefined;
+      const result = await listAssetDetails(kind);
+      response.json({ data: result.assetDetails });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   router.get('/models', async (request, response, next) => {
     try {
@@ -752,8 +780,9 @@ export function createInventoryRouter(): Router {
     async (request, response, next) => {
       try {
         const input = CreateMaterialRequestSchema.parse(request.body);
+        const actor = authenticated(request);
         const material = await runInventoryTransaction(async (session) => {
-          const created = await createMaterial(input, authenticated(request).userId, session);
+          const created = await createMaterial(input, actor.userId, session, actor);
           await audit(
             request,
             'MATERIAL_CREATED',
@@ -763,6 +792,8 @@ export function createInventoryRouter(): Router {
               trackingMode: created.trackingMode,
               returnPolicy: created.returnPolicy,
               initialQuantity: created.totalQuantity,
+              ...(input.entryDate ? { entryDate: input.entryDate } : {}),
+              ...(input.vendorName ? { vendorName: input.vendorName } : {}),
             },
             session,
           );
@@ -875,6 +906,28 @@ export function createInventoryRouter(): Router {
   );
 
   router.get(
+    '/:materialCode/quantity-entries',
+    requireRole('ADMIN'),
+    async (request, response, next) => {
+      try {
+        const input = QuantityEntryQuerySchema.parse(request.query);
+        const result = await listInventoryQuantityEntries({
+          materialCode: materialCode(request),
+          page: input.page,
+          pageSize: input.pageSize,
+          ...(input.from ? { from: startOfIstDay(input.from) } : {}),
+          ...(input.to ? { to: startOfNextIstDay(input.to) } : {}),
+          ...(input.vendorName ? { vendorName: input.vendorName } : {}),
+          ...(input.action ? { action: input.action } : {}),
+        });
+        response.json({ data: result.entries, meta: pageMeta(result) });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
     '/:materialCode',
     requirePermission('INVENTORY_VIEW'),
     async (request, response, next) => {
@@ -904,6 +957,21 @@ export function createInventoryRouter(): Router {
         const code = materialCode(request);
         const input = UpdateMaterialRequestSchema.parse(request.body);
         const material = await updateMaterial(code, input);
+        if (input.entryDate !== undefined || Object.hasOwn(input, 'vendorName')) {
+          const set: Record<string, unknown> = {};
+          if (input.entryDate !== undefined) {
+            set.entryDate = material.entryDate ?? material.createdAt;
+          }
+          if (Object.hasOwn(input, 'vendorName')) {
+            set.vendorName = material.vendorName ?? null;
+          }
+          if (Object.keys(set).length > 0) {
+            await InventoryQuantityEntryModel.updateOne(
+              { materialCode: code, action: 'INITIAL' },
+              { $set: set },
+            );
+          }
+        }
         await audit(request, 'MATERIAL_UPDATED', 'MATERIAL', code, {
           fields: Object.keys(input),
         });
@@ -970,6 +1038,25 @@ export function createInventoryRouter(): Router {
         const input = AdjustQuantityRequestSchema.parse(request.body);
         const result = await runInventoryTransaction(async (session) => {
           const adjusted = await adjustQuantity(code, input, session);
+          const actor = authenticated(request);
+          await recordInventoryQuantityEntry(
+            {
+              materialId: adjusted.material.id,
+              materialCode: adjusted.material.materialCode,
+              trackingMode: adjusted.material.trackingMode,
+              action: input.quantityDelta > 0 ? 'INCREASE' : 'DECREASE',
+              quantityDelta: input.quantityDelta,
+              previousTotalQuantity: adjusted.adjustment.previousTotalQuantity,
+              totalQuantity: adjusted.material.totalQuantity,
+              ...(input.entryDate ? { entryDate: input.entryDate } : {}),
+              ...(input.vendorName ? { vendorName: input.vendorName } : {}),
+              reason: input.reason,
+              actorUserId: actor.userId,
+              actorWorkerId: actor.workerId,
+              actorRole: actor.role,
+            },
+            session,
+          );
           await audit(
             request,
             'MATERIAL_QUANTITY_ADJUSTED',
@@ -982,6 +1069,8 @@ export function createInventoryRouter(): Router {
               previousAvailableQuantity: adjusted.adjustment.previousAvailableQuantity,
               totalQuantity: adjusted.material.totalQuantity,
               availableQuantity: adjusted.material.availableQuantity,
+              entryDate: input.entryDate,
+              vendorName: input.vendorName,
             },
             session,
           );
@@ -1025,10 +1114,30 @@ export function createInventoryRouter(): Router {
       try {
         const code = materialCode(request);
         const input = CreateAssetUnitRequestSchema.parse(request.body);
-        const result = await createAssetUnit(code, input, authenticated(request).userId);
+        const actor = authenticated(request);
+        const result = await createAssetUnit(code, input, actor.userId);
+        await recordInventoryQuantityEntry({
+          materialId: result.material.id,
+          materialCode: result.material.materialCode,
+          trackingMode: result.material.trackingMode,
+          action: 'INCREASE',
+          quantityDelta: 1,
+          previousTotalQuantity: result.material.totalQuantity - 1,
+          totalQuantity: result.material.totalQuantity,
+          ...(input.entryDate ? { entryDate: input.entryDate } : {}),
+          ...(input.vendorName ? { vendorName: input.vendorName } : {}),
+          reason: 'IT Asset added',
+          actorUserId: actor.userId,
+          actorWorkerId: actor.workerId,
+          actorRole: actor.role,
+        });
         await audit(request, 'ASSET_UNIT_CREATED', 'ASSET_UNIT', result.unit.assetTag, {
           materialCode: code,
           status: result.unit.status,
+          quantityDelta: 1,
+          totalQuantity: result.material.totalQuantity,
+          entryDate: input.entryDate,
+          vendorName: input.vendorName,
         });
         response.status(201).json({ data: result });
       } catch (error) {
@@ -1077,11 +1186,27 @@ export function createInventoryRouter(): Router {
       try {
         const code = materialCode(request);
         const tag = assetTag(request);
+        const actor = authenticated(request);
         const result = await deleteAssetUnit(code, tag);
+        await recordInventoryQuantityEntry({
+          materialId: result.material.id,
+          materialCode: result.material.materialCode,
+          trackingMode: result.material.trackingMode,
+          action: 'DECREASE',
+          quantityDelta: -1,
+          previousTotalQuantity: result.material.totalQuantity + 1,
+          totalQuantity: result.material.totalQuantity,
+          reason: 'IT Asset removed',
+          actorUserId: actor.userId,
+          actorWorkerId: actor.workerId,
+          actorRole: actor.role,
+        });
         await audit(request, 'ASSET_UNIT_DELETED', 'ASSET_UNIT', tag, {
           materialCode: code,
           serialNumber: result.unit.serialNumber,
           status: result.unit.status,
+          quantityDelta: -1,
+          totalQuantity: result.material.totalQuantity,
         });
         response.json({ data: { material: result.material, unit: result.unit } });
       } catch (error) {

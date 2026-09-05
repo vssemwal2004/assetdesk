@@ -16,8 +16,10 @@ export function toMaterial(material: MaterialDocument): Material {
     block: material.block ?? null,
     department: material.department ?? null,
     vendorName: material.vendorName ?? null,
+    entryDate: (material.entryDate ?? material.createdAt).toISOString(),
     locationBlock:
-      material.locationBlock ?? ([material.location, material.block].filter(Boolean).join(' / ') || null),
+      material.locationBlock ??
+      ([material.location, material.block].filter(Boolean).join(' / ') || null),
     description: material.description ?? null,
     trackingMode: material.trackingMode,
     returnPolicy: material.returnPolicy,
@@ -42,6 +44,8 @@ export function toAssetUnit(unit: AssetUnitDocument): AssetUnit {
     serialNumber: unit.serialNumber ?? null,
     condition: unit.condition,
     status: unit.status,
+    entryDate: (unit.entryDate ?? unit.createdAt).toISOString(),
+    vendorName: unit.vendorName ?? null,
     createdAt: unit.createdAt.toISOString(),
     updatedAt: unit.updatedAt.toISOString(),
   };

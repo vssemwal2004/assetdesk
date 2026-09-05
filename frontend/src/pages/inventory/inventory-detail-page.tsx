@@ -25,6 +25,8 @@ import {
   type AssetUnitStatus,
   type AssetUnit,
   type AssetUnitsListResponse,
+  type InventoryQuantityEntry,
+  type InventoryQuantityEntryAction,
   type ManualAssetUnitStatus,
   type Material,
   type MaterialStatus,
@@ -41,6 +43,7 @@ import {
   EmptyState,
   ErrorState,
   ErrorSummary,
+  FilterPopover,
   LoadingPanel,
   PageHeader,
   TextField,
@@ -48,7 +51,7 @@ import {
 import { isApiError } from '../../lib/api-client';
 import { getAuditEvents } from '../../lib/audit-api';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
-import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
+import { formatIstDate, formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import {
   addAssetUnit,
   adjustMaterialQuantity,
@@ -57,6 +60,7 @@ import {
   getAssetDetails,
   getAssetUnits,
   getInventoryModels,
+  getInventoryQuantityEntries,
   getMaterial,
   setMaterialStatus,
   updateAssetUnit,
@@ -75,6 +79,13 @@ function dateDaysAgo(days: number): string {
   return toIstDateTimeInput(new Date(Date.now() - days * 86_400_000)).slice(0, 10);
 }
 
+type QuantityHistoryFilters = {
+  from: string;
+  to: string;
+  vendorName: string;
+  action: InventoryQuantityEntryAction | '';
+};
+
 export function InventoryDetailPage() {
   const { materialCode = '' } = useParams();
   const { user } = useAuth();
@@ -89,6 +100,12 @@ export function InventoryDetailPage() {
   const [editUnit, setEditUnit] = useState<AssetUnit | null>(null);
   const [unitStatus, setUnitStatus] = useState<AssetUnitStatus | ''>('');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [quantityHistoryFilters, setQuantityHistoryFilters] = useState<QuantityHistoryFilters>({
+    from: '',
+    to: '',
+    vendorName: '',
+    action: '',
+  });
   const notice = (location.state as { notice?: string } | null)?.notice;
   const canEditInventory = hasPermission(user, 'INVENTORY_EDIT');
   const canDeleteInventory = hasPermission(user, 'INVENTORY_DELETE');
@@ -133,18 +150,15 @@ export function InventoryDetailPage() {
     enabled: Boolean(materialCode),
   });
   const quantityHistoryQuery = useQuery({
-    queryKey: ['inventory-quantity-history', materialCode],
-    queryFn: ({ signal }) =>
-      getAuditEvents(
-        {
-          page: 1,
-          from: dateDaysAgo(365),
-          to: dateDaysAgo(0),
-          search: materialCode,
-          action: 'MATERIAL_QUANTITY_ADJUSTED',
-        },
+    queryKey: ['inventory-quantity-history', materialCode, quantityHistoryFilters],
+    queryFn: ({ signal }) => {
+      const { action, ...historyFilters } = quantityHistoryFilters;
+      return getInventoryQuantityEntries(
+        materialCode,
+        { ...historyFilters, ...(action ? { action } : {}) },
         signal,
-      ),
+      );
+    },
     enabled: Boolean(materialCode) && user?.role === 'ADMIN',
   });
 
@@ -278,10 +292,16 @@ export function InventoryDetailPage() {
               ) : null}
               <DetailRow
                 label="Store"
-                value={material.store ?? material.locationBlock ?? material.location ?? 'Not provided'}
+                value={
+                  material.store ?? material.locationBlock ?? material.location ?? 'Not provided'
+                }
               />
               <DetailRow label="Department" value={material.department ?? 'Not provided'} />
               <DetailRow label="Vendor name" value={material.vendorName ?? 'Not provided'} />
+              <DetailRow
+                label="Entry date"
+                value={formatIstDate(material.entryDate ?? material.createdAt)}
+              />
               <DetailRow
                 label="Inventory type"
                 value={<CatalogBadge value={material.trackingMode} />}
@@ -395,11 +415,13 @@ export function InventoryDetailPage() {
         onRetry={() => void activityQuery.refetch()}
         unavailable={activityQuery.isError}
       />
-      {material.trackingMode === 'QUANTITY' && user?.role === 'ADMIN' ? (
+      {user?.role === 'ADMIN' ? (
         <QuantityHistoryPanel
-          events={quantityHistoryQuery.data?.data ?? []}
+          entries={quantityHistoryQuery.data?.data ?? []}
+          filters={quantityHistoryFilters}
           loading={quantityHistoryQuery.isPending}
           onRetry={() => void quantityHistoryQuery.refetch()}
+          onFiltersChange={setQuantityHistoryFilters}
           unavailable={quantityHistoryQuery.isError}
         />
       ) : null}
@@ -438,6 +460,9 @@ export function InventoryDetailPage() {
           onSaved={async (updated) => {
             await updateCached(updated);
             await queryClient.invalidateQueries({ queryKey: ['asset-units', materialCode] });
+            await queryClient.invalidateQueries({
+              queryKey: ['inventory-quantity-history', materialCode],
+            });
             setDialog(null);
           }}
         />
@@ -631,95 +656,161 @@ function actionLabel(value: string): string {
     .join(' ');
 }
 
-function metadataNumber(event: AuditEvent, key: string): number | null {
-  const value = event.metadata?.[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function metadataText(event: AuditEvent, key: string): string | null {
-  const value = event.metadata?.[key];
-  return typeof value === 'string' && value.trim() ? value : null;
-}
-
 function QuantityHistoryPanel({
-  events,
+  entries,
+  filters,
   loading,
   unavailable,
   onRetry,
+  onFiltersChange,
 }: {
-  events: AuditEvent[];
+  entries: InventoryQuantityEntry[];
+  filters: QuantityHistoryFilters;
   loading: boolean;
   unavailable: boolean;
   onRetry: () => void;
+  onFiltersChange: (filters: QuantityHistoryFilters) => void;
 }) {
+  const activeCount = [filters.from, filters.to, filters.vendorName, filters.action].filter(
+    Boolean,
+  ).length;
+  const updateFilter = <K extends keyof typeof filters>(key: K, value: (typeof filters)[K]) =>
+    onFiltersChange({ ...filters, [key]: value });
+
   return (
     <AppCard>
-      <div className="flex items-center gap-3">
-        <span className="grid size-10 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
-          <SlidersHorizontal aria-hidden="true" size={21} />
-        </span>
-        <div>
-          <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-            Quantity history
-          </h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            Recent stock increases and decreases recorded for this material.
-          </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+            <SlidersHorizontal aria-hidden="true" size={21} />
+          </span>
+          <div>
+            <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+              Stock entry history
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Complete quantity additions and removals with the entry date and vendor.
+            </p>
+          </div>
         </div>
+        <FilterPopover
+          activeCount={activeCount}
+          onClear={() => onFiltersChange({ from: '', to: '', vendorName: '', action: '' })}
+          panelClassName="w-[min(94vw,520px)]"
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="field-label" htmlFor="quantity-history-from">
+                Entry date from
+              </label>
+              <input
+                className="field-input"
+                id="quantity-history-from"
+                onChange={(event) => updateFilter('from', event.target.value)}
+                type="date"
+                value={filters.from}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="field-label" htmlFor="quantity-history-to">
+                Entry date to
+              </label>
+              <input
+                className="field-input"
+                id="quantity-history-to"
+                onChange={(event) => updateFilter('to', event.target.value)}
+                type="date"
+                value={filters.to}
+              />
+            </div>
+          </div>
+          <TextField
+            label="Vendor"
+            onChange={(event) => updateFilter('vendorName', event.target.value)}
+            optional
+            placeholder="Search vendor name"
+            value={filters.vendorName}
+          />
+          <div className="space-y-1.5">
+            <label className="field-label" htmlFor="quantity-history-action">
+              Entry type
+            </label>
+            <select
+              className="field-input"
+              id="quantity-history-action"
+              onChange={(event) =>
+                updateFilter('action', event.target.value as InventoryQuantityEntryAction | '')
+              }
+              value={filters.action}
+            >
+              <option value="">All entry types</option>
+              <option value="INITIAL">Initial stock</option>
+              <option value="INCREASE">Stock added</option>
+              <option value="DECREASE">Stock removed</option>
+            </select>
+          </div>
+        </FilterPopover>
       </div>
       <div className="mt-5">
         {loading ? (
           <LoadingPanel label="Loading quantity history" />
         ) : unavailable ? (
           <ErrorState message="Quantity history could not be loaded." onRetry={onRetry} />
-        ) : events.length === 0 ? (
+        ) : entries.length === 0 ? (
           <EmptyState
-            message="Every future quantity increase or decrease will be recorded here."
-            title="No quantity changes recorded"
+            message="New additions and adjustments will appear here with their date and vendor."
+            title="No stock entries found"
           />
         ) : (
           <div className="overflow-x-auto rounded-[12px] border border-[var(--color-border)]">
-            <table className="w-full min-w-[760px] border-collapse text-left">
-              <caption className="sr-only">Material quantity adjustment history</caption>
+            <table className="w-full min-w-[900px] border-collapse text-left">
+              <caption className="sr-only">Complete material stock entry history</caption>
               <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
                 <tr>
-                  <th className="h-10 px-3 font-bold">Date and time</th>
+                  <th className="h-10 px-3 font-bold">Entry date</th>
                   <th className="h-10 px-3 font-bold">Change</th>
-                  <th className="h-10 px-3 font-bold">Previous</th>
-                  <th className="h-10 px-3 font-bold">New total</th>
+                  <th className="h-10 px-3 font-bold">Total after</th>
+                  <th className="h-10 px-3 font-bold">Vendor</th>
+                  <th className="h-10 px-3 font-bold">Entry type</th>
                   <th className="h-10 px-3 font-bold">Reason</th>
-                  <th className="h-10 px-3 font-bold">Changed by</th>
+                  <th className="h-10 px-3 font-bold">Added by</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)] text-sm">
-                {events.map((event) => {
-                  const delta = metadataNumber(event, 'quantityDelta');
-                  const previous = metadataNumber(event, 'previousTotalQuantity');
-                  const total = metadataNumber(event, 'totalQuantity');
+                {entries.map((entry) => {
+                  const positive = entry.quantityDelta >= 0;
                   return (
-                    <tr key={event.id}>
+                    <tr key={entry.id}>
                       <td className="px-3 py-3 text-xs text-[var(--color-text-muted)]">
-                        {formatIstDateTime(event.timestampUtc)}
+                        {formatIstDateTime(entry.entryDate)}
                       </td>
                       <td
                         className={`px-3 py-3 font-extrabold ${
-                          (delta ?? 0) >= 0
-                            ? 'text-[var(--color-success)]'
-                            : 'text-[var(--color-danger)]'
+                          positive ? 'text-[var(--color-success)]' : 'text-[var(--color-danger)]'
                         }`}
                       >
-                        {delta === null ? '—' : `${delta > 0 ? '+' : ''}${delta}`}
+                        {entry.quantityDelta > 0 ? '+' : ''}
+                        {entry.quantityDelta}
                       </td>
-                      <td className="px-3 py-3 font-bold">{previous ?? '—'}</td>
                       <td className="px-3 py-3 font-extrabold text-[var(--color-primary-strong)]">
-                        {total ?? '—'}
-                      </td>
-                      <td className="max-w-xs px-3 py-3 text-[var(--color-text-muted)]">
-                        {metadataText(event, 'reason') ?? 'No reason recorded'}
+                        {entry.totalQuantity}
                       </td>
                       <td className="px-3 py-3 text-[var(--color-text-muted)]">
-                        {event.actorWorkerId ?? 'System'}
-                        {event.actorRole ? ` · ${event.actorRole}` : ''}
+                        {entry.vendorName ?? 'Not provided'}
+                      </td>
+                      <td className="px-3 py-3 font-bold">
+                        {entry.action === 'INITIAL'
+                          ? 'Initial stock'
+                          : entry.action === 'INCREASE'
+                            ? 'Stock added'
+                            : 'Stock removed'}
+                      </td>
+                      <td className="max-w-xs px-3 py-3 text-[var(--color-text-muted)]">
+                        {entry.reason ?? 'No reason recorded'}
+                      </td>
+                      <td className="px-3 py-3 text-[var(--color-text-muted)]">
+                        {entry.actorWorkerId ?? 'System'}
+                        {entry.actorRole ? ` · ${entry.actorRole}` : ''}
                       </td>
                     </tr>
                   );
@@ -852,6 +943,9 @@ function EditMaterialForm({
     store: material.store ?? material.locationBlock ?? material.location ?? '',
     department: material.department ?? '',
     vendorName: material.vendorName ?? '',
+    entryDate: material.entryDate
+      ? toIstDateTimeInput(new Date(material.entryDate)).slice(0, 10)
+      : dateDaysAgo(0),
     description: material.description ?? '',
     returnPolicy: material.returnPolicy,
     unitLabel: material.unitLabel ?? '',
@@ -901,6 +995,7 @@ function EditMaterialForm({
       store: form.store,
       department: form.department,
       vendorName: form.vendorName.trim() || null,
+      entryDate: form.entryDate,
       description: form.description.trim() || null,
       returnPolicy: form.returnPolicy,
       ...(material.trackingMode === 'QUANTITY' ? { unitLabel: form.unitLabel } : {}),
@@ -985,6 +1080,13 @@ function EditMaterialForm({
           maxLength={120}
           onChange={(event) => setForm((value) => ({ ...value, vendorName: event.target.value }))}
           value={form.vendorName}
+        />
+        <TextField
+          label="Entry date"
+          onChange={(event) => setForm((value) => ({ ...value, entryDate: event.target.value }))}
+          required
+          type="date"
+          value={form.entryDate}
         />
       </div>
       <div className="space-y-1.5">
@@ -1403,6 +1505,8 @@ function QuantityDialog({
   const [direction, setDirection] = useState<QuantityAdjustmentDirection>('INCREASE');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
+  const [entryDate, setEntryDate] = useState(dateDaysAgo(0));
+  const [vendorName, setVendorName] = useState(material.vendorName ?? '');
   const [serialNumbers, setSerialNumbers] = useState<string[]>([]);
   const [selectedAssetTags, setSelectedAssetTags] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -1424,7 +1528,12 @@ function QuantityDialog({
       parsedAmount > 0,
   });
   const mutation = useMutation({
-    mutationFn: async (input: { quantityDelta: number; reason: string }) => {
+    mutationFn: async (input: {
+      quantityDelta: number;
+      reason: string;
+      entryDate?: string | undefined;
+      vendorName?: string | undefined;
+    }) => {
       if (material.trackingMode === 'QUANTITY') {
         return adjustMaterialQuantity(material.materialCode, input);
       }
@@ -1434,6 +1543,8 @@ function QuantityDialog({
           const result = await addAssetUnit(material.materialCode, {
             serialNumber: serialNumber.trim(),
             condition: 'Good',
+            ...(input.entryDate ? { entryDate: input.entryDate } : {}),
+            ...(input.vendorName ? { vendorName: input.vendorName } : {}),
           });
           latest = result.material;
         }
@@ -1488,12 +1599,17 @@ function QuantityDialog({
     if (parsedAmount > maximum) {
       setMessage(
         direction === 'DECREASE'
-          ? `You can remove at most ${maximum} available ${material.trackingMode === 'SERIALIZED' ? 'IT Assets in one change' : material.unitLabel ?? 'units'}.`
-          : `You can add at most ${maximum} ${material.trackingMode === 'SERIALIZED' ? 'IT Assets in one change' : material.unitLabel ?? 'units'}.`,
+          ? `You can remove at most ${maximum} available ${material.trackingMode === 'SERIALIZED' ? 'IT Assets in one change' : (material.unitLabel ?? 'units')}.`
+          : `You can add at most ${maximum} ${material.trackingMode === 'SERIALIZED' ? 'IT Assets in one change' : (material.unitLabel ?? 'units')}.`,
       );
       return;
     }
-    const result = AdjustQuantityRequestSchema.safeParse({ quantityDelta, reason });
+    const result = AdjustQuantityRequestSchema.safeParse({
+      quantityDelta,
+      reason,
+      entryDate,
+      ...(vendorName.trim() ? { vendorName: vendorName.trim() } : {}),
+    });
     if (!result.success) {
       setMessage(result.error.issues[0]?.message ?? 'Check the adjustment.');
       return;
@@ -1583,6 +1699,22 @@ function QuantityDialog({
           type="number"
           value={amount}
         />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField
+            label="Entry date"
+            onChange={(event) => setEntryDate(event.target.value)}
+            required
+            type="date"
+            value={entryDate}
+          />
+          <TextField
+            label="Vendor name"
+            onChange={(event) => setVendorName(event.target.value)}
+            optional
+            placeholder="Supplier or vendor"
+            value={vendorName}
+          />
+        </div>
         {material.trackingMode === 'SERIALIZED' && quantityDelta > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {serialNumbers.map((serialNumber, index) => (
@@ -1711,6 +1843,10 @@ function UnitDialog({
       : (unit?.status ?? 'AVAILABLE'),
   );
   const [reason, setReason] = useState('');
+  const [entryDate, setEntryDate] = useState(
+    unit?.entryDate ? toIstDateTimeInput(new Date(unit.entryDate)).slice(0, 10) : dateDaysAgo(0),
+  );
+  const [vendorName, setVendorName] = useState(unit?.vendorName ?? material.vendorName ?? '');
   const statusOptions = unit ? validStatuses(unit) : [];
   const [message, setMessage] = useState<string | null>(null);
   const mutation = useMutation({
@@ -1722,6 +1858,8 @@ function UnitDialog({
             : {}),
           condition,
           ...(!['ISSUED', 'OUTSIDE'].includes(unit.status) ? { status } : {}),
+          entryDate,
+          vendorName: vendorName.trim() || null,
           reason,
         });
         if (!result.success)
@@ -1731,6 +1869,8 @@ function UnitDialog({
       const result = CreateAssetUnitRequestSchema.safeParse({
         serialNumber: serialNumber.trim(),
         condition,
+        entryDate,
+        ...(vendorName.trim() ? { vendorName: vendorName.trim() } : {}),
       });
       if (!result.success)
         throw new Error(result.error.issues[0]?.message ?? 'Check the unit details.');
@@ -1782,6 +1922,22 @@ function UnitDialog({
           required
           value={condition}
         />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField
+            label="Entry date"
+            onChange={(event) => setEntryDate(event.target.value)}
+            required
+            type="date"
+            value={entryDate}
+          />
+          <TextField
+            label="Vendor name"
+            onChange={(event) => setVendorName(event.target.value)}
+            optional
+            placeholder="Supplier or vendor"
+            value={vendorName}
+          />
+        </div>
         {unit && unit.status !== 'ISSUED' ? (
           <SelectField
             id="unit-status"

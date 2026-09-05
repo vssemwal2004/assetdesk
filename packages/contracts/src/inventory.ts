@@ -19,6 +19,7 @@ const BlockSchema = z.string().trim().min(1).max(120);
 const StoreSchema = z.string().trim().min(1).max(120);
 const DepartmentSchema = z.string().trim().min(1).max(120);
 const VendorNameSchema = z.string().trim().max(120);
+const EntryDateSchema = z.string().date();
 const UnitLabelSchema = z.string().trim().min(1).max(40);
 const ConditionSchema = z.string().trim().min(1).max(120);
 const SerialNumberSchema = z.string().trim().min(1).max(120);
@@ -42,6 +43,7 @@ const CreateMaterialBaseSchema = z.object({
   block: BlockSchema.optional(),
   department: DepartmentSchema.optional(),
   vendorName: VendorNameSchema.optional(),
+  entryDate: EntryDateSchema.optional(),
   locationBlock: LocationBlockSchema.optional(),
   description: DescriptionSchema.optional(),
   status: MaterialStatusSchema.exclude(['ARCHIVED']).default('ACTIVE'),
@@ -82,6 +84,7 @@ export const UpdateMaterialRequestSchema = z
     block: BlockSchema.optional(),
     department: DepartmentSchema.optional(),
     vendorName: VendorNameSchema.nullable().optional(),
+    entryDate: EntryDateSchema.optional(),
     locationBlock: LocationBlockSchema.optional(),
     description: DescriptionSchema.nullable().optional(),
     returnPolicy: ReturnPolicySchema.optional(),
@@ -106,6 +109,8 @@ export const AdjustQuantityRequestSchema = z
   .object({
     quantityDelta: z.number().int().min(-1_000_000_000).max(1_000_000_000),
     reason: z.string().trim().min(5).max(500),
+    entryDate: EntryDateSchema.optional(),
+    vendorName: VendorNameSchema.optional(),
   })
   .strict()
   .refine((value) => value.quantityDelta !== 0, {
@@ -117,6 +122,8 @@ export const CreateAssetUnitRequestSchema = z
   .object({
     serialNumber: SerialNumberSchema,
     condition: ConditionSchema.default('Good'),
+    entryDate: EntryDateSchema.optional(),
+    vendorName: VendorNameSchema.optional(),
   })
   .strict();
 
@@ -127,6 +134,8 @@ export const UpdateAssetUnitRequestSchema = z
     serialNumber: SerialNumberSchema.optional(),
     condition: ConditionSchema.optional(),
     status: ManualAssetUnitStatusSchema.optional(),
+    entryDate: EntryDateSchema.optional(),
+    vendorName: VendorNameSchema.nullable().optional(),
     reason: z.string().trim().min(5).max(500).optional(),
   })
   .strict()
@@ -145,6 +154,7 @@ export const MaterialSchema = z
     store: z.string().nullable().optional().default(null),
     department: z.string().nullable().optional().default(null),
     vendorName: z.string().nullable().optional().default(null),
+    entryDate: z.string().datetime({ offset: true }).nullable().optional(),
     locationBlock: z.string().nullable().optional().default(null),
     description: z.string().nullable(),
     trackingMode: TrackingModeSchema,
@@ -214,6 +224,8 @@ export const AssetUnitSchema = z.object({
   condition: z.string().min(1),
   status: AssetUnitStatusSchema,
   createdAt: z.string().datetime({ offset: true }),
+  entryDate: z.string().datetime({ offset: true }).nullable().optional(),
+  vendorName: z.string().nullable().optional(),
   updatedAt: z.string().datetime({ offset: true }),
 });
 
@@ -222,6 +234,30 @@ const PaginationMetaSchema = z.object({
   pageSize: z.number().int().positive(),
   total: z.number().int().nonnegative(),
   totalPages: z.number().int().nonnegative(),
+});
+
+export const InventoryQuantityEntryActionSchema = z.enum(['INITIAL', 'INCREASE', 'DECREASE']);
+export type InventoryQuantityEntryAction = z.infer<typeof InventoryQuantityEntryActionSchema>;
+
+export const InventoryQuantityEntrySchema = z.object({
+  id: z.string().min(1),
+  materialCode: MaterialCodeSchema,
+  trackingMode: TrackingModeSchema,
+  action: InventoryQuantityEntryActionSchema,
+  quantityDelta: z.number().int(),
+  previousTotalQuantity: z.number().int().nonnegative(),
+  totalQuantity: z.number().int().nonnegative(),
+  entryDate: z.string().datetime({ offset: true }),
+  vendorName: z.string().nullable(),
+  reason: z.string().nullable(),
+  actorWorkerId: z.string().nullable(),
+  actorRole: z.enum(['ADMIN', 'WORKER']).nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+});
+
+export const InventoryQuantityEntriesResponseSchema = z.object({
+  data: z.array(InventoryQuantityEntrySchema),
+  meta: PaginationMetaSchema,
 });
 
 export const MaterialResponseSchema = z.object({ data: z.object({ material: MaterialSchema }) });
@@ -365,6 +401,10 @@ export type UpdateAssetUnitRequest = z.infer<typeof UpdateAssetUnitRequestSchema
 export type ManualAssetUnitStatus = z.infer<typeof ManualAssetUnitStatusSchema>;
 export type Material = z.infer<typeof MaterialSchema>;
 export type AssetUnit = z.infer<typeof AssetUnitSchema>;
+export type InventoryQuantityEntry = z.infer<typeof InventoryQuantityEntrySchema>;
+export type InventoryQuantityEntriesResponse = z.infer<
+  typeof InventoryQuantityEntriesResponseSchema
+>;
 export type AssetType = z.infer<typeof AssetTypeSchema>;
 export type CreateAssetTypeRequest = z.infer<typeof CreateAssetTypeRequestSchema>;
 export type InventoryModel = z.infer<typeof InventoryModelSchema>;

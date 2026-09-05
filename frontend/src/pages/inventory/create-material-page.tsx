@@ -23,6 +23,7 @@ import { AppCard, Button, ErrorSummary, PageHeader, TextField, cn } from '../../
 import { isApiError } from '../../lib/api-client';
 import { createMaterial, getAssetDetails, getInventoryModels } from '../../lib/inventory-api';
 import { inventoryStatusLabel } from '../../lib/inventory-status';
+import { toIstDateTimeInput } from '../../lib/date-time';
 import {
   inventoryModelOptions,
   materialRequestName,
@@ -38,6 +39,7 @@ export interface MaterialForm {
   store: string;
   department: string;
   vendorName: string;
+  entryDate?: string;
   description: string;
   trackingMode: TrackingMode;
   returnPolicy: ReturnPolicy;
@@ -55,6 +57,7 @@ const initialForm: MaterialForm = {
   store: '',
   department: '',
   vendorName: '',
+  entryDate: toIstDateTimeInput(new Date()).slice(0, 10),
   description: '',
   trackingMode: 'SERIALIZED',
   returnPolicy: 'REUSABLE',
@@ -184,6 +187,7 @@ export function buildCreateMaterialDraft(
     store: form.store,
     ...(form.department.trim() ? { department: form.department } : {}),
     ...(form.vendorName.trim() ? { vendorName: form.vendorName } : {}),
+    ...(form.entryDate ? { entryDate: form.entryDate } : {}),
     ...(form.description.trim() ? { description: form.description } : {}),
     status: form.status,
     assignmentTypes:
@@ -477,6 +481,15 @@ export function CreateMaterialPage() {
                     </option>
                   ))}
                 </SelectField>
+                <TextField
+                  label="Entry date"
+                  onChange={(event) =>
+                    setForm((value) => ({ ...value, entryDate: event.target.value }))
+                  }
+                  required
+                  type="date"
+                  value={form.entryDate ?? ''}
+                />
                 <TextField
                   label="Vendor name (optional)"
                   maxLength={120}

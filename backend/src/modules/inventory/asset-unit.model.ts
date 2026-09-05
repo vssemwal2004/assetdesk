@@ -10,6 +10,8 @@ export interface AssetUnitRecord {
   serialNumber?: string;
   serialNumberNormalized?: string;
   condition: string;
+  entryDate?: Date;
+  vendorName?: string;
   status: AssetUnitStatus;
   createdBy: Types.ObjectId;
   createdAt: Date;
@@ -37,9 +39,20 @@ const AssetUnitSchema = new Schema<AssetUnitRecord>(
     serialNumber: { type: String, trim: true, minlength: 1, maxlength: 120 },
     serialNumberNormalized: { type: String, trim: true, uppercase: true, maxlength: 120 },
     condition: { type: String, required: true, trim: true, minlength: 1, maxlength: 120 },
+    entryDate: { type: Date },
+    vendorName: { type: String, trim: true, maxlength: 120 },
     status: {
       type: String,
-      enum: ['AVAILABLE', 'ISSUED', 'OUTSIDE', 'RETURNED', 'UNDER_REPAIR', 'DAMAGED', 'LOST', 'SCRAPPED'],
+      enum: [
+        'AVAILABLE',
+        'ISSUED',
+        'OUTSIDE',
+        'RETURNED',
+        'UNDER_REPAIR',
+        'DAMAGED',
+        'LOST',
+        'SCRAPPED',
+      ],
       required: true,
       default: 'AVAILABLE',
     },

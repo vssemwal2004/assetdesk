@@ -12,6 +12,7 @@ import { InventoryCounterModel } from '../modules/inventory/inventory-counter.mo
 import { InventoryImportModel } from '../modules/inventory/inventory-import.model.js';
 import { InventoryModelModel } from '../modules/inventory/inventory-model.model.js';
 import { MaterialModel } from '../modules/inventory/material.model.js';
+import { InventoryQuantityEntryModel } from '../modules/inventory/inventory-quantity-entry.model.js';
 import { IssueSequenceModel } from '../modules/issues/issue-sequence.model.js';
 import { IssueModel } from '../modules/issues/issue.model.js';
 import { EmailJobModel } from '../modules/notifications/email-job.model.js';
@@ -41,6 +42,7 @@ const indexedModels: Array<{
   InventoryImportModel,
   InventoryModelModel,
   MaterialModel,
+  InventoryQuantityEntryModel,
   AssetUnitModel,
   ReceiverSequenceModel,
   ReceiverModel,

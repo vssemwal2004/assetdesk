@@ -27,6 +27,7 @@ import {
 } from '../pages/cartridges/cartridge-operation-page';
 import {
   CreateGatePassPage,
+  GatePassDatabasePage,
   GatePassDetailPage,
   GatePassesPage,
   GatePassPrintPage,
@@ -58,12 +59,36 @@ const InventoryPage = lazy(() =>
     default: module.InventoryPage,
   })),
 );
-const InventoryGatePassOutPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.InventoryGatePassOutPage })));
-const InventoryGatePassInPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.InventoryGatePassInPage })));
-const InventoryGatePassDataPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.InventoryGatePassDataPage })));
-const CreateInventoryGatePassPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.CreateInventoryGatePassPage })));
-const InventoryGatePassDetailPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.InventoryGatePassDetailPage })));
-const InventoryGatePassPrintPage = lazy(() => import('../pages/inventory/inventory-gate-pass-pages').then(m => ({ default: m.InventoryGatePassPrintPage })));
+const InventoryGatePassOutPage = lazy(() =>
+  import('../pages/inventory/inventory-gate-pass-pages').then((m) => ({
+    default: m.InventoryGatePassOutPage,
+  })),
+);
+const InventoryGatePassInPage = lazy(() =>
+  import('../pages/inventory/inventory-gate-pass-pages').then((m) => ({
+    default: m.InventoryGatePassInPage,
+  })),
+);
+const InventoryGatePassDataPage = lazy(() =>
+  import('../pages/inventory/inventory-gate-pass-pages').then((m) => ({
+    default: m.InventoryGatePassDataPage,
+  })),
+);
+const CreateInventoryGatePassPage = lazy(() =>
+  import('../pages/inventory/inventory-gate-pass-pages').then((m) => ({
+    default: m.CreateInventoryGatePassPage,
+  })),
+);
+const InventoryGatePassDetailPage = lazy(() =>
+  import('../pages/inventory/inventory-gate-pass-pages').then((m) => ({
+    default: m.InventoryGatePassDetailPage,
+  })),
+);
+const InventoryGatePassPrintPage = lazy(() =>
+  import('../pages/inventory/inventory-gate-pass-pages').then((m) => ({
+    default: m.InventoryGatePassPrintPage,
+  })),
+);
 const LowStockPage = lazy(() =>
   import('../pages/inventory/low-stock-page').then((module) => ({ default: module.LowStockPage })),
 );
@@ -191,6 +216,10 @@ export function App() {
                   <Route element={<CartridgeActivityPage />} path="/cartridges/activity" />
                   <Route element={<GatePassesPage />} path="/cartridges/gate-passes" />
                   <Route
+                    element={<GatePassDatabasePage />}
+                    path="/cartridges/gate-passes/database"
+                  />
+                  <Route
                     element={<GatePassDetailPage />}
                     path="/cartridges/gate-passes/:gatePassId"
                   />
@@ -208,7 +237,7 @@ export function App() {
                 <Route element={<PermissionRoute permission="CARTRIDGES_RETURN" />}>
                   <Route element={<ReturnCartridgePage />} path="/cartridges/returns/new" />
                 </Route>
-                <Route element={<PermissionRoute permission="CARTRIDGE_QC" />}>
+                <Route element={<PermissionRoute permission="CARTRIDGE_GATE_IN" />}>
                   <Route element={<CartridgeQcPage />} path="/cartridges/gate-in" />
                 </Route>
                 <Route element={<PermissionRoute permission="CARTRIDGE_GATE_PASSES_CREATE" />}>
@@ -269,10 +298,7 @@ export function App() {
                     }
                     path="/activity"
                   />
-                  <Route
-                    element={<LowStockPage />}
-                    path="/inventory/low-stock"
-                  />
+                  <Route element={<LowStockPage />} path="/inventory/low-stock" />
                   <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>
@@ -309,14 +335,26 @@ export function App() {
                 <Route element={<PermissionRoute permission="GATE_PASS_VIEW" />}>
                   <Route element={<InventoryGatePassOutPage />} path="/inventory/gate-passes/out" />
                   <Route element={<InventoryGatePassInPage />} path="/inventory/gate-passes/in" />
-                  <Route element={<InventoryGatePassDataPage />} path="/inventory/gate-passes/data" />
-                  <Route element={<InventoryGatePassDetailPage />} path="/inventory/gate-passes/:gatePassNumber" />
+                  <Route
+                    element={<InventoryGatePassDataPage />}
+                    path="/inventory/gate-passes/data"
+                  />
+                  <Route
+                    element={<InventoryGatePassDetailPage />}
+                    path="/inventory/gate-passes/:gatePassNumber"
+                  />
                 </Route>
                 <Route element={<PermissionRoute permission="GATE_PASS_CREATE" />}>
-                  <Route element={<CreateInventoryGatePassPage />} path="/inventory/gate-passes/out/new" />
+                  <Route
+                    element={<CreateInventoryGatePassPage />}
+                    path="/inventory/gate-passes/out/new"
+                  />
                 </Route>
                 <Route element={<PermissionRoute permission="GATE_PASS_PRINT" />}>
-                  <Route element={<InventoryGatePassPrintPage />} path="/inventory/gate-passes/:gatePassNumber/print" />
+                  <Route
+                    element={<InventoryGatePassPrintPage />}
+                    path="/inventory/gate-passes/:gatePassNumber/print"
+                  />
                 </Route>
                 <Route
                   element={

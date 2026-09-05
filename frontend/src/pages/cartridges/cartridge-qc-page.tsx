@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router';
-import { ArrowRight, CheckCircle2, ClipboardCheck, PackageCheck } from 'lucide-react';
+import { Link } from 'react-router';
+import { ArrowRight, CheckCircle2, ClipboardCheck, Database, PackageCheck, X } from 'lucide-react';
 import {
   AppCard,
   Button,
@@ -10,51 +10,98 @@ import {
   PageHeader,
   TextField,
 } from '../../components/ui';
-import { getGatePasses, recordGateIn, type GatePass } from '../../lib/cartridges-api';
+import {
+  getCartridges,
+  getGatePasses,
+  recordCartridgeQc,
+  recordGateIn,
+  type GatePass,
+} from '../../lib/cartridges-api';
+
+type GateInCondition = 'EMPTY' | 'DEFECTIVE' | 'FILLED_UNUSED' | 'DAMAGED' | 'WRONG_MODEL';
 
 const receivingStatuses = new Set(['VERIFIED', 'GATE_OUT', 'PARTIALLY_RETURNED']);
+const conditionOptions: Array<{ value: GateInCondition; label: string }> = [
+  { value: 'FILLED_UNUSED', label: 'Working · filled and unused' },
+  { value: 'EMPTY', label: 'Empty' },
+  { value: 'DEFECTIVE', label: 'Not working · defective' },
+  { value: 'DAMAGED', label: 'Damaged' },
+  { value: 'WRONG_MODEL', label: 'Wrong model' },
+];
 
 export function CartridgeQcPage() {
   const client = useQueryClient();
-  const navigate = useNavigate();
   const passes = useQuery({
     queryKey: ['cartridge-gate-passes', 'gate-in-queue'],
     queryFn: getGatePasses,
   });
-  const [selectedPassId, setSelectedPassId] = useState('');
+  const qcCartridges = useQuery({
+    queryKey: ['cartridges', { status: 'QC_PENDING', page: 1, pageSize: 500 }],
+    queryFn: () => getCartridges({ status: 'QC_PENDING', page: 1, pageSize: 500 }),
+  });
+  const [selectedPass, setSelectedPass] = useState<GatePass | null>(null);
   const [selectedSerials, setSelectedSerials] = useState<string[]>([]);
+  const [conditions, setConditions] = useState<Record<string, GateInCondition | ''>>({});
   const [remarks, setRemarks] = useState('');
+
   const gateInMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedPassId) throw new Error('Choose a Gate Pass Out record.');
-      return recordGateIn(selectedPassId, selectedSerials, remarks.trim() || undefined);
+      if (!selectedPass) throw new Error('Choose a Gate Pass Out record.');
+      const selectedItems = selectedSerials.map((serialNumber) => {
+        const condition = conditions[serialNumber];
+        if (!condition) throw new Error(`Choose a return condition for ${serialNumber}.`);
+        return { serialNumber, condition };
+      });
+      return recordGateIn(
+        selectedPass._id,
+        selectedSerials,
+        remarks.trim() || undefined,
+        selectedItems,
+      );
     },
     onSuccess: async () => {
-      const completedPassId = selectedPassId;
-      setSelectedPassId('');
-      setSelectedSerials([]);
-      setRemarks('');
-      await client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] });
-      await client.invalidateQueries({ queryKey: ['cartridges'] });
-      await client.invalidateQueries({ queryKey: ['cartridge-dashboard'] });
-      void passes.refetch();
-      navigate(`/cartridges/gate-passes/${completedPassId}`);
+      closeModal();
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
+        client.invalidateQueries({ queryKey: ['cartridges'] }),
+        client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
+      ]);
     },
   });
-  const gateInPasses =
-    passes.data?.data.filter((pass) => receivingStatuses.has(pass.status)) ??
-    [];
-  const qcPendingPasses = passes.data?.data.filter((pass) => pass.status === 'QC_PENDING') ?? [];
-  const selectedPass = gateInPasses.find((pass) => pass._id === selectedPassId) ?? null;
-  const availableSerials = selectedPass ? pendingGateInSerials(selectedPass) : [];
+  const conditionMutation = useMutation({
+    mutationFn: (input: { serialNumber: string; result: GateInCondition }) =>
+      recordCartridgeQc(input),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['cartridges'] }),
+        client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
+        client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
+      ]);
+    },
+  });
+
+  const gateInPasses = passes.data?.data.filter((pass) => receivingStatuses.has(pass.status)) ?? [];
   const totalPendingSerials = gateInPasses.reduce(
     (total, pass) => total + pendingGateInSerials(pass).length,
     0,
   );
+  const selectedConditionCount = selectedSerials.filter((serial) => conditions[serial]).length;
 
-  function selectPass(pass: GatePass) {
-    setSelectedPassId(pass._id);
-    setSelectedSerials(pendingGateInSerials(pass));
+  function openModal(pass: GatePass) {
+    const serials = pendingGateInSerials(pass);
+    setSelectedPass(pass);
+    setSelectedSerials(serials);
+    setConditions(Object.fromEntries(serials.map((serial) => [serial, ''])));
+    setRemarks('');
+    gateInMutation.reset();
+  }
+
+  function closeModal() {
+    setSelectedPass(null);
+    setSelectedSerials([]);
+    setConditions({});
+    setRemarks('');
+    gateInMutation.reset();
   }
 
   function toggleSerial(serialNumber: string, checked: boolean) {
@@ -63,30 +110,39 @@ export function CartridgeQcPage() {
         ? [...new Set([...current, serialNumber])]
         : current.filter((serial) => serial !== serialNumber),
     );
+    if (!checked) {
+      setConditions((current) => ({ ...current, [serialNumber]: '' }));
+    }
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Gate Pass In"
-        description="Receive cartridges that already went out to the vendor, then send them to QC."
+        description="Receive vendor returns and record the condition of every cartridge in one step."
         actions={
-          <Link className="button-secondary" to="/cartridges/gate-passes">
-            Gate Pass Out
-          </Link>
+          <>
+            <Link className="button-secondary" to="/cartridges/gate-passes">
+              Gate Pass Out
+            </Link>
+            <Link className="button-secondary" to="/cartridges/gate-passes/database">
+              <Database size={18} />
+              Database
+            </Link>
+          </>
         }
       />
-      {gateInMutation.isError ? (
-        <ErrorSummary message={(gateInMutation.error as Error).message} />
+      {passes.isError ? <ErrorSummary message="Gate Pass In queue could not be loaded." /> : null}
+      {qcCartridges.isError ? (
+        <ErrorSummary message="Condition queue could not be loaded." />
       ) : null}
       {passes.isPending ? <LoadingPanel label="Loading Gate Pass In queue" /> : null}
-      {passes.isError ? <ErrorSummary message="Gate Pass In queue could not be loaded." /> : null}
       {!passes.isPending && !passes.isError ? (
         <>
           <div className="grid gap-3 md:grid-cols-3">
             <QueueStat
               icon={<PackageCheck size={20} />}
-          label="Ready for Gate In"
+              label="Passes awaiting return"
               value={gateInPasses.length}
             />
             <QueueStat
@@ -96,162 +152,313 @@ export function CartridgeQcPage() {
             />
             <QueueStat
               icon={<CheckCircle2 size={20} />}
-              label="Waiting QC"
-              value={qcPendingPasses.length}
+              label="Needs condition"
+              value={qcCartridges.data?.data.length ?? 0}
             />
           </div>
+
           <AppCard className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-              Ready for Gate In
-                </h2>
-                <p className="text-sm text-[var(--color-text-muted)]">
-                  These Gate Pass Out records are with the vendor now. Select one to record the
-                  returned cartridges.
-                </p>
-              </div>
+            <div>
+              <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
+                Awaiting Gate Pass In
+              </h2>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Select a pass to open the receiving form.
+              </p>
             </div>
-            <div className="grid gap-3">
-              {gateInPasses.length === 0 ? (
-                <p className="rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-sm font-bold text-[var(--color-text-muted)]">
-                  No Gate Pass Out records are ready for Gate In. Passes already received are
-                  listed below under Waiting QC.
-                </p>
-              ) : (
-                gateInPasses.map((pass) => (
+            {gateInPasses.length === 0 ? (
+              <EmptyQueue
+                title="No cartridges are waiting for Gate In"
+                message="New Gate Pass Out records will appear here when they return from the vendor."
+              />
+            ) : (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {gateInPasses.map((pass) => (
                   <button
-                    className={`rounded-[10px] border bg-white p-3 text-left transition hover:border-[var(--color-primary-border)] hover:bg-[var(--color-primary-soft)] ${
-                      selectedPassId === pass._id
-                        ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)]'
-                        : 'border-[var(--color-border)]'
-                    }`}
+                    className="group rounded-[12px] border border-[var(--color-border)] bg-white p-4 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]"
                     key={pass._id}
-                    onClick={() => selectPass(pass)}
+                    onClick={() => openModal(pass)}
                     type="button"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <strong className="text-[var(--color-primary-strong)]">
-                      {pass.gatePassNumber}
-                    </strong>
-                        <span className="rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-primary)]">
-                          {pendingGateInSerials(pass).length} due in
-                        </span>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-extrabold text-[var(--color-primary-strong)]">
+                          {pass.gatePassNumber}
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-[var(--color-text-muted)]">
+                          {pass.vendorName} · {pass.quantity} cartridges
+                        </p>
                       </div>
-                      <span className="inline-flex items-center gap-1 text-xs font-extrabold text-[var(--color-primary)]">
-                    Gate Pass In <ArrowRight size={15} />
+                      <span className="shrink-0 rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-xs font-extrabold text-[var(--color-primary)]">
+                        {pendingGateInSerials(pass).length} due in
                       </span>
                     </div>
-                    <p className="mt-1 text-sm font-semibold text-[var(--color-text-muted)]">
-                      {pass.vendorName} · {pass.quantity} cartridges · Gate out{' '}
-                      {pass.gateOutAt
-                        ? new Date(pass.gateOutAt).toLocaleString('en-IN')
-                        : 'recorded'}
-                    </p>
+                    <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3 text-xs font-bold text-[var(--color-text-muted)]">
+                      <span>Gate Out {formatDate(pass.gateOutAt ?? pass.createdAt)}</span>
+                      <span className="inline-flex items-center gap-1 font-extrabold text-[var(--color-primary)]">
+                        Open Gate In <ArrowRight size={15} />
+                      </span>
+                    </div>
                   </button>
-                ))
-              )}
-            </div>
-          </AppCard>
-          {selectedPass ? (
-            <AppCard className="space-y-4">
-              <div>
-                <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-              Complete Gate Pass In
-                </h2>
-                <p className="text-sm text-[var(--color-text-muted)]">
-                  {selectedPass.gatePassNumber} selected. Tick only the cartridges physically
-                  received.
-                </p>
+                ))}
               </div>
-              <>
-                <div className="grid max-h-72 gap-2 overflow-auto rounded-[8px] border border-[var(--color-border)] p-2 sm:grid-cols-2">
-                  {availableSerials.map((serialNumber) => (
-                    <label
-                      className="flex min-h-11 cursor-pointer items-center gap-3 rounded-[8px] px-3 py-2 text-sm font-bold hover:bg-[var(--color-surface-tint)]"
-                      key={serialNumber}
-                    >
-                      <input
-                        checked={selectedSerials.includes(serialNumber)}
-                        onChange={(event) => toggleSerial(serialNumber, event.target.checked)}
-                        type="checkbox"
-                      />
-                      {serialNumber}
-                    </label>
-                  ))}
-                </div>
-                <TextField
-                  label="Gate In remarks"
-                  optional
-                  placeholder="Received by security, receipt note, or vendor remark"
-                  value={remarks}
-                  onChange={(event) => setRemarks(event.target.value)}
-                />
-                <div className="flex justify-end">
-                  <Button
-                    disabled={selectedSerials.length === 0}
-                    loading={gateInMutation.isPending}
-                    onClick={() => gateInMutation.mutate()}
-                  >
-                    Save Gate In
-                  </Button>
-                </div>
-              </>
-            </AppCard>
-          ) : null}
-          {qcPendingPasses.length > 0 ? (
+            )}
+          </AppCard>
+
+          {qcCartridges.data?.data.length ? (
             <AppCard className="space-y-4">
               <div>
                 <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-                  Waiting QC
+                  Existing condition queue
                 </h2>
-                <p className="text-sm text-[var(--color-text-muted)]">
-                  These Gate Passes are already received. Complete cartridge QC from the pass
-                  details.
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  These older returns were received before condition selection was added.
                 </p>
               </div>
               <div className="grid gap-3">
-                {qcPendingPasses.map((pass) => (
-                  <Link
-                    className="rounded-[10px] border border-[var(--color-border)] bg-white p-3 transition hover:border-[var(--color-primary-border)] hover:bg-[var(--color-surface-tint)]"
-                    key={pass._id}
-                    to={`/cartridges/gate-passes/${pass._id}`}
+                {qcCartridges.data?.data.map((cartridge) => (
+                  <div
+                    className="flex flex-col gap-3 rounded-[10px] border border-[var(--color-border)] p-3 sm:flex-row sm:items-center sm:justify-between"
+                    key={cartridge.id}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <strong className="text-[var(--color-primary-strong)]">
-                        {pass.gatePassNumber}
-                      </strong>
-                      <span className="rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-primary)]">
-                        QC pending
-                      </span>
+                    <div>
+                      <p className="font-extrabold text-[var(--color-primary-strong)]">
+                        {cartridge.serialNumber}
+                      </p>
+                      <p className="mt-1 text-xs font-bold text-[var(--color-text-muted)]">
+                        {cartridge.model} · Condition pending
+                      </p>
                     </div>
-                    <p className="mt-1 text-sm font-semibold text-[var(--color-text-muted)]">
-                      {pass.vendorName} · {pass.quantity} cartridges
-                    </p>
-                  </Link>
+                    <select
+                      aria-label={`Condition for ${cartridge.serialNumber}`}
+                      className="field-input sm:max-w-[240px]"
+                      disabled={conditionMutation.isPending}
+                      defaultValue=""
+                      onChange={(event) => {
+                        const result = event.target.value as GateInCondition;
+                        if (result)
+                          conditionMutation.mutate({
+                            serialNumber: cartridge.serialNumber,
+                            result,
+                          });
+                      }}
+                    >
+                      <option value="">Choose condition…</option>
+                      {conditionOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 ))}
               </div>
             </AppCard>
           ) : null}
         </>
       ) : null}
+
+      {selectedPass ? (
+        <GateInModal
+          pass={selectedPass}
+          selectedSerials={selectedSerials}
+          conditions={conditions}
+          remarks={remarks}
+          selectedConditionCount={selectedConditionCount}
+          loading={gateInMutation.isPending}
+          error={gateInMutation.isError ? (gateInMutation.error as Error).message : null}
+          onClose={closeModal}
+          onRemarksChange={setRemarks}
+          onSerialToggle={toggleSerial}
+          onConditionChange={(serialNumber, condition) =>
+            setConditions((current) => ({ ...current, [serialNumber]: condition }))
+          }
+          onSubmit={() => gateInMutation.mutate()}
+        />
+      ) : null}
     </div>
   );
 }
 
-function QueueStat({
-  icon,
-  label,
-  value,
+function GateInModal({
+  pass,
+  selectedSerials,
+  conditions,
+  remarks,
+  selectedConditionCount,
+  loading,
+  error,
+  onClose,
+  onRemarksChange,
+  onSerialToggle,
+  onConditionChange,
+  onSubmit,
 }: {
-  icon: ReactNode;
-  label: string;
-  value: number;
+  pass: GatePass;
+  selectedSerials: string[];
+  conditions: Record<string, GateInCondition | ''>;
+  remarks: string;
+  selectedConditionCount: number;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+  onRemarksChange: (value: string) => void;
+  onSerialToggle: (serialNumber: string, checked: boolean) => void;
+  onConditionChange: (serialNumber: string, condition: GateInCondition | '') => void;
+  onSubmit: () => void;
 }) {
+  const pendingSerials = pendingGateInSerials(pass);
+  const canSubmit = selectedSerials.length > 0 && selectedConditionCount === selectedSerials.length;
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/45 px-4 py-6 sm:py-10">
+      <div
+        aria-labelledby="gate-in-modal-title"
+        aria-modal="true"
+        className="mx-auto flex w-full max-w-2xl flex-col overflow-hidden rounded-[16px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-overlay)]"
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-5 py-4 sm:px-6">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+              Gate Pass In
+            </p>
+            <h2
+              className="mt-1 text-xl font-extrabold text-[var(--color-primary-strong)]"
+              id="gate-in-modal-title"
+            >
+              Receive {pass.gatePassNumber}
+            </h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              Choose the cartridges received and their current return condition.
+            </p>
+          </div>
+          <button
+            aria-label="Close Gate Pass In"
+            className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--color-text-muted)] hover:bg-[var(--color-surface-tint)] hover:text-[var(--color-primary)]"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={19} />
+          </button>
+        </div>
+
+        <div className="space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
+          <div className="grid gap-3 rounded-[10px] bg-[var(--color-surface-tint)] p-3 text-sm sm:grid-cols-3">
+            <ModalInfo label="Vendor" value={pass.vendorName} />
+            <ModalInfo label="Cartridges" value={`${pass.quantity} on pass`} />
+            <ModalInfo label="Gate Out" value={formatDate(pass.gateOutAt ?? pass.createdAt)} />
+          </div>
+          {error ? <ErrorSummary message={error} /> : null}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h3 className="font-extrabold text-[var(--color-primary-strong)]">
+                  Returned cartridges
+                </h3>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  A condition is required for every selected item.
+                </p>
+              </div>
+              <span className="text-xs font-extrabold text-[var(--color-text-muted)]">
+                {selectedSerials.length} of {pendingSerials.length} selected
+              </span>
+            </div>
+            <div className="grid gap-2">
+              {pendingSerials.map((serialNumber) => {
+                const selected = selectedSerials.includes(serialNumber);
+                return (
+                  <div
+                    className={`rounded-[10px] border p-3 transition ${
+                      selected
+                        ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)]'
+                        : 'border-[var(--color-border)] bg-white'
+                    }`}
+                    key={serialNumber}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <label className="flex min-w-0 cursor-pointer items-center gap-3">
+                        <input
+                          checked={selected}
+                          onChange={(event) => onSerialToggle(serialNumber, event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate font-extrabold text-[var(--color-primary-strong)]">
+                            {serialNumber}
+                          </span>
+                          <span className="mt-0.5 block text-xs font-bold text-[var(--color-text-muted)]">
+                            Returned from {pass.vendorName}
+                          </span>
+                        </span>
+                      </label>
+                      <select
+                        aria-label={`Return condition for ${serialNumber}`}
+                        className="field-input sm:w-[250px]"
+                        disabled={!selected}
+                        value={conditions[serialNumber] ?? ''}
+                        onChange={(event) =>
+                          onConditionChange(
+                            serialNumber,
+                            event.target.value as GateInCondition | '',
+                          )
+                        }
+                      >
+                        <option value="">Select condition</option>
+                        {conditionOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <TextField
+            label="Gate In remarks"
+            optional
+            placeholder="Security note or vendor remark"
+            value={remarks}
+            onChange={(event) => onRemarksChange(event.target.value)}
+          />
+        </div>
+        <div className="flex flex-col-reverse gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface-tint)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <p className="text-xs font-bold text-[var(--color-text-muted)]">
+            {selectedConditionCount === selectedSerials.length && selectedSerials.length > 0
+              ? 'Ready to record Gate In.'
+              : 'Select a condition for each returned cartridge.'}
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button onClick={onClose} type="button" variant="secondary">
+              Cancel
+            </Button>
+            <Button disabled={!canSubmit} loading={loading} onClick={onSubmit} type="button">
+              Save Gate Pass In
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModalInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+        {label}
+      </p>
+      <p className="mt-1 truncate font-extrabold text-[var(--color-primary-strong)]">{value}</p>
+    </div>
+  );
+}
+
+function QueueStat({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
   return (
     <AppCard className="flex items-center gap-3">
-      <span className="grid size-10 shrink-0 place-items-center rounded-[8px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+      <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
         {icon}
       </span>
       <span>
@@ -264,6 +471,18 @@ function QueueStat({
   );
 }
 
+function EmptyQueue({ title, message }: { title: string; message: string }) {
+  return (
+    <div className="grid justify-items-center gap-2 rounded-[12px] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-tint)] p-8 text-center">
+      <span className="grid size-12 place-items-center rounded-full bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+        <PackageCheck size={23} />
+      </span>
+      <h3 className="font-extrabold text-[var(--color-primary-strong)]">{title}</h3>
+      <p className="max-w-md text-sm text-[var(--color-text-muted)]">{message}</p>
+    </div>
+  );
+}
+
 function pendingGateInSerials(pass: GatePass): string[] {
   const received = new Set(
     pass.gateInEvents.flatMap((event) =>
@@ -273,4 +492,8 @@ function pendingGateInSerials(pass: GatePass): string[] {
   return pass.cartridgeSerialNumbers.filter(
     (serialNumber) => !received.has(serialNumber.toUpperCase()),
   );
+}
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 }

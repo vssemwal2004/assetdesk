@@ -169,22 +169,16 @@ const cartridgeNavigation: NavigationItem[] = [
     permission: 'CARTRIDGE_GATE_PASSES_VIEW',
   },
   {
-    label: 'Gate Pass Out data',
-    to: '/cartridges/activity?type=GATE_OUT',
-    icon: FileClock,
-    permission: 'CARTRIDGES_VIEW',
-  },
-  {
     label: 'Gate Pass In',
     to: '/cartridges/gate-in',
     icon: ListChecks,
-    permission: 'CARTRIDGE_QC',
+    permission: 'CARTRIDGE_GATE_IN',
   },
   {
-    label: 'Gate Pass In data',
-    to: '/cartridges/activity?type=GATE_IN',
-    icon: FileClock,
-    permission: 'CARTRIDGES_VIEW',
+    label: 'Gate Pass Database',
+    to: '/cartridges/gate-passes/database',
+    icon: FileBarChart,
+    permission: 'CARTRIDGE_GATE_PASSES_VIEW',
   },
   {
     label: 'Activity log',
@@ -222,7 +216,7 @@ const cartridgeNavigationSections: Array<{
   {
     label: 'Gate Pass',
     icon: ReceiptText,
-    items: cartridgeNavigation.slice(7, 11),
+    items: cartridgeNavigation.slice(7, 10),
     activePath: (pathname, search) =>
       pathname.startsWith('/cartridges/gate-passes') ||
       pathname === '/cartridges/gate-in' ||
@@ -232,7 +226,7 @@ const cartridgeNavigationSections: Array<{
   {
     label: 'Logs',
     icon: FileClock,
-    items: cartridgeNavigation.slice(11),
+    items: cartridgeNavigation.slice(10),
     activePath: (pathname, search) => pathname === '/cartridges/activity' && !search,
   },
 ];
@@ -265,6 +259,7 @@ function pageTitle(pathname: string): string {
   if (pathname === '/cartridges/returns/new') return 'Return Cartridge';
   if (pathname === '/cartridges/gate-passes/new') return 'Create Gate Pass Out';
   if (pathname === '/cartridges/gate-in') return 'Gate Pass In';
+  if (pathname === '/cartridges/gate-passes/database') return 'Gate Pass Database';
   if (pathname.includes('/cartridges/gate-passes/')) return 'Gate Pass';
   if (pathname === '/cartridges/gate-passes') return 'Gate Pass Out';
   if (pathname.startsWith('/cartridges/')) return 'Cartridge Details';

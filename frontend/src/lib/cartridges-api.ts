@@ -106,10 +106,22 @@ export async function gatePassAction(
     json: json ?? {},
   });
 }
-export async function recordGateIn(id: string, serials: string[], remarks?: string) {
+export async function recordGateIn(
+  id: string,
+  serials: string[],
+  remarks?: string,
+  conditions?: Array<{
+    serialNumber: string;
+    condition: 'EMPTY' | 'DEFECTIVE' | 'FILLED_UNUSED' | 'DAMAGED' | 'WRONG_MODEL';
+  }>,
+) {
   return apiRequest<{ data: GatePass }>(`/api/v1/cartridges/gate-passes/${id}/gate-in`, {
     method: 'POST',
-    json: { cartridgeSerialNumbers: serials, ...(remarks ? { remarks } : {}) },
+    json: {
+      cartridgeSerialNumbers: serials,
+      ...(remarks ? { remarks } : {}),
+      ...(conditions ? { conditions } : {}),
+    },
   });
 }
 export interface GatePass {
@@ -125,7 +137,16 @@ export interface GatePass {
   verifiedByName?: string;
   gateOutAt?: string;
   gateOutByName?: string;
-  gateInEvents: Array<{ at: string; byName: string; serialNumbers: string[]; remarks?: string }>;
+  gateInEvents: Array<{
+    at: string;
+    byName: string;
+    serialNumbers: string[];
+    conditions?: Array<{
+      serialNumber: string;
+      condition: 'EMPTY' | 'DEFECTIVE' | 'FILLED_UNUSED' | 'DAMAGED' | 'WRONG_MODEL';
+    }>;
+    remarks?: string;
+  }>;
   createdAt: string;
   remarks?: string;
 }

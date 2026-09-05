@@ -58,6 +58,7 @@ import {
 } from '../../lib/inventory-api';
 import { isApiError } from '../../lib/api-client';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
+import { toIstDateTimeInput } from '../../lib/date-time';
 import { inventoryStatusLabel, normalizeInventoryStatus } from '../../lib/inventory-status';
 import {
   materialGroupKey,
@@ -817,24 +818,61 @@ export function InventoryPage() {
           ) : (
             <>
               <div className="space-y-3 min-[840px]:hidden">
-                {materialGroups.map((group) => group.category.trim().toLowerCase() === 'consumable' ? group.materials.map((material) => (
-                  <MaterialCard
-                    canAdjustQuantity={canAdjustQuantity}
-                    canDelete={canDeleteInventory}
-                    canEdit={canEditInventory}
-                    key={material.materialCode}
-                    material={material}
-                    onDelete={confirmDelete}
-                    onAdjustQuantity={setQuantityTarget}
-                  />
-                )) : (
-                  <details className="group space-y-2" key={materialGroupKey(group.category, group.trackingMode)}>
-                    <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
-                      <div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><ChevronDown className="text-[var(--color-primary)] transition-transform group-open:rotate-180" size={18} /><div><h2 className="font-extrabold text-[var(--color-primary-strong)]">{group.category}</h2><p className="text-xs font-semibold text-[var(--color-text-muted)]">{humanizeCatalogValue(group.trackingMode)} · {group.materials.length} material{group.materials.length === 1 ? '' : 's'}</p></div></div><p className="text-right text-xs font-bold text-[var(--color-text-muted)]">{group.availableQuantity} / {group.totalQuantity} available</p></div>
-                    </summary>
-                    {group.materials.map((material) => <MaterialCard canAdjustQuantity={canAdjustQuantity} canDelete={canDeleteInventory} canEdit={canEditInventory} key={material.materialCode} material={material} onDelete={confirmDelete} onAdjustQuantity={setQuantityTarget} />)}
-                  </details>
-                ))}
+                {materialGroups.map((group) =>
+                  group.category.trim().toLowerCase() === 'consumable' ? (
+                    group.materials.map((material) => (
+                      <MaterialCard
+                        canAdjustQuantity={canAdjustQuantity}
+                        canDelete={canDeleteInventory}
+                        canEdit={canEditInventory}
+                        key={material.materialCode}
+                        material={material}
+                        onDelete={confirmDelete}
+                        onAdjustQuantity={setQuantityTarget}
+                      />
+                    ))
+                  ) : (
+                    <details
+                      className="group space-y-2"
+                      key={materialGroupKey(group.category, group.trackingMode)}
+                    >
+                      <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <ChevronDown
+                              className="text-[var(--color-primary)] transition-transform group-open:rotate-180"
+                              size={18}
+                            />
+                            <div>
+                              <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+                                {group.category}
+                              </h2>
+                              <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                                {humanizeCatalogValue(group.trackingMode)} ·{' '}
+                                {group.materials.length} material
+                                {group.materials.length === 1 ? '' : 's'}
+                              </p>
+                            </div>
+                          </div>
+                          <p className="text-right text-xs font-bold text-[var(--color-text-muted)]">
+                            {group.availableQuantity} / {group.totalQuantity} available
+                          </p>
+                        </div>
+                      </summary>
+                      {group.materials.map((material) => (
+                        <MaterialCard
+                          canAdjustQuantity={canAdjustQuantity}
+                          canDelete={canDeleteInventory}
+                          canEdit={canEditInventory}
+                          key={material.materialCode}
+                          material={material}
+                          onDelete={confirmDelete}
+                          onAdjustQuantity={setQuantityTarget}
+                        />
+                      ))}
+                    </details>
+                  ),
+                )}
               </div>
               <MaterialTable
                 canAdd={canAddInventory}
@@ -1237,6 +1275,8 @@ function InventoryQuantityDialog({
   const [direction, setDirection] = useState<QuantityAdjustmentDirection>('INCREASE');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
+  const [entryDate, setEntryDate] = useState(toIstDateTimeInput(new Date()).slice(0, 10));
+  const [vendorName, setVendorName] = useState(material.vendorName ?? '');
   const [message, setMessage] = useState<string | null>(null);
   const maximum = quantityAdjustmentMaximum(material, direction);
   const parsedAmount = Number(amount);
@@ -1245,8 +1285,12 @@ function InventoryQuantityDialog({
       ? material.totalQuantity + signedQuantityDelta(direction, amount)
       : material.totalQuantity;
   const mutation = useMutation({
-    mutationFn: (input: { quantityDelta: number; reason: string }) =>
-      adjustMaterialQuantity(material.materialCode, input),
+    mutationFn: (input: {
+      quantityDelta: number;
+      reason: string;
+      entryDate?: string | undefined;
+      vendorName?: string | undefined;
+    }) => adjustMaterialQuantity(material.materialCode, input),
     onSuccess: () => void onSaved(),
     onError: (error) =>
       setMessage(isApiError(error) ? error.message : 'The quantity could not be updated.'),
@@ -1270,6 +1314,8 @@ function InventoryQuantityDialog({
     const parsed = AdjustQuantityRequestSchema.safeParse({
       quantityDelta: signedQuantityDelta(direction, amount),
       reason,
+      entryDate,
+      ...(vendorName.trim() ? { vendorName: vendorName.trim() } : {}),
     });
     if (!parsed.success) {
       setMessage(parsed.error.issues[0]?.message ?? 'Check the quantity change.');
@@ -1337,6 +1383,22 @@ function InventoryQuantityDialog({
             type="number"
             value={amount}
           />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField
+              label="Entry date"
+              onChange={(event) => setEntryDate(event.target.value)}
+              required
+              type="date"
+              value={entryDate}
+            />
+            <TextField
+              label="Vendor name"
+              onChange={(event) => setVendorName(event.target.value)}
+              optional
+              placeholder="Supplier or vendor"
+              value={vendorName}
+            />
+          </div>
           <TextField
             label="Reason"
             maxLength={500}
@@ -1820,11 +1882,37 @@ function MaterialTable({
           </tr>
         </thead>
         <tbody>
-          {groups.map((group) => group.category.trim().toLowerCase() === 'consumable' ? group.materials.map((material) => (
-            <MaterialVariantRows canDelete={canDelete} canAdjustQuantity={canAdjustQuantity} canEdit={canEdit} key={material.materialCode} material={material} onDelete={onDelete} onAdjustQuantity={onAdjustQuantity} onView={onView} />
-          )) : (
-            <GroupedMaterialRows canAdd={canAdd} canDelete={canDelete} canAdjustQuantity={canAdjustQuantity} canEdit={canEdit} group={group} key={materialGroupKey(group.category, group.trackingMode)} onDelete={onDelete} onAdjustQuantity={onAdjustQuantity} onAddCategory={onAddCategory} onView={onView} {...(onMergeCategory ? { onMergeCategory } : {})} {...(onModelCrud ? { onModelCrud } : {})} />
-          ))}
+          {groups.map((group) =>
+            group.category.trim().toLowerCase() === 'consumable' ? (
+              group.materials.map((material) => (
+                <MaterialVariantRows
+                  canDelete={canDelete}
+                  canAdjustQuantity={canAdjustQuantity}
+                  canEdit={canEdit}
+                  key={material.materialCode}
+                  material={material}
+                  onDelete={onDelete}
+                  onAdjustQuantity={onAdjustQuantity}
+                  onView={onView}
+                />
+              ))
+            ) : (
+              <GroupedMaterialRows
+                canAdd={canAdd}
+                canDelete={canDelete}
+                canAdjustQuantity={canAdjustQuantity}
+                canEdit={canEdit}
+                group={group}
+                key={materialGroupKey(group.category, group.trackingMode)}
+                onDelete={onDelete}
+                onAdjustQuantity={onAdjustQuantity}
+                onAddCategory={onAddCategory}
+                onView={onView}
+                {...(onMergeCategory ? { onMergeCategory } : {})}
+                {...(onModelCrud ? { onModelCrud } : {})}
+              />
+            ),
+          )}
         </tbody>
       </table>
     </div>
@@ -2135,7 +2223,10 @@ function MaterialVariantRows({
             />
             <span className="min-w-0">
               <span className="block truncate text-sm font-bold text-[var(--color-text-strong)]">
-                {material.typeModelName || material.name || material.configuration || 'Standard configuration'}
+                {material.typeModelName ||
+                  material.name ||
+                  material.configuration ||
+                  'Standard configuration'}
               </span>
               <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
                 {material.materialCode} ·{' '}

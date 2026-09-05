@@ -17,7 +17,13 @@ export interface GatePassRecord {
   verifiedAt?: Date;
   gateOutAt?: Date;
   gateOutByName?: string;
-  gateInEvents: Array<{ at: Date; byName: string; serialNumbers: string[]; remarks?: string }>;
+  gateInEvents: Array<{
+    at: Date;
+    byName: string;
+    serialNumbers: string[];
+    conditions?: Array<{ serialNumber: string; condition: string }>;
+    remarks?: string;
+  }>;
   expectedReturnDate?: Date;
   remarks?: string;
   createdAt: Date;
@@ -28,6 +34,22 @@ const GateInEventSchema = new Schema(
     at: { type: Date, required: true },
     byName: { type: String, required: true },
     serialNumbers: { type: [String], required: true },
+    conditions: {
+      type: [
+        new Schema(
+          {
+            serialNumber: { type: String, required: true },
+            condition: {
+              type: String,
+              enum: ['EMPTY', 'DEFECTIVE', 'FILLED_UNUSED', 'DAMAGED', 'WRONG_MODEL'],
+              required: true,
+            },
+          },
+          { _id: false },
+        ),
+      ],
+      required: false,
+    },
     remarks: String,
   },
   { _id: false },
