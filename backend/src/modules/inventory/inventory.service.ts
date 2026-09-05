@@ -596,8 +596,7 @@ export function buildAssetUnitListFilter(input: {
   status?: AssetUnitStatus;
 }): Record<string, unknown> {
   const filter: Record<string, unknown> = { materialId: input.materialId };
-  if (input.role === 'WORKER') filter.status = 'AVAILABLE';
-  else if (input.status) filter.status = input.status;
+  if (input.status) filter.status = input.status;
   if (input.search) {
     const search = new RegExp(escapeSearchRegex(input.search), 'i');
     filter.$or = [{ assetTag: search }, { serialNumber: search }, { condition: search }];

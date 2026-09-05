@@ -16,6 +16,7 @@ import { Link, useSearchParams } from 'react-router';
 import type {
   AssignmentType,
   AuthUser,
+  IssueLine,
   IssuePeriod,
   IssueReturnState,
   IssueStatus,
@@ -36,7 +37,7 @@ import {
 } from '../../components/ui';
 import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import { isApiError } from '../../lib/api-client';
-import { deleteIssue, getIssues, updateIssue } from '../../lib/issues-api';
+import { deleteIssue, getIssue, getIssues, updateIssue } from '../../lib/issues-api';
 import { getAssetDetails } from '../../lib/inventory-api';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
 
@@ -79,8 +80,10 @@ export function IssuesPage() {
   const period = issuePeriod(parameters.get('period') ?? '');
   const returnState = issueReturnState(parameters.get('returnState') ?? '');
   const location = parameters.get('location') ?? '';
-  const trackingMode = parameters.get('trackingMode') === 'SERIALIZED' || parameters.get('trackingMode') === 'QUANTITY'
-    ? (parameters.get('trackingMode') as 'SERIALIZED' | 'QUANTITY') : '';
+  const trackingMode =
+    parameters.get('trackingMode') === 'SERIALIZED' || parameters.get('trackingMode') === 'QUANTITY'
+      ? (parameters.get('trackingMode') as 'SERIALIZED' | 'QUANTITY')
+      : '';
   const category = parameters.get('category') ?? '';
   const issueAssignmentType =
     assignmentType(parameters.get('assignmentType') ?? '') ??
@@ -96,7 +99,17 @@ export function IssuesPage() {
   const query = useQuery({
     queryKey: [
       'issues',
-      { page, search, status, period, returnState, assignmentType: issueAssignmentType, location, trackingMode, category },
+      {
+        page,
+        search,
+        status,
+        period,
+        returnState,
+        assignmentType: issueAssignmentType,
+        location,
+        trackingMode,
+        category,
+      },
     ],
     queryFn: ({ signal }) =>
       getIssues(
@@ -129,7 +142,16 @@ export function IssuesPage() {
   }
 
   const issues = query.data?.data ?? [];
-  const filtered = Boolean(search || status || period || returnState || issueAssignmentType || location || trackingMode || category);
+  const filtered = Boolean(
+    search ||
+    status ||
+    period ||
+    returnState ||
+    issueAssignmentType ||
+    location ||
+    trackingMode ||
+    category,
+  );
   const admin = user?.role === 'ADMIN';
   const canCreateIssue = hasPermission(user, 'ASSIGNMENTS_CREATE');
   const deleteMutation = useMutation({
@@ -195,9 +217,27 @@ export function IssuesPage() {
           />
           <FilterPopover
             panelClassName="w-[min(94vw,620px)]"
-            activeCount={[status, period, returnState, issueAssignmentType, location, trackingMode, category].filter(Boolean).length}
+            activeCount={
+              [
+                status,
+                period,
+                returnState,
+                issueAssignmentType,
+                location,
+                trackingMode,
+                category,
+              ].filter(Boolean).length
+            }
             onClear={() =>
-              updateParameters({ status: '', period: '', returnState: '', assignmentType: '', location: '', trackingMode: '', category: '' })
+              updateParameters({
+                status: '',
+                period: '',
+                returnState: '',
+                assignmentType: '',
+                location: '',
+                trackingMode: '',
+                category: '',
+              })
             }
           >
             <FilterField label="Issue status">
@@ -261,18 +301,39 @@ export function IssuesPage() {
               </select>
             </FilterField>
             <FilterField label="Asset type">
-              <select className="field-input" onChange={(event) => updateParameters({ trackingMode: event.target.value, category: '' })} value={trackingMode}>
+              <select
+                className="field-input"
+                onChange={(event) =>
+                  updateParameters({ trackingMode: event.target.value, category: '' })
+                }
+                value={trackingMode}
+              >
                 <option value="">All types</option>
                 <option value="SERIALIZED">Asset</option>
                 <option value="QUANTITY">Consumable</option>
               </select>
             </FilterField>
             <FilterField label="Category">
-              <select className="field-input" disabled={!trackingMode} onChange={(event) => updateParameters({ category: event.target.value })} value={trackingMode ? category : ''}>
-                <option value="">{trackingMode ? 'All categories' : 'Select asset type first'}</option>
-                {catalogQuery.data?.filter((detail) => detail.kind === (trackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE')).map((detail) => (
-                  <option key={detail.id} value={detail.name}>{detail.name}</option>
-                ))}
+              <select
+                className="field-input"
+                disabled={!trackingMode}
+                onChange={(event) => updateParameters({ category: event.target.value })}
+                value={trackingMode ? category : ''}
+              >
+                <option value="">
+                  {trackingMode ? 'All categories' : 'Select asset type first'}
+                </option>
+                {catalogQuery.data
+                  ?.filter(
+                    (detail) =>
+                      detail.kind ===
+                      (trackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE'),
+                  )
+                  .map((detail) => (
+                    <option key={detail.id} value={detail.name}>
+                      {detail.name}
+                    </option>
+                  ))}
               </select>
             </FilterField>
           </FilterPopover>
@@ -723,7 +784,7 @@ function Dialog({
   return (
     <dialog
       aria-label={label}
-      className="w-[min(92vw,600px)] rounded-[18px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
+      className="m-auto w-[min(94vw,1040px)] rounded-[20px] border border-[var(--color-border)] bg-white p-0 text-[var(--color-text)] shadow-[var(--shadow-overlay)] backdrop:bg-slate-950/40"
       onCancel={onClose}
       onClose={onClose}
       ref={reference}
@@ -744,6 +805,90 @@ function DetailItem({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+function IssueMaterialDetail({ line }: { line: IssueLine }) {
+  const unitLabel = line.material.unitLabel ?? 'unit';
+  return (
+    <article className="overflow-hidden rounded-[14px] border border-[var(--color-border)] bg-white">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-tint)] p-4">
+        <div>
+          <h3 className="font-extrabold text-[var(--color-text-strong)]">{line.material.name}</h3>
+          <p className="mt-1 text-xs font-bold text-[var(--color-primary)]">
+            {line.material.materialCode} · {line.material.category}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <CatalogBadge value={line.material.trackingMode} />
+          <CatalogBadge value={line.material.returnPolicy} />
+        </div>
+      </div>
+      <div className="grid gap-3 p-4 sm:grid-cols-3">
+        <DetailItem
+          label="Total issued"
+          value={`${line.issuedQuantity} ${unitLabel}${line.issuedQuantity === 1 ? '' : 's'}`}
+        />
+        <DetailItem label="Currently issued" value={line.outstandingQuantity} />
+        <DetailItem label="Returned" value={line.issuedQuantity - line.outstandingQuantity} />
+      </div>
+      <dl className="grid gap-x-6 gap-y-3 px-4 pb-4 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="font-bold text-[var(--color-text-muted)]">Store</dt>
+          <dd className="mt-1 font-semibold text-[var(--color-text-strong)]">
+            {line.material.store ?? 'Not set'}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-bold text-[var(--color-text-muted)]">Description</dt>
+          <dd className="mt-1 font-semibold text-[var(--color-text-strong)]">
+            {line.material.description ?? 'Not provided'}
+          </dd>
+        </div>
+      </dl>
+      {line.assets.length ? (
+        <div className="overflow-x-auto border-t border-[var(--color-border)]">
+          <table className="w-full min-w-[650px] border-collapse text-left text-sm">
+            <thead className="bg-white text-xs text-[var(--color-text-muted)]">
+              <tr>
+                <th className="px-4 py-3" scope="col">
+                  Asset ID
+                </th>
+                <th className="px-4 py-3" scope="col">
+                  Serial number
+                </th>
+                <th className="px-4 py-3" scope="col">
+                  Condition
+                </th>
+                <th className="px-4 py-3" scope="col">
+                  Current state
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {line.assets.map((asset) => (
+                <tr className="border-t border-[var(--color-border)]" key={asset.assetTag}>
+                  <td className="px-4 py-3 font-bold text-[var(--color-text-strong)]">
+                    {asset.assetTag}
+                  </td>
+                  <td className="px-4 py-3 text-[var(--color-text-muted)]">
+                    {asset.serialNumber ?? 'NA'}
+                  </td>
+                  <td className="px-4 py-3 text-[var(--color-text-muted)]">
+                    {asset.conditionAtIssue}
+                  </td>
+                  <td className="px-4 py-3">
+                    <CatalogBadge
+                      value={asset.outstanding ? 'ISSUED' : (asset.returnDisposition ?? 'RETURNED')}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 function IssueQuickViewDialog({
   admin,
   user,
@@ -759,14 +904,14 @@ function IssueQuickViewDialog({
   onDelete: (issue: IssueSummary) => void;
   onExtend: (issue: IssueSummary) => void;
 }) {
-  const canEditIssue = hasPermission(user, 'ISSUES_EDIT');
-  const canOpenSlip = hasPermission(user, 'ISSUE_SLIPS_VIEW');
-  const canReturn = hasPermission(user, 'RETURNS_RECORD');
-  const canExtend = admin && hasPermission(user, 'RETURN_DATES_EXTEND');
-  const canDelete = hasPermission(user, 'ISSUES_DELETE');
+  const detailQuery = useQuery({
+    queryKey: ['issue', issue.issueId],
+    queryFn: ({ signal }) => getIssue(issue.issueId, signal),
+  });
+  const fullIssue = detailQuery.data?.data.issue;
   return (
     <Dialog label={`${issue.issueId} details`} onClose={onClose}>
-      <div className="max-h-[86vh] overflow-y-auto p-5 sm:p-6">
+      <div className="max-h-[90vh] overflow-y-auto p-5 sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-extrabold text-[var(--color-primary-strong)]">
@@ -776,86 +921,82 @@ function IssueQuickViewDialog({
               Issued {formatIstDateTime(issue.issuedAt)}
             </p>
           </div>
-          <CatalogBadge value={displayIssueStatus(issue)} />
+          <div className="flex items-center gap-2">
+            <CatalogBadge value={displayIssueStatus(issue)} />
+            <IssueActionsMenu
+              admin={admin}
+              align="right"
+              issue={issue}
+              onDelete={(target) => {
+                onClose();
+                onDelete(target);
+              }}
+              onExtend={(target) => {
+                onClose();
+                onExtend(target);
+              }}
+              user={user}
+            />
+          </div>
         </div>
-        <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+        <dl className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <DetailItem label="Receiver" value={issue.receiver.fullName} />
-          <DetailItem label="Material" value={materialSummary(issue)} />
           <DetailItem
             label="Issued location"
-            value={issue.destinationLocation ?? 'Not set'}
+            value={
+              [issue.destinationLocation, issue.destinationBlock].filter(Boolean).join(' · ') ||
+              'Not set'
+            }
           />
+          <DetailItem label="Total individual count" value={issue.totalIssuedQuantity} />
+          <DetailItem label="Currently issued" value={issue.totalOutstandingQuantity} />
+        </dl>
+        <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <DetailItem label="Assignment state" value={displayIssueStatus(issue)} />
           <DetailItem label="Expected return" value={formatIstDateTime(issue.expectedReturnAt)} />
           <DetailItem label="Return status" value={returnStateText(issue)} />
+          <DetailItem label="Issued by" value={issue.issuedBy.name} />
         </dl>
-        <div className="mt-5 rounded-[10px] border border-[var(--color-border)] p-3">
-          <p className="text-xs font-bold text-[var(--color-text-muted)]">Materials</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {issue.materialNames.map((name) => (
-              <span
-                className="rounded-full bg-[var(--color-primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--color-primary)]"
-                key={name}
-              >
-                {name}
-              </span>
-            ))}
+
+        <section className="mt-6">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-base font-extrabold text-[var(--color-primary-strong)]">
+                Material details
+              </h2>
+              <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                Material-wise issued count, location, IDs and serial numbers.
+              </p>
+            </div>
+            <span className="rounded-full bg-[var(--color-primary-soft)] px-3 py-1 text-xs font-bold text-[var(--color-primary)]">
+              {fullIssue?.lines.length ?? issue.materialNames.length} material
+              {(fullIssue?.lines.length ?? issue.materialNames.length) === 1 ? '' : 's'}
+            </span>
           </div>
-        </div>
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          {detailQuery.isPending ? (
+            <div className="mt-3">
+              <LoadingPanel label="Loading complete material details..." />
+            </div>
+          ) : fullIssue ? (
+            <div className="mt-3 space-y-3">
+              {fullIssue.lines.map((line) => (
+                <IssueMaterialDetail key={line.lineId} line={line} />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-[12px] border border-amber-200 bg-amber-50 p-4">
+              <p className="text-sm font-bold text-amber-900">
+                Complete details could not be loaded.
+              </p>
+              <p className="mt-1 text-sm text-amber-800">{issue.materialNames.join(', ')}</p>
+            </div>
+          )}
+        </section>
+
+        <div className="mt-6 flex justify-end">
           <Button onClick={onClose} variant="secondary">
             Close
           </Button>
-          <Link className="button-secondary" to={`/issues/${issue.issueId}`}>
-            Full record
-          </Link>
-          {canEditIssue ? (
-            <Link className="button-secondary" to={`/issues/${issue.issueId}?edit=1`}>
-              Edit
-            </Link>
-          ) : null}
-          {canOpenSlip ? (
-            <Link className="button-secondary" to={receiptTarget(issue)}>
-              Generate receipt
-            </Link>
-          ) : null}
-          {canReturn && canRecordReturn(issue) ? (
-            <Link className="button-primary" to={`/issues/${issue.issueId}/return`}>
-              Record Return
-            </Link>
-          ) : (
-            <Link className="button-secondary" to={`/issues/${issue.issueId}`}>
-              View lifecycle
-            </Link>
-          )}
-          {admin ? (
-            <>
-              {canExtend && canExtendReturnDate(issue) ? (
-                <Button
-                  onClick={() => {
-                    onClose();
-                    onExtend(issue);
-                  }}
-                  variant="secondary"
-                >
-                  <CalendarClock aria-hidden="true" size={18} />
-                  Extend date
-                </Button>
-              ) : null}
-              {canDelete ? (
-                <Button
-                  onClick={() => {
-                    onClose();
-                    onDelete(issue);
-                  }}
-                  variant="danger"
-                >
-                  <Trash2 aria-hidden="true" size={18} />
-                  Delete
-                </Button>
-              ) : null}
-            </>
-          ) : null}
         </div>
       </div>
     </Dialog>

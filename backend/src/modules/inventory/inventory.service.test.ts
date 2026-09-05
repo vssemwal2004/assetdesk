@@ -162,10 +162,13 @@ describe('inventory access filters', () => {
     );
   });
 
-  it('forces Worker unit reads to AVAILABLE while Admin filters remain selectable', () => {
+  it('allows Worker inventory unit reads to include issued units while Admin filters remain selectable', () => {
     expect(
       buildAssetUnitListFilter({ materialId: 'material', role: 'WORKER', status: 'LOST' }).status,
-    ).toBe('AVAILABLE');
+    ).toBe('LOST');
+    expect(buildAssetUnitListFilter({ materialId: 'material', role: 'WORKER' }).status).toBe(
+      undefined,
+    );
     expect(
       buildAssetUnitListFilter({ materialId: 'material', role: 'ADMIN', status: 'LOST' }).status,
     ).toBe('LOST');
