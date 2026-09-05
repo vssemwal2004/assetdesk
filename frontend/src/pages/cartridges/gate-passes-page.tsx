@@ -74,7 +74,7 @@ export function GatePassesPage() {
               label="With vendor"
               value={outCount}
             />
-            <SummaryCard icon={<Clock3 size={19} />} label="Gate In / QC" value={returnedCount} />
+            <SummaryCard icon={<Clock3 size={19} />} label="Partially returned" value={returnedCount} />
             <SummaryCard
               icon={<CheckCircle2 size={19} />}
               label="Completed"
@@ -164,7 +164,7 @@ export function GatePassDatabasePage() {
             />
             <SummaryCard
               icon={<CheckCircle2 size={19} />}
-              label="QC complete"
+              label="Gate In complete"
               value={passes.filter((pass) => pass.status === 'CLOSED').length}
             />
           </div>

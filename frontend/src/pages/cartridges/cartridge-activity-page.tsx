@@ -69,7 +69,7 @@ export function CartridgeActivityPage() {
             Cartridges
           </Link>
         }
-        description="Complete cartridge movement trail across issue, return, Gate Pass, Gate In, and QC."
+        description="Complete cartridge movement trail across issue, return, Gate Pass Out, and Gate Pass In."
         title="Cartridge Activity Log"
       />
 

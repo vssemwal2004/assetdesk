@@ -40,7 +40,7 @@ export function IssueCartridgePage() {
   return (
     <Operation
       title="Issue Cartridge"
-      description="Issue a filled cartridge independently; an empty return is not required."
+      description="Select a filled cartridge and assign it. Only ready-to-issue cartridges appear here."
       error={mutation.error}
       done={done}
       pending={mutation.isPending}
@@ -274,7 +274,7 @@ export function ReturnCartridgePage() {
               >
                 <option value="EMPTY">Empty</option>
                 <option value="DEFECTIVE">Defective / not working</option>
-                <option value="FILLED_UNUSED">Filled and unused</option>
+                <option value="FILLED_UNUSED">Filled and unused · ready to issue again</option>
                 <option value="DAMAGED">Damaged</option>
                 <option value="WRONG_MODEL">Wrong model</option>
               </select>

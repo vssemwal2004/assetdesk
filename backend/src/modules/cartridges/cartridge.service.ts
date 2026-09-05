@@ -470,7 +470,7 @@ export async function gateIn(
   serialNumbers: string[],
   remarks: string | undefined,
   actor: CartridgeActor,
-  conditions?: Array<{
+  conditions: Array<{
     serialNumber: string;
     condition: 'EMPTY' | 'DEFECTIVE' | 'FILLED_UNUSED' | 'DAMAGED' | 'WRONG_MODEL';
   }>,
@@ -498,12 +498,11 @@ export async function gateIn(
       'A returned serial is not on this Gate Pass.',
     );
   const conditionsBySerial = new Map(
-    (conditions ?? []).map((item) => [normalize(item.serialNumber), item.condition]),
+    conditions.map((item) => [normalize(item.serialNumber), item.condition]),
   );
   if (
-    conditions &&
-    (conditionsBySerial.size !== normalized.length ||
-      normalized.some((serialNumber) => !conditionsBySerial.has(serialNumber)))
+    conditionsBySerial.size !== normalized.length ||
+    normalized.some((serialNumber) => !conditionsBySerial.has(serialNumber))
   )
     throw new AppError(
       400,
@@ -553,52 +552,34 @@ export async function gateIn(
     );
   }
   const fromStatuses = new Map(cartridges.map((item) => [item._id.toString(), item.status]));
-  await CartridgeModel.updateMany(
-    { serialNumberNormalized: { $in: normalized } },
-    { $set: { status: 'QC_PENDING' } },
+  await Promise.all(
+    cartridges.map(async (item) => {
+      const condition = conditionsBySerial.get(normalize(item.serialNumber));
+      item.status =
+        condition === 'FILLED_UNUSED'
+          ? 'FILLED_AVAILABLE'
+          : condition === 'EMPTY'
+            ? 'EMPTY'
+            : condition === 'DAMAGED'
+              ? 'DAMAGED'
+              : 'DEFECTIVE';
+      if (condition === 'FILLED_UNUSED') item.refillCount += 1;
+      await item.save();
+    }),
   );
   const updatedCartridges = await CartridgeModel.find({
     serialNumberNormalized: { $in: normalized },
   });
   await movements(updatedCartridges, 'GATE_IN', fromStatuses, actor, {
-    remarks: `Gate In recorded on ${pass.gatePassNumber}.`,
+    remarks: `Gate In recorded with return condition on ${pass.gatePassNumber}.`,
   });
-  let nextStatus: 'PARTIALLY_RETURNED' | 'QC_PENDING' | 'CLOSED' =
-    returned === pass.quantity ? 'QC_PENDING' : 'PARTIALLY_RETURNED';
-  if (conditions) {
-    const qcFromStatuses = new Map(
-      updatedCartridges.map((item) => [item._id.toString(), item.status]),
-    );
-    await Promise.all(
-      updatedCartridges.map(async (item) => {
-        const condition = conditionsBySerial.get(normalize(item.serialNumber));
-        item.status =
-          condition === 'FILLED_UNUSED'
-            ? 'FILLED_AVAILABLE'
-            : condition === 'EMPTY'
-              ? 'EMPTY'
-              : condition === 'DAMAGED'
-                ? 'DAMAGED'
-                : condition === 'DEFECTIVE' || condition === 'WRONG_MODEL'
-                  ? 'DEFECTIVE'
-                  : 'REFILL_FAILED';
-        if (condition === 'FILLED_UNUSED') item.refillCount += 1;
-        await item.save();
-      }),
-    );
-    const conditionCartridges = await CartridgeModel.find({
-      serialNumberNormalized: { $in: normalized },
-    });
-    await movements(conditionCartridges, 'QC', qcFromStatuses, actor, {
-      remarks: `Condition recorded on Gate In for ${pass.gatePassNumber}.`,
-    });
-    nextStatus = returned === pass.quantity ? 'CLOSED' : 'PARTIALLY_RETURNED';
-  }
+  const nextStatus: 'PARTIALLY_RETURNED' | 'CLOSED' =
+    returned === pass.quantity ? 'CLOSED' : 'PARTIALLY_RETURNED';
   pass.gateInEvents.push({
     at: now,
     byName: name,
     serialNumbers,
-    ...(conditions ? { conditions } : {}),
+    conditions,
     ...(remarks ? { remarks } : {}),
   });
   pass.status = nextStatus;
@@ -607,9 +588,12 @@ export async function gateIn(
 }
 export async function cartridgeDashboard(actor: CartridgeActor) {
   const filter = actor.dataScope === 'OWN' ? { createdBy: new Types.ObjectId(actor.userId) } : {};
-  const rows = await CartridgeModel.aggregate<{ _id: string; count: number }>([
-    { $match: filter },
-    { $group: { _id: '$status', count: { $sum: 1 } } },
+  const [rows, refilled] = await Promise.all([
+    CartridgeModel.aggregate<{ _id: string; count: number }>([
+      { $match: filter },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]),
+    CartridgeModel.countDocuments({ ...filter, refillCount: { $gt: 0 } }),
   ]);
   const counts = Object.fromEntries(rows.map((x) => [x._id, x.count]));
   const openGatePasses = await GatePassModel.countDocuments(
@@ -620,7 +604,7 @@ export async function cartridgeDashboard(actor: CartridgeActor) {
         }
       : { status: { $nin: ['CLOSED', 'CANCELLED'] } },
   );
-  return { counts, openGatePasses };
+  return { counts, openGatePasses, refilled };
 }
 export async function recordQc(
   input: {

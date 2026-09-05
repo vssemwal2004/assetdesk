@@ -906,7 +906,6 @@ function CartridgePipeline() {
     { key: 'DEFECTIVE', label: 'Defective', tone: 'bg-[var(--color-danger)]' },
     { key: 'READY_FOR_GATE_OUT', label: 'Ready for Gate Out', tone: 'bg-[#d97706]' },
     { key: 'WITH_VENDOR', label: 'With vendor', tone: 'bg-[var(--color-info)]' },
-    { key: 'QC_PENDING', label: 'QC pending', tone: 'bg-[#7c3aed]' },
     { key: 'REFILL_FAILED', label: 'Refill failed', tone: 'bg-[#c2410c]' },
     { key: 'DAMAGED', label: 'Damaged', tone: 'bg-[#b42318]' },
     { key: 'SCRAP_PENDING', label: 'Scrap pending', tone: 'bg-[#b54708]' },

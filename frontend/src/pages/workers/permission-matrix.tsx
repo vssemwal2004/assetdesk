@@ -263,12 +263,6 @@ export const permissionDefinitions: PermissionDefinition[] = [
     description: 'Record full or partial Gate In on the same pass.',
   },
   {
-    permission: 'CARTRIDGE_QC',
-    group: 'Cartridges',
-    label: 'Perform cartridge QC',
-    description: 'Verify refill results and failed cartridges.',
-  },
-  {
     permission: 'CARTRIDGE_REPORTS_VIEW',
     group: 'Cartridges',
     label: 'View cartridge reports',

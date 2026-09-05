@@ -10,7 +10,7 @@ import {
   PageHeader,
   SearchForm,
 } from '../../components/ui';
-import { getCartridges } from '../../lib/cartridges-api';
+import { getAllCartridges } from '../../lib/cartridges-api';
 
 const statusLabels: Record<string, string> = {
   FILLED_AVAILABLE: 'Filled available',
@@ -19,7 +19,6 @@ const statusLabels: Record<string, string> = {
   DEFECTIVE: 'Defective',
   READY_FOR_GATE_OUT: 'Ready for Gate Out',
   WITH_VENDOR: 'With vendor',
-  QC_PENDING: 'QC pending',
   REFILL_FAILED: 'Refill failed',
   DAMAGED: 'Damaged',
   SCRAP_PENDING: 'Scrap pending',
@@ -36,7 +35,7 @@ export function CartridgesPage() {
   }, [location.search]);
   const query = useQuery({
     queryKey: ['cartridges', { search, status }],
-    queryFn: () => getCartridges({ search, status }),
+    queryFn: () => getAllCartridges({ search, status }),
   });
   return (
     <div className="space-y-6">

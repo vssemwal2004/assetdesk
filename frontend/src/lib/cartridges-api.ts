@@ -16,6 +16,21 @@ export async function getCartridges(
   if (filters.status) query.set('status', filters.status);
   return CartridgeListResponseSchema.parse(await apiRequest(`/api/v1/cartridges?${query}`));
 }
+export async function getAllCartridges(filters: { search?: string; status?: string } = {}) {
+  const pageSize = 100;
+  const first = await getCartridges({ ...filters, page: 1, pageSize });
+  if (first.meta.totalPages <= 1) return first;
+
+  const remaining = await Promise.all(
+    Array.from({ length: first.meta.totalPages - 1 }, (_, index) =>
+      getCartridges({ ...filters, page: index + 2, pageSize }),
+    ),
+  );
+  return {
+    data: [first, ...remaining].flatMap((page) => page.data),
+    meta: { ...first.meta, page: 1, pageSize: first.meta.total },
+  };
+}
 export async function getCartridgeActivity(
   filters: { page?: number; pageSize?: number; search?: string; type?: string } = {},
 ) {
@@ -63,7 +78,9 @@ export async function returnCartridge(input: Record<string, unknown>) {
   });
 }
 export async function getCartridgeDashboard() {
-  return apiRequest<{ data: { counts: Record<string, number>; openGatePasses: number } }>(
+  return apiRequest<{
+    data: { counts: Record<string, number>; openGatePasses: number; refilled: number };
+  }>(
     '/api/v1/cartridges/dashboard',
   );
 }

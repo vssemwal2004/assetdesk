@@ -168,27 +168,24 @@ export function IssuesPage() {
   });
   const blockOptions = useMemo(
     () =>
-      [
-        ...(issueFilterOptionsQuery.data?.blocks ?? []),
-        ...(catalogQuery.data ?? [])
-          .filter((detail) => detail.kind === 'BLOCK')
-          .map((detail) => detail.name),
-      ]
+      [...(issueFilterOptionsQuery.data?.blocks ?? [])]
         .filter((value, index, values) => values.indexOf(value) === index)
         .sort((left, right) => left.localeCompare(right)),
     [catalogQuery.data, issueFilterOptionsQuery.data?.blocks],
   );
   const locationOptions = useMemo(
     () =>
-      [
-        ...(catalogQuery.data ?? [])
-          .filter((detail) => detail.kind === 'LOCATION')
-          .map((detail) => detail.name),
-        ...(issueFilterOptionsQuery.data?.locations ?? []),
-      ]
+      (block
+        ? [...(issueFilterOptionsQuery.data?.locations ?? [])]
+        : [
+            ...(catalogQuery.data ?? [])
+              .filter((detail) => detail.kind === 'LOCATION')
+              .map((detail) => detail.name),
+            ...(issueFilterOptionsQuery.data?.locations ?? []),
+          ])
         .filter((value, index, values) => values.indexOf(value) === index)
         .sort((left, right) => left.localeCompare(right)),
-    [catalogQuery.data, issueFilterOptionsQuery.data?.locations],
+    [block, catalogQuery.data, issueFilterOptionsQuery.data?.locations],
   );
   const query = useQuery({
     queryKey: [

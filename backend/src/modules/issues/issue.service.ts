@@ -711,19 +711,12 @@ export async function listIssueFilterOptions(
   }
   if (accessClauses.length > 0) filter.$and = accessClauses;
 
-  const savedBlocksQuery =
-    input.actorRole === 'WORKER' && input.issueDataScope !== 'ALL'
-      ? Promise.resolve([] as Array<{ name?: string }>)
-      : AssetDetailModel.find({ kind: 'BLOCK' }).select('name').lean().exec();
-  const [records, savedBlocks] = await Promise.all([
-    IssueModel.find(filter).select('destinationBlock destinationLocation').lean().exec(),
-    savedBlocksQuery,
-  ]);
+  const records = await IssueModel.find(filter)
+    .select('destinationBlock destinationLocation')
+    .lean()
+    .exec();
   return {
-    blocks: uniqueIssueFilterValues([
-      ...savedBlocks.map((record) => record.name),
-      ...records.map((record) => record.destinationBlock),
-    ]),
+    blocks: uniqueIssueFilterValues(records.map((record) => record.destinationBlock)),
     locations: uniqueIssueFilterValues(records.map((record) => record.destinationLocation)),
   };
 }

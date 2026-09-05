@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
-import { ArrowRight, CheckCircle2, ClipboardCheck, Database, PackageCheck, X } from 'lucide-react';
+import { ArrowRight, ClipboardCheck, Database, PackageCheck, X } from 'lucide-react';
 import {
   AppCard,
   Button,
@@ -11,9 +11,7 @@ import {
   TextField,
 } from '../../components/ui';
 import {
-  getCartridges,
   getGatePasses,
-  recordCartridgeQc,
   recordGateIn,
   type GatePass,
 } from '../../lib/cartridges-api';
@@ -22,7 +20,7 @@ type GateInCondition = 'EMPTY' | 'DEFECTIVE' | 'FILLED_UNUSED' | 'DAMAGED' | 'WR
 
 const receivingStatuses = new Set(['VERIFIED', 'GATE_OUT', 'PARTIALLY_RETURNED']);
 const conditionOptions: Array<{ value: GateInCondition; label: string }> = [
-  { value: 'FILLED_UNUSED', label: 'Working · filled and unused' },
+  { value: 'FILLED_UNUSED', label: 'Refilled · ready to issue' },
   { value: 'EMPTY', label: 'Empty' },
   { value: 'DEFECTIVE', label: 'Not working · defective' },
   { value: 'DAMAGED', label: 'Damaged' },
@@ -34,10 +32,6 @@ export function CartridgeQcPage() {
   const passes = useQuery({
     queryKey: ['cartridge-gate-passes', 'gate-in-queue'],
     queryFn: getGatePasses,
-  });
-  const qcCartridges = useQuery({
-    queryKey: ['cartridges', { status: 'QC_PENDING', page: 1, pageSize: 100 }],
-    queryFn: () => getCartridges({ status: 'QC_PENDING', page: 1, pageSize: 100 }),
   });
   const [selectedPass, setSelectedPass] = useState<GatePass | null>(null);
   const [selectedSerials, setSelectedSerials] = useState<string[]>([]);
@@ -68,18 +62,6 @@ export function CartridgeQcPage() {
       ]);
     },
   });
-  const conditionMutation = useMutation({
-    mutationFn: (input: { serialNumber: string; result: GateInCondition }) =>
-      recordCartridgeQc(input),
-    onSuccess: async () => {
-      await Promise.all([
-        client.invalidateQueries({ queryKey: ['cartridges'] }),
-        client.invalidateQueries({ queryKey: ['cartridge-gate-passes'] }),
-        client.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
-      ]);
-    },
-  });
-
   const gateInPasses = passes.data?.data.filter((pass) => receivingStatuses.has(pass.status)) ?? [];
   const totalPendingSerials = gateInPasses.reduce(
     (total, pass) => total + pendingGateInSerials(pass).length,
@@ -133,13 +115,10 @@ export function CartridgeQcPage() {
         }
       />
       {passes.isError ? <ErrorSummary message="Gate Pass In queue could not be loaded." /> : null}
-      {qcCartridges.isError ? (
-        <ErrorSummary message="Condition queue could not be loaded." />
-      ) : null}
       {passes.isPending ? <LoadingPanel label="Loading Gate Pass In queue" /> : null}
       {!passes.isPending && !passes.isError ? (
         <>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2">
             <QueueStat
               icon={<PackageCheck size={20} />}
               label="Passes awaiting return"
@@ -149,11 +128,6 @@ export function CartridgeQcPage() {
               icon={<ClipboardCheck size={20} />}
               label="Cartridges due in"
               value={totalPendingSerials}
-            />
-            <QueueStat
-              icon={<CheckCircle2 size={20} />}
-              label="Needs condition"
-              value={qcCartridges.data?.data.length ?? 0}
             />
           </div>
 
@@ -205,56 +179,6 @@ export function CartridgeQcPage() {
             )}
           </AppCard>
 
-          {qcCartridges.data?.data.length ? (
-            <AppCard className="space-y-4">
-              <div>
-                <h2 className="text-lg font-extrabold text-[var(--color-primary-strong)]">
-                  Existing condition queue
-                </h2>
-                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  These older returns were received before condition selection was added.
-                </p>
-              </div>
-              <div className="grid gap-3">
-                {qcCartridges.data?.data.map((cartridge) => (
-                  <div
-                    className="flex flex-col gap-3 rounded-[10px] border border-[var(--color-border)] p-3 sm:flex-row sm:items-center sm:justify-between"
-                    key={cartridge.id}
-                  >
-                    <div>
-                      <p className="font-extrabold text-[var(--color-primary-strong)]">
-                        {cartridge.serialNumber}
-                      </p>
-                      <p className="mt-1 text-xs font-bold text-[var(--color-text-muted)]">
-                        {cartridge.model} · Condition pending
-                      </p>
-                    </div>
-                    <select
-                      aria-label={`Condition for ${cartridge.serialNumber}`}
-                      className="field-input sm:max-w-[240px]"
-                      disabled={conditionMutation.isPending}
-                      defaultValue=""
-                      onChange={(event) => {
-                        const result = event.target.value as GateInCondition;
-                        if (result)
-                          conditionMutation.mutate({
-                            serialNumber: cartridge.serialNumber,
-                            result,
-                          });
-                      }}
-                    >
-                      <option value="">Choose condition…</option>
-                      {conditionOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            </AppCard>
-          ) : null}
         </>
       ) : null}
 

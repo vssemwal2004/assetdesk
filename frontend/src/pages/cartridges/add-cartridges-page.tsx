@@ -1,10 +1,15 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { Button, ErrorSummary, PageHeader, TextField, AppCard } from '../../components/ui';
-import { addCartridges } from '../../lib/cartridges-api';
+import { addCartridges, getCartridgeDashboard } from '../../lib/cartridges-api';
 import { getAssetDetails } from '../../lib/inventory-api';
 export function AddCartridgesPage() {
+  const queryClient = useQueryClient();
+  const dashboardQuery = useQuery({
+    queryKey: ['cartridge-dashboard'],
+    queryFn: getCartridgeDashboard,
+  });
   const detailsQuery = useQuery({
     queryKey: ['asset-details'],
     queryFn: ({ signal }) => getAssetDetails(undefined, signal),
@@ -43,7 +48,13 @@ export function AddCartridgesPage() {
         colour: form.colour as 'BLACK',
       });
     },
-    onSuccess: (items) => setResult(items.length),
+    onSuccess: async (items) => {
+      setResult(items.length);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['cartridges'] }),
+        queryClient.invalidateQueries({ queryKey: ['cartridge-dashboard'] }),
+      ]);
+    },
   });
   const serialCount = form.serials
     .split(/\r?\n|,/)
@@ -67,6 +78,24 @@ export function AddCartridgesPage() {
         title="Add Cartridges"
         description="Enter common details once, then paste one unique serial number per line."
       />
+      {dashboardQuery.data ? (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <CartridgeStat
+            label="All cartridges"
+            value={Object.values(dashboardQuery.data.data.counts).reduce(
+              (total, count) => total + count,
+              0,
+            )}
+          />
+          <CartridgeStat
+            label="Filled / ready"
+            value={dashboardQuery.data.data.counts.FILLED_AVAILABLE ?? 0}
+          />
+          <CartridgeStat label="Issued" value={dashboardQuery.data.data.counts.ISSUED ?? 0} />
+          <CartridgeStat label="Empty" value={dashboardQuery.data.data.counts.EMPTY ?? 0} />
+          <CartridgeStat label="Refilled" value={dashboardQuery.data.data.refilled ?? 0} />
+        </div>
+      ) : null}
       {mutation.isError ? <ErrorSummary message={(mutation.error as Error).message} /> : null}
       <form
         onSubmit={(e) => {
@@ -164,6 +193,15 @@ export function AddCartridgesPage() {
         </AppCard>
       </form>
     </div>
+  );
+}
+
+function CartridgeStat({ label, value }: { label: string; value: number }) {
+  return (
+    <AppCard className="p-4 sm:p-4">
+      <p className="text-xs font-bold text-[var(--color-text-muted)]">{label}</p>
+      <p className="mt-1 text-2xl font-extrabold text-[var(--color-primary-strong)]">{value}</p>
+    </AppCard>
   );
 }
 

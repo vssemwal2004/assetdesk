@@ -113,7 +113,7 @@ export const GateInRequestSchema = z.object({
         condition: CartridgeReturnConditionSchema,
       }),
     )
-    .optional(),
+    .min(1),
 });
 export const CartridgeQcRequestSchema = z.object({
   serialNumber: Text,
