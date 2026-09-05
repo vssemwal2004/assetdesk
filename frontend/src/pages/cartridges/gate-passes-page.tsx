@@ -377,8 +377,8 @@ export function CreateGatePassPage() {
   });
   const eligibleQueries = useQueries({
     queries: gatePassEligibleStatuses.map((status) => ({
-      queryKey: ['cartridges', { status, page: 1, pageSize: 500 }],
-      queryFn: () => getCartridges({ status, page: 1, pageSize: 500 }),
+      queryKey: ['cartridges', { status, page: 1, pageSize: 100 }],
+      queryFn: () => getCartridges({ status, page: 1, pageSize: 100 }),
     })),
   });
   const eligibleCartridges = eligibleQueries

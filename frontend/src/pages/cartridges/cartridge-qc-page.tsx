@@ -36,8 +36,8 @@ export function CartridgeQcPage() {
     queryFn: getGatePasses,
   });
   const qcCartridges = useQuery({
-    queryKey: ['cartridges', { status: 'QC_PENDING', page: 1, pageSize: 500 }],
-    queryFn: () => getCartridges({ status: 'QC_PENDING', page: 1, pageSize: 500 }),
+    queryKey: ['cartridges', { status: 'QC_PENDING', page: 1, pageSize: 100 }],
+    queryFn: () => getCartridges({ status: 'QC_PENDING', page: 1, pageSize: 100 }),
   });
   const [selectedPass, setSelectedPass] = useState<GatePass | null>(null);
   const [selectedSerials, setSelectedSerials] = useState<string[]>([]);

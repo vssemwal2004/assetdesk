@@ -10,7 +10,8 @@ export async function getCartridges(
 ) {
   const query = new URLSearchParams();
   query.set('page', String(filters.page ?? 1));
-  query.set('pageSize', String(filters.pageSize ?? 20));
+  // Keep requests compatible with servers that enforce the original 100-row limit.
+  query.set('pageSize', String(Math.min(filters.pageSize ?? 20, 100)));
   if (filters.search) query.set('search', filters.search);
   if (filters.status) query.set('status', filters.status);
   return CartridgeListResponseSchema.parse(await apiRequest(`/api/v1/cartridges?${query}`));
