@@ -2,12 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
   CalendarClock,
+  CheckCircle2,
+  ChevronDown,
   Check,
   ClipboardList,
   Columns3,
   Eye,
   Filter,
   MapPin,
+  MonitorCog,
   MoreVertical,
   Package,
   PackagePlus,
@@ -51,7 +54,7 @@ import {
   getIssues,
   updateIssue,
 } from '../../lib/issues-api';
-import { getAssetDetails } from '../../lib/inventory-api';
+import { getAssetDetails, getInventory } from '../../lib/inventory-api';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
 
 const statuses: IssueStatus[] = [
@@ -104,6 +107,24 @@ const defaultIssueColumns: IssueColumnKey[] = [
   'status',
 ];
 
+type IssueCategoryStatKey =
+  'totalQuantity' | 'availableQuantity' | 'issuedQuantity' | 'totalIssues' | 'outstanding';
+
+const issueCategoryStats: Array<{ key: IssueCategoryStatKey; label: string }> = [
+  { key: 'totalQuantity', label: 'Total stock' },
+  { key: 'availableQuantity', label: 'Available stock' },
+  { key: 'issuedQuantity', label: 'Issued stock' },
+  { key: 'totalIssues', label: 'Total issues' },
+  { key: 'outstanding', label: 'Outstanding' },
+];
+
+const defaultIssueCategoryStats: IssueCategoryStatKey[] = [
+  'totalQuantity',
+  'availableQuantity',
+  'issuedQuantity',
+  'outstanding',
+];
+
 function storedIssueColumns(): IssueColumnKey[] {
   try {
     const stored = JSON.parse(window.localStorage.getItem('assetdesk:issue-columns') ?? 'null');
@@ -114,6 +135,20 @@ function storedIssueColumns(): IssueColumnKey[] {
     return valid.includes('issue') ? valid : defaultIssueColumns;
   } catch {
     return defaultIssueColumns;
+  }
+}
+
+function storedIssueCategoryStats(): IssueCategoryStatKey[] {
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem('assetdesk:issue-category-stats') ?? 'null',
+    );
+    if (!Array.isArray(stored)) return defaultIssueCategoryStats;
+    return stored.filter((value): value is IssueCategoryStatKey =>
+      issueCategoryStats.some((stat) => stat.key === value),
+    );
+  } catch {
+    return defaultIssueCategoryStats;
   }
 }
 
@@ -133,6 +168,75 @@ function assignmentType(value: string): AssignmentType | undefined {
   return ['LONG_TERM', 'SHORT_TERM'].includes(value) ? (value as AssignmentType) : undefined;
 }
 
+interface IssueCategoryGroup {
+  category: string;
+  trackingMode: 'SERIALIZED' | 'QUANTITY';
+  issues: IssueSummary[];
+  outstanding: number;
+  totalQuantity: number;
+  availableQuantity: number;
+  issuedQuantity: number;
+}
+
+function groupIssues(issues: IssueSummary[]): IssueCategoryGroup[] {
+  const groups = new Map<string, IssueCategoryGroup>();
+  for (const issue of issues) {
+    for (const materialGroup of issue.materialGroups) {
+      const { category, trackingMode } = materialGroup;
+      const key = `${trackingMode}:${category.toLocaleUpperCase('en-US')}`;
+      const group = groups.get(key) ?? {
+        category,
+        trackingMode,
+        issues: [],
+        outstanding: 0,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        issuedQuantity: 0,
+      };
+      group.issues.push(issue);
+      group.outstanding += materialGroup.outstandingQuantity;
+      groups.set(key, group);
+    }
+  }
+  return [...groups.values()].sort((left, right) => left.category.localeCompare(right.category));
+}
+
+function IssueTypeCard({
+  title,
+  description,
+  icon,
+  active,
+  onClick,
+}: {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={`relative flex min-h-28 items-start gap-4 rounded-[10px] border bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-card)] ${active ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] shadow-[var(--shadow-card)]' : ''}`}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="grid size-11 shrink-0 place-items-center rounded-[10px] bg-[var(--color-surface-tint)] text-[var(--color-primary)]">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block font-extrabold text-[var(--color-primary-strong)]">{title}</span>
+        <span className="mt-1 block text-sm leading-6 text-[var(--color-text-muted)]">
+          {description}
+        </span>
+      </span>
+      {active ? (
+        <CheckCircle2 className="absolute right-4 top-4 text-[var(--color-primary)]" size={20} />
+      ) : null}
+    </button>
+  );
+}
+
 export function IssuesPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -142,6 +246,8 @@ export function IssuesPage() {
   const [extendTarget, setExtendTarget] = useState<IssueSummary | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [visibleColumns, setVisibleColumns] = useState<IssueColumnKey[]>(storedIssueColumns);
+  const [visibleCategoryStats, setVisibleCategoryStats] =
+    useState<IssueCategoryStatKey[]>(storedIssueCategoryStats);
   const page = Math.max(1, Number(parameters.get('page')) || 1);
   const search = parameters.get('search') ?? '';
   const status = issueStatus(parameters.get('status') ?? '');
@@ -166,6 +272,24 @@ export function IssuesPage() {
     queryKey: ['asset-details'],
     queryFn: ({ signal }) => getAssetDetails(undefined, signal),
   });
+  const inventoryQuery = useQuery({
+    queryKey: ['issue-category-inventory', { trackingMode, category }],
+    queryFn: async ({ signal }) => {
+      const filters = {
+        ...(trackingMode ? { trackingMode } : {}),
+        ...(category && trackingMode ? { category } : {}),
+      };
+      const first = await getInventory({ page: 1, pageSize: 100, ...filters }, signal);
+      if (first.meta.totalPages <= 1) return first.data;
+      const remaining = await Promise.all(
+        Array.from({ length: first.meta.totalPages - 1 }, (_, index) =>
+          getInventory({ page: index + 2, pageSize: 100, ...filters }, signal),
+        ),
+      );
+      return [first, ...remaining].flatMap((response) => response.data);
+    },
+    placeholderData: (previous) => previous,
+  });
   const blockOptions = useMemo(
     () =>
       [
@@ -187,7 +311,8 @@ export function IssuesPage() {
               .filter((detail) => detail.kind === 'LOCATION')
               .map((detail) => detail.name),
             ...(issueFilterOptionsQuery.data?.locations ?? []),
-          ])
+          ]
+      )
         .filter((value, index, values) => values.indexOf(value) === index)
         .sort((left, right) => left.localeCompare(right)),
     [block, catalogQuery.data, issueFilterOptionsQuery.data?.locations],
@@ -209,23 +334,30 @@ export function IssuesPage() {
         category,
       },
     ],
-    queryFn: ({ signal }) => {
-      return getIssues(
-        {
-          page,
-          ...(search ? { search } : {}),
-          ...(status ? { status } : {}),
-          ...(period ? { period } : {}),
-          ...(returnState ? { returnState } : {}),
-          ...(issueAssignmentType ? { assignmentType: issueAssignmentType } : {}),
-          ...(block ? { block } : {}),
-          ...(location ? { destinationLocation: location } : {}),
-          ...(store ? { store } : {}),
-          ...(trackingMode ? { trackingMode } : {}),
-          ...(category && trackingMode ? { category } : {}),
-        },
-        signal,
+    queryFn: async ({ signal }) => {
+      const filters = {
+        ...(search ? { search } : {}),
+        ...(status ? { status } : {}),
+        ...(period ? { period } : {}),
+        ...(returnState ? { returnState } : {}),
+        ...(issueAssignmentType ? { assignmentType: issueAssignmentType } : {}),
+        ...(block ? { block } : {}),
+        ...(location ? { destinationLocation: location } : {}),
+        ...(store ? { store } : {}),
+        ...(trackingMode ? { trackingMode } : {}),
+        ...(category && trackingMode ? { category } : {}),
+      };
+      const first = await getIssues({ page: 1, pageSize: 100, ...filters }, signal);
+      if (first.meta.totalPages <= 1) return first;
+      const remaining = await Promise.all(
+        Array.from({ length: first.meta.totalPages - 1 }, (_, index) =>
+          getIssues({ page: index + 2, pageSize: 100, ...filters }, signal),
+        ),
       );
+      return {
+        data: [first, ...remaining].flatMap((response) => response.data),
+        meta: { ...first.meta, page: 1, pageSize: first.meta.total, totalPages: 1 },
+      };
     },
     placeholderData: (previous) => previous,
   });
@@ -237,6 +369,17 @@ export function IssuesPage() {
       // Column preferences are optional and should not interrupt the issue list.
     }
   }, [visibleColumns]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'assetdesk:issue-category-stats',
+        JSON.stringify(visibleCategoryStats),
+      );
+    } catch {
+      // Folder summary preferences are optional.
+    }
+  }, [visibleCategoryStats]);
 
   function updateParameters(updates: Record<string, string>) {
     const next = new URLSearchParams(parameters);
@@ -253,6 +396,64 @@ export function IssuesPage() {
   }
 
   const issues = query.data?.data ?? [];
+  const issueGroups = useMemo(() => {
+    const groups = groupIssues(issues);
+    const byKey = new Map(
+      groups.map((group) => [
+        `${group.trackingMode}:${group.category.toLocaleUpperCase('en-US')}`,
+        group,
+      ]),
+    );
+    for (const detail of catalogQuery.data ?? []) {
+      if (detail.kind !== 'ASSET_TYPE' && detail.kind !== 'CONSUMABLE_TYPE') continue;
+      const detailMode = detail.kind === 'ASSET_TYPE' ? 'SERIALIZED' : 'QUANTITY';
+      if (trackingMode && detailMode !== trackingMode) continue;
+      if (
+        category &&
+        detail.name.toLocaleUpperCase('en-US') !== category.toLocaleUpperCase('en-US')
+      )
+        continue;
+      const key = `${detailMode}:${detail.name.toLocaleUpperCase('en-US')}`;
+      if (!byKey.has(key)) {
+        const group: IssueCategoryGroup = {
+          category: detail.name,
+          trackingMode: detailMode,
+          issues: [],
+          outstanding: 0,
+          totalQuantity: 0,
+          availableQuantity: 0,
+          issuedQuantity: 0,
+        };
+        groups.push(group);
+        byKey.set(key, group);
+      }
+    }
+    for (const material of inventoryQuery.data ?? []) {
+      const key = `${material.trackingMode}:${material.category.toLocaleUpperCase('en-US')}`;
+      let group = byKey.get(key);
+      if (!group) {
+        group = {
+          category: material.category,
+          trackingMode: material.trackingMode,
+          issues: [],
+          outstanding: 0,
+          totalQuantity: 0,
+          availableQuantity: 0,
+          issuedQuantity: 0,
+        };
+        groups.push(group);
+        byKey.set(key, group);
+      }
+      group.totalQuantity += material.totalQuantity;
+      group.availableQuantity += material.availableQuantity;
+      group.issuedQuantity += material.issuedQuantity;
+    }
+    return groups.sort(
+      (left, right) =>
+        left.trackingMode.localeCompare(right.trackingMode) ||
+        left.category.localeCompare(right.category),
+    );
+  }, [category, catalogQuery.data, inventoryQuery.data, issues, trackingMode]);
   const filtered = Boolean(
     search ||
     status ||
@@ -318,6 +519,45 @@ export function IssuesPage() {
         }
         title="Issue Records"
       />
+      <section className="rounded-[14px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 shadow-[var(--shadow-card)] sm:p-4">
+        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.1em] text-[var(--color-primary)]">
+              Issue layer
+            </p>
+            <h2 className="font-extrabold text-[var(--color-primary-strong)]">Select issue type</h2>
+          </div>
+          <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+            Category folders update with your selection.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <IssueTypeCard
+            active={trackingMode === 'SERIALIZED'}
+            description="Browse issued serialized assets grouped into their asset-type folders."
+            icon={<MonitorCog aria-hidden="true" size={22} />}
+            onClick={() =>
+              updateParameters({
+                trackingMode: trackingMode === 'SERIALIZED' ? '' : 'SERIALIZED',
+                category: '',
+              })
+            }
+            title="IT Asset"
+          />
+          <IssueTypeCard
+            active={trackingMode === 'QUANTITY'}
+            description="Browse issued quantity stock grouped into consumable-type folders."
+            icon={<Package aria-hidden="true" size={22} />}
+            onClick={() =>
+              updateParameters({
+                trackingMode: trackingMode === 'QUANTITY' ? '' : 'QUANTITY',
+                category: '',
+              })
+            }
+            title="IT Consumable"
+          />
+        </div>
+      </section>
       <section className="issue-list-toolbar rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)] sm:p-4">
         <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
           <SearchForm
@@ -330,9 +570,15 @@ export function IssuesPage() {
           />
           <div className="flex flex-wrap gap-2 lg:justify-end">
             <ColumnPicker
+              categoryStats={visibleCategoryStats}
               columns={visibleColumns}
+              onCategoryStatsChange={setVisibleCategoryStats}
               onChange={setVisibleColumns}
-              onReset={() => setVisibleColumns(defaultIssueColumns)}
+              onReset={() => {
+                setVisibleColumns(defaultIssueColumns);
+                setVisibleCategoryStats(defaultIssueCategoryStats);
+              }}
+              showCategoryStats={admin}
             />
             <FilterPopover
               panelClassName="issue-filter-popover w-[min(94vw,680px)]"
@@ -405,9 +651,7 @@ export function IssuesPage() {
                     onChange={(event) => updateParameters({ location: event.target.value })}
                     value={block ? location : ''}
                   >
-                    <option value="">
-                      {block ? 'All locations' : 'Select a block first'}
-                    </option>
+                    <option value="">{block ? 'All locations' : 'Select a block first'}</option>
                     {locationOptions.map((value) => (
                       <option key={value} value={value}>
                         {value}
@@ -541,7 +785,7 @@ export function IssuesPage() {
           message="Issue Records could not be loaded."
           onRetry={() => void query.refetch()}
         />
-      ) : issues.length === 0 ? (
+      ) : issueGroups.length === 0 ? (
         <EmptyState
           action={
             filtered ? (
@@ -564,52 +808,83 @@ export function IssuesPage() {
         />
       ) : (
         <>
-          <div className="space-y-3 min-[840px]:hidden">
-            {issues.map((issue) => (
-              <IssueCard
-                admin={admin}
-                user={user}
-                issue={issue}
-                key={issue.issueId}
-                onDelete={setDeleteTarget}
-                onExtend={setExtendTarget}
-                onView={setViewIssue}
-              />
+          <div className="space-y-3">
+            {issueGroups.map((group) => (
+              <details
+                className="group overflow-hidden rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)]"
+                key={`${group.trackingMode}:${group.category}`}
+              >
+                <summary className="cursor-pointer list-none bg-[var(--color-primary-soft)] p-4 marker:hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className="grid size-8 place-items-center rounded-[9px] bg-white text-[var(--color-primary)] shadow-sm">
+                        <ChevronDown
+                          className="transition-transform group-open:rotate-180"
+                          size={18}
+                        />
+                      </span>
+                      <div>
+                        <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+                          {group.category}
+                        </h2>
+                        <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                          {group.trackingMode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable'} ·{' '}
+                          {group.issues.length} issue{group.issues.length === 1 ? '' : 's'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-x-3 gap-y-1 text-xs font-bold text-[var(--color-text-muted)]">
+                      {visibleCategoryStats.includes('totalQuantity') ? (
+                        <span>Total: {group.totalQuantity}</span>
+                      ) : null}
+                      {visibleCategoryStats.includes('availableQuantity') ? (
+                        <span>Available: {group.availableQuantity}</span>
+                      ) : null}
+                      {visibleCategoryStats.includes('issuedQuantity') ? (
+                        <span>Issued: {group.issuedQuantity}</span>
+                      ) : null}
+                      {visibleCategoryStats.includes('totalIssues') ? (
+                        <span>Total issues: {group.issues.length}</span>
+                      ) : null}
+                      {visibleCategoryStats.includes('outstanding') ? (
+                        <span>Outstanding: {group.outstanding}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </summary>
+                {group.issues.length === 0 ? (
+                  <p className="p-5 text-sm font-semibold text-[var(--color-text-muted)]">
+                    No Issue Records in this category yet.
+                  </p>
+                ) : (
+                  <>
+                    <div className="space-y-3 p-3 min-[840px]:hidden">
+                      {group.issues.map((issue) => (
+                        <IssueCard
+                          admin={admin}
+                          user={user}
+                          issue={issue}
+                          key={issue.issueId}
+                          onDelete={setDeleteTarget}
+                          onExtend={setExtendTarget}
+                          onView={setViewIssue}
+                        />
+                      ))}
+                    </div>
+                    <IssueTable
+                      admin={admin}
+                      user={user}
+                      issues={group.issues}
+                      onDelete={setDeleteTarget}
+                      onExtend={setExtendTarget}
+                      onView={setViewIssue}
+                      visibleColumns={visibleColumns}
+                    />
+                  </>
+                )}
+              </details>
             ))}
           </div>
-          <IssueTable
-            admin={admin}
-            user={user}
-            issues={issues}
-            onDelete={setDeleteTarget}
-            onExtend={setExtendTarget}
-            onView={setViewIssue}
-            visibleColumns={visibleColumns}
-          />
-          {query.data && query.data.meta.totalPages > 1 ? (
-            <nav
-              aria-label="Issue Record pages"
-              className="flex items-center justify-between gap-3"
-            >
-              <Button
-                disabled={page <= 1}
-                onClick={() => updateParameters({ page: String(page - 1) })}
-                variant="secondary"
-              >
-                Previous
-              </Button>
-              <p className="text-sm font-semibold text-[var(--color-text-muted)]">
-                Page {page} of {query.data.meta.totalPages}
-              </p>
-              <Button
-                disabled={page >= query.data.meta.totalPages}
-                onClick={() => updateParameters({ page: String(page + 1) })}
-                variant="secondary"
-              >
-                Next
-              </Button>
-            </nav>
-          ) : null}
         </>
       )}
       {viewIssue ? (
@@ -663,12 +938,18 @@ function FilterField({ label, children }: { label: string; children: ReactNode }
 
 function ColumnPicker({
   columns,
+  categoryStats,
   onChange,
+  onCategoryStatsChange,
   onReset,
+  showCategoryStats,
 }: {
   columns: IssueColumnKey[];
+  categoryStats: IssueCategoryStatKey[];
   onChange: (columns: IssueColumnKey[]) => void;
+  onCategoryStatsChange: (stats: IssueCategoryStatKey[]) => void;
   onReset: () => void;
+  showCategoryStats: boolean;
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
 
@@ -700,13 +981,21 @@ function ColumnPicker({
     }
   }
 
+  function toggleCategoryStat(key: IssueCategoryStatKey) {
+    onCategoryStatsChange(
+      categoryStats.includes(key)
+        ? categoryStats.filter((stat) => stat !== key)
+        : [...categoryStats, key],
+    );
+  }
+
   return (
     <details className="relative" ref={detailsRef}>
       <summary className="button-secondary flex min-h-11 cursor-pointer list-none items-center justify-center gap-2 [&::-webkit-details-marker]:hidden">
         <Columns3 aria-hidden="true" size={18} />
         Columns
         <span className="grid size-5 place-items-center rounded-full bg-[var(--color-primary-soft)] text-xs font-extrabold text-[var(--color-primary)]">
-          {columns.length}
+          {columns.length + (showCategoryStats ? categoryStats.length : 0)}
         </span>
       </summary>
       <div className="issue-columns-popover absolute right-0 z-30 mt-2 w-[min(94vw,360px)] rounded-[10px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-overlay)]">
@@ -755,6 +1044,43 @@ function ColumnPicker({
             );
           })}
         </div>
+        {showCategoryStats ? (
+          <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+            <h3 className="text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+              Category folder totals
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
+              Choose the figures shown on the right side of every category folder.
+            </p>
+            <div className="mt-3 grid gap-1.5">
+              {issueCategoryStats.map((stat) => {
+                const checked = categoryStats.includes(stat.key);
+                return (
+                  <label
+                    className={`issue-column-option ${checked ? 'issue-column-option-selected' : ''}`}
+                    key={stat.key}
+                  >
+                    <input
+                      checked={checked}
+                      className="sr-only"
+                      onChange={() => toggleCategoryStat(stat.key)}
+                      type="checkbox"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className={`issue-column-check ${checked ? 'issue-column-check-selected' : ''}`}
+                    >
+                      {checked ? <Check size={13} strokeWidth={3} /> : null}
+                    </span>
+                    <span className="min-w-0 flex-1 text-sm font-bold text-[var(--color-text-strong)]">
+                      {stat.label}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </div>
     </details>
   );

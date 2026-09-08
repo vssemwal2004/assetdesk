@@ -529,6 +529,19 @@ export const IssueSchema = IssueBaseSchema.superRefine((issue, context) => {
 
 export const IssueSummarySchema = IssueBaseSchema.omit({ lines: true, returnEvents: true }).extend({
   materialNames: z.array(z.string().min(1)).min(1),
+  materialCategories: z.array(z.string().min(1)).min(1),
+  trackingModes: z.array(TrackingModeSchema).min(1),
+  materialGroups: z
+    .array(
+      z
+        .object({
+          category: z.string().min(1),
+          trackingMode: TrackingModeSchema,
+          outstandingQuantity: z.number().int().nonnegative(),
+        })
+        .strict(),
+    )
+    .min(1),
   latestReturnEventId: z.string().uuid().nullable().default(null),
 });
 

@@ -133,6 +133,12 @@ export function toIssue(issue: IssueDocument): Issue {
 
 export function toIssueSummary(issue: IssueDocument): IssueSummary {
   const lines = issue.lines ?? [];
+  const summaryLines = lines.map((line) => ({
+    category: line.material.category?.trim() || 'Unassigned category',
+    trackingMode:
+      line.material.trackingMode === 'QUANTITY' ? ('QUANTITY' as const) : ('SERIALIZED' as const),
+    outstandingQuantity: line.outstandingQuantity ?? 0,
+  }));
   const latestReturnEvent = (issue.returnEvents ?? [])
     .slice()
     .sort((left, right) => right.returnedAt.getTime() - left.returnedAt.getTime())[0];
@@ -160,6 +166,30 @@ export function toIssueSummary(issue: IssueDocument): IssueSummary {
     createdAt: issue.createdAt.toISOString(),
     updatedAt: issue.updatedAt.toISOString(),
     materialNames: [...new Set(lines.map((line) => line.material.name).filter(Boolean))],
+    materialCategories: [...new Set(summaryLines.map((line) => line.category))],
+    trackingModes: [...new Set(summaryLines.map((line) => line.trackingMode))],
+    materialGroups: Object.values(
+      summaryLines.reduce<
+        Record<
+          string,
+          {
+            category: string;
+            trackingMode: 'SERIALIZED' | 'QUANTITY';
+            outstandingQuantity: number;
+          }
+        >
+      >((groups, line) => {
+        const key = `${line.trackingMode}:${line.category.toLocaleUpperCase('en-US')}`;
+        const group = groups[key] ?? {
+          category: line.category,
+          trackingMode: line.trackingMode,
+          outstandingQuantity: 0,
+        };
+        group.outstandingQuantity += line.outstandingQuantity;
+        groups[key] = group;
+        return groups;
+      }, {}),
+    ),
     latestReturnEventId: latestReturnEvent?.returnEventId ?? null,
   };
 }

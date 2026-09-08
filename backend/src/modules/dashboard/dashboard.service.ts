@@ -90,6 +90,9 @@ const issueSummaryFields = [
   'createdAt',
   'updatedAt',
   'lines.material.name',
+  'lines.material.category',
+  'lines.material.trackingMode',
+  'lines.outstandingQuantity',
 ].join(' ');
 
 function hasPermission(actor: DashboardActor | undefined, permission: WorkerPermission): boolean {
