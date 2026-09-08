@@ -330,7 +330,6 @@ function IssueNavigationGroup({
   return (
     <details className="group" open={active}>
       <summary
-        onClick={closeSiblingDetails}
         className={cn(
           'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
           compact ? 'px-2.5' : 'px-3',
@@ -385,7 +384,6 @@ function InventoryNavigationGroup({
   return (
     <details className="group" open={active}>
       <summary
-        onClick={closeSiblingDetails}
         className={cn(
           'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
           compact ? 'px-2.5' : 'px-3',
@@ -416,7 +414,6 @@ function InventoryNavigationGroup({
         {gatePassItems.length ? (
           <details className="group/gate-pass" open={gatePassActive}>
             <summary
-              onClick={closeSiblingDetails}
               className={cn(
                 'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
                 compact ? 'px-2.5' : 'px-3',
@@ -472,7 +469,6 @@ function NavigationGroupMenu({
   return (
     <details className="group" open={active}>
       <summary
-        onClick={closeSiblingDetails}
         className={cn(
           'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
           compact ? 'px-2.5' : 'px-3',
@@ -658,7 +654,6 @@ function CartridgeNavigationGroup({
   return (
     <details className="group" open={active}>
       <summary
-        onClick={closeSiblingDetails}
         className={cn(
           'sidebar-nav-link flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-[10px] text-sm font-bold transition-colors [&::-webkit-details-marker]:hidden',
           compact ? 'px-2.5' : 'px-3',
@@ -688,7 +683,6 @@ function CartridgeNavigationGroup({
               open={sectionActive}
             >
               <summary
-                onClick={closeSiblingDetails}
                 className={cn(
                   'sidebar-nav-link flex min-h-10 cursor-pointer list-none items-center gap-3 rounded-[10px] text-xs font-extrabold uppercase tracking-[0.02em] transition-colors [&::-webkit-details-marker]:hidden',
                   compact ? 'px-2.5' : 'px-3',
