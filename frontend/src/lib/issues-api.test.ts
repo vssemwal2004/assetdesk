@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { resetApiClientState, setCsrfToken } from './api-client';
-import { createIssue, createReturn } from './issues-api';
+import { createIssue, createReturn, getIssues } from './issues-api';
 
 function conflict(): Response {
   return new Response(
@@ -23,6 +23,29 @@ afterEach(() => {
 });
 
 describe('Issue and Return idempotency', () => {
+  it('sends the canonical Block and Location filters used by production APIs', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [],
+          meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await getIssues({
+      page: 1,
+      block: 'Btech Block',
+      destinationLocation: 'Placement Office',
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      '/api/v1/issues?page=1&pageSize=20&block=Btech+Block&location=Placement+Office',
+    );
+  });
+
   it('sends the caller-owned key when confirming an Issue Record', async () => {
     const fetchMock = vi.fn().mockResolvedValue(conflict());
     vi.stubGlobal('fetch', fetchMock);

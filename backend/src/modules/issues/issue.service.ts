@@ -376,7 +376,11 @@ export async function createIssue(
     normalizedName: normalizeLookupValue(input.destinationLocation),
   }).lean();
   if (!locationDetail) {
-    throw new AppError(422, 'INVALID_ISSUE_LOCATION', 'Select a location added by an administrator.');
+    throw new AppError(
+      422,
+      'INVALID_ISSUE_LOCATION',
+      'Select a location added by an administrator.',
+    );
   }
   let result: CreateIssueResult | undefined;
   const claimedLines: IssueLineRecord[] = [];
@@ -624,13 +628,23 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
   if (input.location) {
     const location = new RegExp(`^${escapeSearchRegex(input.location)}$`, 'i');
     accessClauses.push({
-      $or: [
-        { destinationLocation: location },
-      ],
+      $or: [{ destinationLocation: location }],
     });
   }
   if (input.block) {
-    filter.destinationBlock = new RegExp(`^${escapeSearchRegex(input.block)}$`, 'i');
+    const block = new RegExp(`^${escapeSearchRegex(input.block)}$`, 'i');
+    accessClauses.push({
+      $or: [
+        { destinationBlock: block },
+        // Issue records created before Block was stored separately used the
+        // destination location as their only destination value. Keep those
+        // production records discoverable without weakening matches for new data.
+        {
+          destinationBlock: { $exists: false },
+          destinationLocation: block,
+        },
+      ],
+    });
   }
   if (input.period === 'TODAY') {
     filter.issuedAt = { $gte: today.start, $lt: today.end };
@@ -707,7 +721,16 @@ export async function listIssueFilterOptions(
     });
   }
   if (input.block) {
-    filter.destinationBlock = new RegExp(`^${escapeSearchRegex(input.block)}$`, 'i');
+    const block = new RegExp(`^${escapeSearchRegex(input.block)}$`, 'i');
+    accessClauses.push({
+      $or: [
+        { destinationBlock: block },
+        {
+          destinationBlock: { $exists: false },
+          destinationLocation: block,
+        },
+      ],
+    });
   }
   if (accessClauses.length > 0) filter.$and = accessClauses;
 

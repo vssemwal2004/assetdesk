@@ -59,9 +59,8 @@ export async function getIssues(
   if (filters.returnState) parameters.set('returnState', filters.returnState);
   if (filters.assignmentType) parameters.set('assignmentType', filters.assignmentType);
   if (filters.store) parameters.set('store', filters.store);
-  if (filters.block) parameters.set('destinationBlock', filters.block);
-  if (filters.destinationLocation)
-    parameters.set('destinationLocation', filters.destinationLocation);
+  if (filters.block) parameters.set('block', filters.block);
+  if (filters.destinationLocation) parameters.set('location', filters.destinationLocation);
   if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
   if (filters.category) parameters.set('category', filters.category);
   const payload = await apiRequest<unknown>(`/api/v1/issues?${parameters.toString()}`, {
