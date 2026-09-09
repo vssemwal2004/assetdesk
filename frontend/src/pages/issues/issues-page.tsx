@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Columns3,
   Eye,
+  Download,
   Filter,
   MapPin,
   MonitorCog,
@@ -49,6 +50,7 @@ import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import { isApiError } from '../../lib/api-client';
 import {
   deleteIssue,
+  downloadIssuesCsv,
   getIssue,
   getIssueFilterOptions,
   getIssues,
@@ -468,6 +470,35 @@ export function IssuesPage() {
   );
   const admin = user?.role === 'ADMIN';
   const canCreateIssue = hasPermission(user, 'ASSIGNMENTS_CREATE');
+  const downloadMutation = useMutation({
+    mutationFn: (scope: 'FILTERED' | 'ALL') =>
+      downloadIssuesCsv(scope, {
+        ...(search ? { search } : {}),
+        ...(status ? { status } : {}),
+        ...(period ? { period } : {}),
+        ...(returnState ? { returnState } : {}),
+        ...(issueAssignmentType ? { assignmentType: issueAssignmentType } : {}),
+        ...(block ? { block } : {}),
+        ...(location ? { destinationLocation: location } : {}),
+        ...(store ? { store } : {}),
+        ...(trackingMode ? { trackingMode } : {}),
+        ...(category && trackingMode ? { category } : {}),
+      }),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `assetdesk-issue-data-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setActionError(null);
+    },
+    onError: (error) => {
+      setActionError(isApiError(error) ? error.message : 'Issue data could not be downloaded.');
+    },
+  });
   const deleteMutation = useMutation({
     mutationFn: (issue: IssueSummary) => deleteIssue(issue.issueId),
     onSuccess: async () => {
@@ -505,12 +536,35 @@ export function IssuesPage() {
     <div className="space-y-6">
       <PageHeader
         actions={
-          canCreateIssue ? (
-            <Link className="button-primary" to="/issues/new">
-              <PackagePlus aria-hidden="true" size={18} />
-              Issue material
-            </Link>
-          ) : null
+          <div className="flex flex-wrap gap-2">
+            {admin ? (
+              <>
+                <Button
+                  loading={downloadMutation.isPending}
+                  onClick={() => downloadMutation.mutate('FILTERED')}
+                  variant="secondary"
+                >
+                  <Download aria-hidden="true" size={18} />
+                  {filtered ? 'Download filtered' : 'Download data'}
+                </Button>
+                {filtered ? (
+                  <Button
+                    disabled={downloadMutation.isPending}
+                    onClick={() => downloadMutation.mutate('ALL')}
+                    variant="quiet"
+                  >
+                    Download all
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
+            {canCreateIssue ? (
+              <Link className="button-primary" to="/issues/new">
+                <PackagePlus aria-hidden="true" size={18} />
+                Issue material
+              </Link>
+            ) : null}
+          </div>
         }
         description={
           user?.role === 'ADMIN'

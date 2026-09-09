@@ -32,6 +32,7 @@ import { idempotencyConflict } from './idempotency.js';
 import { calculateExpectedReturnAt, issueYearInIst, istDayRange } from './issue-date.js';
 import { allocateIssueId } from './issue-id.js';
 import { toIssue, toIssueSummary, toReturnableIssue } from './issue.mapper.js';
+import { createCsv } from '../reports/csv.js';
 import {
   IssueModel,
   type IssueActorSnapshotRecord,
@@ -76,6 +77,11 @@ export interface IssueListResult {
   pageSize: number;
   total: number;
   totalPages: number;
+}
+
+export interface IssueExportResult {
+  csv: string;
+  rowCount: number;
 }
 
 export interface ReturnSearchInput {
@@ -673,6 +679,7 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
           'destinationBlock',
           'expectedReturnAt',
           'duePreset',
+          'assignmentType',
           'status',
           'purpose',
           'notes',
@@ -701,6 +708,78 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
     pageSize: input.pageSize,
     total,
     totalPages: total === 0 ? 0 : Math.ceil(total / input.pageSize),
+  };
+}
+
+export async function exportIssues(
+  input: Omit<IssueListInput, 'page' | 'pageSize'>,
+): Promise<IssueExportResult> {
+  const first = await listIssues({ ...input, page: 1, pageSize: 100 });
+  if (first.total > 5_000) {
+    throw new AppError(
+      400,
+      'ISSUE_EXPORT_TOO_LARGE',
+      'This export contains more than 5,000 Issue Records. Apply filters and try again.',
+    );
+  }
+  const remaining = await Promise.all(
+    Array.from({ length: Math.max(0, first.totalPages - 1) }, (_, index) =>
+      listIssues({ ...input, page: index + 2, pageSize: 100 }),
+    ),
+  );
+  const issues = [first, ...remaining].flatMap((result) => result.issues);
+  return {
+    rowCount: issues.length,
+    csv: createCsv(
+      [
+        'Issue ID',
+        'Receiver',
+        'Receiver ID',
+        'Receiver type',
+        'Department',
+        'Contact',
+        'Email',
+        'Materials',
+        'Categories',
+        'Material types',
+        'Block',
+        'Location',
+        'Issued at',
+        'Expected return',
+        'Status',
+        'Assignment type',
+        'Issued quantity',
+        'Outstanding quantity',
+        'Issued by',
+        'Issued by worker ID',
+        'Purpose',
+        'Notes',
+      ],
+      issues.map((issue) => [
+        issue.issueId,
+        issue.receiver.fullName,
+        issue.receiver.universityId,
+        issue.receiver.type,
+        issue.receiver.department,
+        issue.receiver.contact,
+        issue.receiver.email,
+        issue.materialNames.join('; '),
+        issue.materialCategories.join('; '),
+        issue.trackingModes.join('; '),
+        issue.destinationBlock,
+        issue.destinationLocation,
+        issue.issuedAt,
+        issue.expectedReturnAt,
+        issue.status,
+        issue.assignmentType,
+        issue.totalIssuedQuantity,
+        issue.totalOutstandingQuantity,
+        issue.issuedBy.name,
+        issue.issuedBy.workerId,
+        issue.purpose,
+        issue.notes,
+      ]),
+    ),
   };
 }
 

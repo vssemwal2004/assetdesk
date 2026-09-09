@@ -34,7 +34,9 @@ import {
   listIssueFilterOptions,
   searchReturnableIssues,
   updateIssue,
+  exportIssues,
 } from './issue.service.js';
+import { appendAuditEvent } from '../audit/audit.service.js';
 import { createInventoryGatePass } from '../inventory-gate-passes/inventory-gate-pass.service.js';
 
 const OptionalQueryTextSchema = z.preprocess(
@@ -82,6 +84,13 @@ const ReturnSearchQuerySchema = z
   .strict();
 
 const IssueFilterOptionsQuerySchema = z.object({ block: OptionalQueryTextSchema }).strip();
+
+const IssueExportSchema = z
+  .object({
+    scope: z.enum(['FILTERED', 'ALL']),
+    filters: IssueListQuerySchema.omit({ page: true, pageSize: true }).optional().default({}),
+  })
+  .strict();
 
 function authenticated(request: Request): NonNullable<Request['auth']> {
   if (!request.auth) throw new AppError(401, 'AUTH_REQUIRED', 'Sign in to continue.');
@@ -145,6 +154,59 @@ export function createIssuesRouter(): Router {
     },
   );
 
+  router.post(
+    '/export',
+    requireAuth,
+    requireFullAccess,
+    requireRole('ADMIN'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (request, response, next) => {
+      try {
+        const actor = authenticated(request);
+        const input = IssueExportSchema.parse(request.body);
+        const selected = input.scope === 'FILTERED' ? input.filters : {};
+        const location = selected.location ?? selected.destinationLocation;
+        const block = selected.block ?? selected.destinationBlock;
+        const result = await exportIssues({
+          actorUserId: actor.userId,
+          actorRole: actor.role,
+          issueDataScope: actor.dataAccess.issues,
+          ...(selected.search ? { search: selected.search } : {}),
+          ...(selected.status ? { status: selected.status } : {}),
+          ...(selected.period ? { period: selected.period } : {}),
+          ...(selected.returnState ? { returnState: selected.returnState } : {}),
+          ...(selected.assignmentType ? { assignmentType: selected.assignmentType } : {}),
+          ...(selected.store ? { store: selected.store } : {}),
+          ...(location ? { location } : {}),
+          ...(block ? { block } : {}),
+          ...(selected.trackingMode ? { trackingMode: selected.trackingMode } : {}),
+          ...(selected.category ? { category: selected.category } : {}),
+        });
+        await appendAuditEvent({
+          requestId: request.requestId,
+          actorUserId: actor.userId,
+          actorWorkerId: actor.workerId,
+          actorRole: actor.role,
+          action: 'REPORT_ISSUE_REGISTER_EXPORTED',
+          targetType: 'REPORT',
+          targetId: 'ISSUE_DATA',
+          result: 'SUCCESS',
+          metadata: { scope: input.scope, rowCount: result.rowCount },
+        });
+        response
+          .type('text/csv; charset=utf-8')
+          .setHeader(
+            'Content-Disposition',
+            `attachment; filename="assetdesk-issue-data-${new Date().toISOString().slice(0, 10)}.csv"`,
+          )
+          .send(result.csv);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.get(
     '/filter-options',
     requireAuth,
@@ -180,8 +242,16 @@ export function createIssuesRouter(): Router {
       try {
         const actor = authenticated(request);
         const input = CreateIssueRequestSchema.parse(request.body);
-        if (input.outsideUniversity && actor.role !== 'ADMIN' && !actor.permissions.includes('GATE_PASS_CREATE_FROM_ISSUE')) {
-          throw new AppError(403, 'GATE_PASS_PERMISSION_REQUIRED', 'You do not have permission to create a Gate Pass from an Issue.');
+        if (
+          input.outsideUniversity &&
+          actor.role !== 'ADMIN' &&
+          !actor.permissions.includes('GATE_PASS_CREATE_FROM_ISSUE')
+        ) {
+          throw new AppError(
+            403,
+            'GATE_PASS_PERMISSION_REQUIRED',
+            'You do not have permission to create a Gate Pass from an Issue.',
+          );
         }
         const key = idempotencyKeyFromRequest(request);
         const result = await createIssue(
@@ -197,22 +267,53 @@ export function createIssuesRouter(): Router {
         );
         if (input.outsideUniversity) {
           const movement = input.outsideUniversity;
-          const gatePassItems = result.issue.lines.reduce<CreateInventoryGatePassRequest['items']>((all, line) => {
-            if (line.material.trackingMode === 'SERIALIZED') all.push(...line.assets.map(asset => ({ trackingMode: 'SERIALIZED' as const, materialCode: line.material.materialCode, assetTag: asset.assetTag, returnRequirement: 'RETURNABLE' as const })));
-            else all.push({ trackingMode: 'QUANTITY', materialCode: line.material.materialCode, quantity: line.issuedQuantity, returnRequirement: 'RETURNABLE' });
-            return all;
-          }, []);
+          const gatePassItems = result.issue.lines.reduce<CreateInventoryGatePassRequest['items']>(
+            (all, line) => {
+              if (line.material.trackingMode === 'SERIALIZED')
+                all.push(
+                  ...line.assets.map((asset) => ({
+                    trackingMode: 'SERIALIZED' as const,
+                    materialCode: line.material.materialCode,
+                    assetTag: asset.assetTag,
+                    returnRequirement: 'RETURNABLE' as const,
+                  })),
+                );
+              else
+                all.push({
+                  trackingMode: 'QUANTITY',
+                  materialCode: line.material.materialCode,
+                  quantity: line.issuedQuantity,
+                  returnRequirement: 'RETURNABLE',
+                });
+              return all;
+            },
+            [],
+          );
           await createInventoryGatePass(
             {
-              purpose: input.assignmentType === 'LONG_TERM' ? 'ISSUE_PERMANENT' : 'ISSUE_RETURNABLE',
+              purpose:
+                input.assignmentType === 'LONG_TERM' ? 'ISSUE_PERMANENT' : 'ISSUE_RETURNABLE',
               issueId: result.issue.issueId,
-              destination: { name: movement.destination, ...(movement.organization ? { organization: movement.organization } : {}), ...(movement.contact ? { contact: movement.contact } : {}) },
-              carrier: { name: movement.personCarryingMaterial, ...(movement.contact ? { contact: movement.contact } : {}), ...(movement.vehicleNumber ? { vehicleNumber: movement.vehicleNumber } : {}) },
+              destination: {
+                name: movement.destination,
+                ...(movement.organization ? { organization: movement.organization } : {}),
+                ...(movement.contact ? { contact: movement.contact } : {}),
+              },
+              carrier: {
+                name: movement.personCarryingMaterial,
+                ...(movement.contact ? { contact: movement.contact } : {}),
+                ...(movement.vehicleNumber ? { vehicleNumber: movement.vehicleNumber } : {}),
+              },
               items: gatePassItems,
               ...(movement.expectedGateInAt ? { expectedGateInAt: movement.expectedGateInAt } : {}),
               ...(movement.remarks ? { remarks: movement.remarks } : {}),
             },
-            { userId: actor.userId, workerId: actor.workerId, role: actor.role, requestId: request.requestId },
+            {
+              userId: actor.userId,
+              workerId: actor.workerId,
+              role: actor.role,
+              requestId: request.requestId,
+            },
           );
         }
         response.status(result.idempotentReplay ? 200 : 201).json({
