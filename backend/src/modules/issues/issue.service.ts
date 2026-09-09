@@ -32,7 +32,6 @@ import { idempotencyConflict } from './idempotency.js';
 import { calculateExpectedReturnAt, issueYearInIst, istDayRange } from './issue-date.js';
 import { allocateIssueId } from './issue-id.js';
 import { toIssue, toIssueSummary, toReturnableIssue } from './issue.mapper.js';
-import { createCsv } from '../reports/csv.js';
 import {
   IssueModel,
   type IssueActorSnapshotRecord,
@@ -80,7 +79,7 @@ export interface IssueListResult {
 }
 
 export interface IssueExportResult {
-  csv: string;
+  issues: IssueSummary[];
   rowCount: number;
 }
 
@@ -730,56 +729,7 @@ export async function exportIssues(
   const issues = [first, ...remaining].flatMap((result) => result.issues);
   return {
     rowCount: issues.length,
-    csv: createCsv(
-      [
-        'Issue ID',
-        'Receiver',
-        'Receiver ID',
-        'Receiver type',
-        'Department',
-        'Contact',
-        'Email',
-        'Materials',
-        'Categories',
-        'Material types',
-        'Block',
-        'Location',
-        'Issued at',
-        'Expected return',
-        'Status',
-        'Assignment type',
-        'Issued quantity',
-        'Outstanding quantity',
-        'Issued by',
-        'Issued by worker ID',
-        'Purpose',
-        'Notes',
-      ],
-      issues.map((issue) => [
-        issue.issueId,
-        issue.receiver.fullName,
-        issue.receiver.universityId,
-        issue.receiver.type,
-        issue.receiver.department,
-        issue.receiver.contact,
-        issue.receiver.email,
-        issue.materialNames.join('; '),
-        issue.materialCategories.join('; '),
-        issue.trackingModes.join('; '),
-        issue.destinationBlock,
-        issue.destinationLocation,
-        issue.issuedAt,
-        issue.expectedReturnAt,
-        issue.status,
-        issue.assignmentType,
-        issue.totalIssuedQuantity,
-        issue.totalOutstandingQuantity,
-        issue.issuedBy.name,
-        issue.issuedBy.workerId,
-        issue.purpose,
-        issue.notes,
-      ]),
-    ),
+    issues,
   };
 }
 

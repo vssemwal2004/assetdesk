@@ -195,13 +195,15 @@ export function createIssuesRouter(): Router {
           result: 'SUCCESS',
           metadata: { scope: input.scope, rowCount: result.rowCount },
         });
-        response
-          .type('text/csv; charset=utf-8')
-          .setHeader(
-            'Content-Disposition',
-            `attachment; filename="assetdesk-issue-data-${new Date().toISOString().slice(0, 10)}.csv"`,
-          )
-          .send(result.csv);
+        response.json({
+          data: result.issues,
+          meta: {
+            page: 1,
+            pageSize: Math.max(1, result.rowCount),
+            total: result.rowCount,
+            totalPages: result.rowCount ? 1 : 0,
+          },
+        });
       } catch (error) {
         next(error);
       }

@@ -28,7 +28,7 @@ import {
   type UpdateIssueRequest,
 } from '@assetdesk/contracts';
 
-import { apiBlobRequest, apiRequest } from './api-client';
+import { apiRequest } from './api-client';
 
 export interface IssueFilters {
   page: number;
@@ -69,14 +69,15 @@ export async function getIssues(
   return IssuesListResponseSchema.parse(payload);
 }
 
-export async function downloadIssuesCsv(
+export async function getIssuesForExport(
   scope: 'FILTERED' | 'ALL',
   filters: Omit<IssueFilters, 'page' | 'pageSize'> = {},
-): Promise<Blob> {
-  return apiBlobRequest('/api/v1/issues/export', {
+): Promise<IssuesListResponse['data']> {
+  const payload = await apiRequest<unknown>('/api/v1/issues/export', {
     method: 'POST',
     json: { scope, filters },
   });
+  return IssuesListResponseSchema.parse(payload).data;
 }
 
 export async function getIssueFilterOptions(

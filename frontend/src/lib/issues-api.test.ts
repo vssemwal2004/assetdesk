@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { resetApiClientState, setCsrfToken } from './api-client';
-import { createIssue, createReturn, getIssues } from './issues-api';
+import { createIssue, createReturn, getIssues, getIssuesForExport } from './issues-api';
 
 function conflict(): Response {
   return new Response(
@@ -23,6 +23,29 @@ afterEach(() => {
 });
 
 describe('Issue and Return idempotency', () => {
+  it('requests filtered Issue export data as structured JSON', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [],
+          meta: { page: 1, pageSize: 1, total: 0, totalPages: 0 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    setCsrfToken('csrf-test-token');
+
+    await getIssuesForExport('FILTERED', { block: 'CSIT', category: 'CPU' });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/issues/export');
+    const options = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(options.body))).toEqual({
+      scope: 'FILTERED',
+      filters: { block: 'CSIT', category: 'CPU' },
+    });
+  });
+
   it('sends the canonical Block and Location filters used by production APIs', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

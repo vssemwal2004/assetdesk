@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
+import writeExcelFile, { type Cell, type SheetData } from 'write-excel-file/browser';
 
 import type {
   AssignmentType,
@@ -50,7 +51,7 @@ import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import { isApiError } from '../../lib/api-client';
 import {
   deleteIssue,
-  downloadIssuesCsv,
+  getIssuesForExport,
   getIssue,
   getIssueFilterOptions,
   getIssues,
@@ -108,6 +109,78 @@ const defaultIssueColumns: IssueColumnKey[] = [
   'expectedReturn',
   'status',
 ];
+
+const issueColumnWidths: Record<IssueColumnKey, number> = {
+  issue: 22,
+  receiver: 24,
+  material: 36,
+  block: 18,
+  location: 24,
+  issuedAt: 21,
+  expectedReturn: 21,
+  status: 20,
+  assignment: 20,
+  quantity: 14,
+  outstanding: 16,
+  issuedBy: 24,
+  purpose: 36,
+};
+
+function issueExportValue(issue: IssueSummary, column: IssueColumnKey): string | number | Date {
+  if (column === 'issue') return issue.issueId;
+  if (column === 'receiver') return issue.receiver.fullName;
+  if (column === 'material') return issue.materialNames.join(', ');
+  if (column === 'block') return issue.destinationBlock ?? '';
+  if (column === 'location') return issue.destinationLocation ?? '';
+  if (column === 'issuedAt') return new Date(issue.issuedAt);
+  if (column === 'expectedReturn')
+    return issue.expectedReturnAt ? new Date(issue.expectedReturnAt) : '';
+  if (column === 'status') return humanizeCatalogValue(issue.status);
+  if (column === 'assignment') return humanizeCatalogValue(issue.assignmentType);
+  if (column === 'quantity') return issue.totalIssuedQuantity;
+  if (column === 'outstanding') return issue.totalOutstandingQuantity;
+  if (column === 'issuedBy') return `${issue.issuedBy.name} (${issue.issuedBy.workerId})`;
+  return issue.purpose ?? '';
+}
+
+async function saveIssueWorkbook(issues: IssueSummary[], columns: IssueColumnKey[]) {
+  const selected = columns.length ? columns : defaultIssueColumns;
+  const header = selected.map((column): Cell => ({
+    value: issueColumns.find((definition) => definition.key === column)?.label ?? column,
+    fontWeight: 'bold',
+    textColor: '#FFFFFF',
+    backgroundColor: '#1F4E78',
+    align: 'center',
+    wrap: true,
+    height: 30,
+  }));
+  const data: SheetData = [
+    header,
+    ...issues.map((issue, rowIndex) =>
+      selected.map((column): Cell => {
+        const value = issueExportValue(issue, column);
+        return {
+          value,
+          ...(value instanceof Date ? { type: Date, format: 'dd mmm yyyy, hh:mm' } : {}),
+          ...(typeof value === 'number' ? { type: Number, align: 'right' } : {}),
+          backgroundColor: rowIndex % 2 === 0 ? '#F4F8FC' : '#FFFFFF',
+          textColor: '#172033',
+          wrap: true,
+          alignVertical: 'center',
+          borderColor: '#D9E2F0',
+          height: 24,
+        };
+      }),
+    ),
+  ];
+  await writeExcelFile(data, {
+    sheet: 'Issue Data',
+    columns: selected.map((column) => ({ width: issueColumnWidths[column] })),
+    stickyRowsCount: 1,
+    stickyColumnsCount: selected.includes('issue') ? 1 : 0,
+    showGridLines: false,
+  }).toFile(`assetdesk-issue-data-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
 
 type IssueCategoryStatKey =
   'totalQuantity' | 'availableQuantity' | 'issuedQuantity' | 'totalIssues' | 'outstanding';
@@ -472,8 +545,8 @@ export function IssuesPage() {
   const canDownloadIssueData = hasPermission(user, 'ISSUE_DATA_EXPORT');
   const canCreateIssue = hasPermission(user, 'ASSIGNMENTS_CREATE');
   const downloadMutation = useMutation({
-    mutationFn: (scope: 'FILTERED' | 'ALL') =>
-      downloadIssuesCsv(scope, {
+    mutationFn: async (scope: 'FILTERED' | 'ALL') => {
+      const exportIssues = await getIssuesForExport(scope, {
         ...(search ? { search } : {}),
         ...(status ? { status } : {}),
         ...(period ? { period } : {}),
@@ -484,16 +557,10 @@ export function IssuesPage() {
         ...(store ? { store } : {}),
         ...(trackingMode ? { trackingMode } : {}),
         ...(category && trackingMode ? { category } : {}),
-      }),
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `assetdesk-issue-data-${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
+      });
+      await saveIssueWorkbook(exportIssues, visibleColumns);
+    },
+    onSuccess: () => {
       setActionError(null);
     },
     onError: (error) => {
@@ -546,7 +613,7 @@ export function IssuesPage() {
                   variant="secondary"
                 >
                   <Download aria-hidden="true" size={18} />
-                  {filtered ? 'Download filtered' : 'Download data'}
+                  {filtered ? 'Download filtered Excel' : 'Download Excel'}
                 </Button>
                 {filtered ? (
                   <Button
@@ -554,7 +621,7 @@ export function IssuesPage() {
                     onClick={() => downloadMutation.mutate('ALL')}
                     variant="quiet"
                   >
-                    Download all
+                    Download all Excel
                   </Button>
                 ) : null}
               </>
