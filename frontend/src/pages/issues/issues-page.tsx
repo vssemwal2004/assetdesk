@@ -469,6 +469,7 @@ export function IssuesPage() {
     category,
   );
   const admin = user?.role === 'ADMIN';
+  const canDownloadIssueData = hasPermission(user, 'ISSUE_DATA_EXPORT');
   const canCreateIssue = hasPermission(user, 'ASSIGNMENTS_CREATE');
   const downloadMutation = useMutation({
     mutationFn: (scope: 'FILTERED' | 'ALL') =>
@@ -537,7 +538,7 @@ export function IssuesPage() {
       <PageHeader
         actions={
           <div className="flex flex-wrap gap-2">
-            {admin ? (
+            {canDownloadIssueData ? (
               <>
                 <Button
                   loading={downloadMutation.isPending}

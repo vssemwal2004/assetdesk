@@ -37,6 +37,12 @@ export const permissionDefinitions: PermissionDefinition[] = [
     description: 'Search and open issue history.',
   },
   {
+    permission: 'ISSUE_DATA_EXPORT',
+    group: 'Issues',
+    label: 'Download issue data',
+    description: 'Download filtered Issue Records or all Issue data within data visibility.',
+  },
+  {
     permission: 'ASSIGNMENTS_CREATE',
     group: 'Issues',
     label: 'Create issue material',

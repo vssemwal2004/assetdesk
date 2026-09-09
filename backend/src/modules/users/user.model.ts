@@ -69,6 +69,7 @@ const UserSchema = new Schema<UserRecord>(
       enum: [
         'DASHBOARD',
         'ISSUES_VIEW',
+        'ISSUE_DATA_EXPORT',
         'ASSIGNMENTS_CREATE',
         'ISSUES_EDIT',
         'ISSUES_DELETE',

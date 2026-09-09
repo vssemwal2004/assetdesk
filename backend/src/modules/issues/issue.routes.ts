@@ -158,7 +158,8 @@ export function createIssuesRouter(): Router {
     '/export',
     requireAuth,
     requireFullAccess,
-    requireRole('ADMIN'),
+    requireRole('ADMIN', 'WORKER'),
+    requirePermission('ISSUE_DATA_EXPORT'),
     requireTrustedOrigin,
     requireCsrf,
     async (request, response, next) => {

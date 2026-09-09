@@ -6,6 +6,7 @@ import { WorkerIdSchema } from './identifiers.js';
 export const WorkerPermissionSchema = z.enum([
   'DASHBOARD',
   'ISSUES_VIEW',
+  'ISSUE_DATA_EXPORT',
   'ASSIGNMENTS_CREATE',
   'ISSUES_EDIT',
   'ISSUES_DELETE',
