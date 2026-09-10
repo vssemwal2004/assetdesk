@@ -147,10 +147,7 @@ function materialInventoryCount(material: Material, column: InventoryColumnKey):
   return null;
 }
 
-function aggregateInventoryCount(
-  materials: Material[],
-  column: InventoryColumnKey,
-): number | null {
+function aggregateInventoryCount(materials: Material[], column: InventoryColumnKey): number | null {
   const values = materials.map((material) => materialInventoryCount(material, column));
   return values.every((value) => value === null)
     ? null
@@ -374,10 +371,7 @@ export function InventoryPage() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(
-        'assetdesk:inventory-columns:v1',
-        JSON.stringify(visibleColumns),
-      );
+      window.localStorage.setItem('assetdesk:inventory-columns:v1', JSON.stringify(visibleColumns));
     } catch {
       // Column preferences are optional and must not interrupt inventory loading.
     }
@@ -1817,9 +1811,7 @@ function InventoryColumnPicker({
   function toggleColumn(key: InventoryColumnKey) {
     if (key === 'asset') return;
     onChange(
-      columns.includes(key)
-        ? columns.filter((column) => column !== key)
-        : [...columns, key],
+      columns.includes(key) ? columns.filter((column) => column !== key) : [...columns, key],
     );
   }
 
@@ -1835,9 +1827,7 @@ function InventoryColumnPicker({
       <div className="issue-columns-popover absolute right-0 z-30 mt-2 w-[min(94vw,360px)] rounded-[10px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-overlay)]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-              Inventory columns
-            </h2>
+            <h2 className="font-extrabold text-[var(--color-primary-strong)]">Inventory columns</h2>
             <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
               Choose inventory-only fields and counts shown in the table.
             </p>
@@ -2170,19 +2160,17 @@ function GroupedMaterialRows({
   }
 
   const modelGroups = Object.values(
-    group.materials.reduce<
-      Record<
-        string,
-        { key: string; label: string; materials: Material[] }
-      >
-    >((result, material) => {
-      const label = material.typeModelName ?? material.name;
-      const key = label.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
-      const model = result[key] ?? { key, label, materials: [] };
-      model.materials.push(material);
-      result[key] = model;
-      return result;
-    }, {}),
+    group.materials.reduce<Record<string, { key: string; label: string; materials: Material[] }>>(
+      (result, material) => {
+        const label = material.typeModelName ?? material.name;
+        const key = label.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
+        const model = result[key] ?? { key, label, materials: [] };
+        model.materials.push(material);
+        result[key] = model;
+        return result;
+      },
+      {},
+    ),
   );
 
   return (
@@ -2301,9 +2289,10 @@ function GroupedMaterialRows({
                             const count = aggregateInventoryCount(model.materials, column);
                             return count === null ? null : (
                               <span key={column}>
-                                {inventoryColumns.find(
-                                  (definition) => definition.key === column,
-                                )?.label}
+                                {
+                                  inventoryColumns.find((definition) => definition.key === column)
+                                    ?.label
+                                }
                                 : {count}
                               </span>
                             );
@@ -2425,38 +2414,15 @@ function MaterialVariantRows({
   return (
     <>
       <tr className="h-[72px] border-t border-[var(--color-border)] bg-white hover:bg-[var(--color-surface-tint)]">
-        <td className="px-4">
-          <button
-            className="flex w-full items-center gap-3 text-left"
-            onClick={() => setOpen((value) => !value)}
-            type="button"
-          >
-            <ChevronDown
-              aria-hidden="true"
-              className={`shrink-0 text-[var(--color-text-muted)] transition-transform ${open ? 'rotate-180' : ''}`}
-              size={16}
-            />
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-bold text-[var(--color-text-strong)]">
-                {material.typeModelName ||
-                  material.name ||
-                  material.configuration ||
-                  'Standard configuration'}
-              </span>
-              <span className="mt-0.5 block truncate text-xs text-[var(--color-text-muted)]">
-                {material.materialCode} ·{' '}
-                {material.store ?? material.locationBlock ?? material.location ?? 'Not provided'}
-              </span>
-            </span>
-          </button>
-        </td>
-        <td className="px-4">
-          <CatalogBadge value={material.trackingMode} />
-        </td>
-        <td className="px-4 text-sm text-[var(--color-text-muted)]">{quantityLabel(material)}</td>
-        <td className="px-4">
-          <CatalogBadge value={material.status} />
-        </td>
+        {visibleColumns.map((column) => (
+          <MaterialInventoryCell
+            column={column}
+            key={column}
+            material={material}
+            onToggle={() => setOpen((value) => !value)}
+            open={open}
+          />
+        ))}
         <td className="px-4 text-right">
           <div onClick={(event) => event.stopPropagation()}>
             <MaterialActions
@@ -2527,6 +2493,82 @@ function MaterialVariantRows({
         </tr>
       ) : null}
     </>
+  );
+}
+
+function MaterialInventoryCell({
+  material,
+  column,
+  open,
+  onToggle,
+}: {
+  material: Material;
+  column: InventoryColumnKey;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  if (column === 'asset') {
+    return (
+      <td className="px-4">
+        <button
+          className="flex w-full items-center gap-3 text-left"
+          onClick={onToggle}
+          type="button"
+        >
+          <ChevronDown
+            aria-hidden="true"
+            className={`shrink-0 text-[var(--color-text-muted)] transition-transform ${open ? 'rotate-180' : ''}`}
+            size={16}
+          />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-bold text-[var(--color-text-strong)]">
+              {material.typeModelName ||
+                material.name ||
+                material.configuration ||
+                'Standard configuration'}
+            </span>
+            {material.configuration ? (
+              <span className="mt-0.5 block max-w-64 truncate text-xs text-[var(--color-text-muted)]">
+                {material.configuration}
+              </span>
+            ) : null}
+          </span>
+        </button>
+      </td>
+    );
+  }
+  if (column === 'code') {
+    return (
+      <td className="px-4 text-sm font-bold text-[var(--color-primary)]">
+        {material.materialCode}
+      </td>
+    );
+  }
+  if (column === 'store') {
+    return (
+      <td className="max-w-64 px-4 text-sm text-[var(--color-text-muted)]">
+        {material.store ?? material.locationBlock ?? material.location ?? 'Not provided'}
+      </td>
+    );
+  }
+  if (column === 'tracking') {
+    return (
+      <td className="px-4">
+        <CatalogBadge value={material.trackingMode} />
+      </td>
+    );
+  }
+  if (column === 'status') {
+    return (
+      <td className="px-4">
+        <CatalogBadge value={material.status} />
+      </td>
+    );
+  }
+  return (
+    <td className="px-4 text-sm font-extrabold tabular-nums text-[var(--color-text-strong)]">
+      {materialInventoryCount(material, column)}
+    </td>
   );
 }
 
