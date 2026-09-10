@@ -3,7 +3,9 @@ import {
   Download,
   FileSpreadsheet,
   ChevronDown,
+  Check,
   CheckCircle2,
+  Columns3,
   Eye,
   MonitorCog,
   MoreVertical,
@@ -80,6 +82,80 @@ function returnPolicy(value: string): ReturnPolicy | undefined {
 }
 
 type InventoryStockState = 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
+
+type InventoryColumnKey =
+  | 'asset'
+  | 'code'
+  | 'store'
+  | 'tracking'
+  | 'total'
+  | 'available'
+  | 'issued'
+  | 'scrap'
+  | 'notInUse'
+  | 'underMaintenance'
+  | 'status';
+
+const inventoryColumns: Array<{ key: InventoryColumnKey; label: string }> = [
+  { key: 'asset', label: 'IT asset' },
+  { key: 'code', label: 'Material code' },
+  { key: 'store', label: 'Store' },
+  { key: 'tracking', label: 'Tracking' },
+  { key: 'total', label: 'Total inventory' },
+  { key: 'available', label: 'Available inventory' },
+  { key: 'issued', label: 'Issued inventory' },
+  { key: 'scrap', label: 'Faulty (scrap)' },
+  { key: 'notInUse', label: 'Outdated (not in use)' },
+  { key: 'underMaintenance', label: 'Under maintenance' },
+  { key: 'status', label: 'Status' },
+];
+
+const defaultInventoryColumns: InventoryColumnKey[] = [
+  'asset',
+  'code',
+  'store',
+  'tracking',
+  'total',
+  'available',
+  'issued',
+  'status',
+];
+
+function storedInventoryColumns(): InventoryColumnKey[] {
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem('assetdesk:inventory-columns:v1') ?? 'null',
+    );
+    if (!Array.isArray(stored)) return defaultInventoryColumns;
+    const valid = stored.filter((value): value is InventoryColumnKey =>
+      inventoryColumns.some((column) => column.key === value),
+    );
+    return valid.includes('asset') ? valid : defaultInventoryColumns;
+  } catch {
+    return defaultInventoryColumns;
+  }
+}
+
+function materialInventoryCount(material: Material, column: InventoryColumnKey): number | null {
+  if (column === 'total') return material.totalQuantity;
+  if (column === 'available') return material.availableQuantity;
+  if (column === 'issued') return material.issuedQuantity;
+  if (column === 'scrap') return material.status === 'SCRAP' ? material.totalQuantity : 0;
+  if (column === 'notInUse') return material.status === 'NOT_IN_USE' ? material.totalQuantity : 0;
+  if (column === 'underMaintenance')
+    return material.status === 'UNDER_MAINTENANCE' ? material.totalQuantity : 0;
+  return null;
+}
+
+function aggregateInventoryCount(
+  materials: Material[],
+  column: InventoryColumnKey,
+): number | null {
+  const values = materials.map((material) => materialInventoryCount(material, column));
+  return values.every((value) => value === null)
+    ? null
+    : values.reduce<number>((total, value) => total + (value ?? 0), 0);
+}
 
 function stockState(value: string): InventoryStockState | undefined {
   return ['AVAILABLE', 'LOW_STOCK', 'OUT_OF_STOCK', 'ISSUED', 'FULLY_ISSUED'].includes(value)
@@ -276,6 +352,8 @@ export function InventoryPage() {
   } | null>(null);
   const [editedModelName, setEditedModelName] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [visibleColumns, setVisibleColumns] =
+    useState<InventoryColumnKey[]>(storedInventoryColumns);
   const search = parameters.get('search') ?? '';
   const category = parameters.get('category') ?? '';
   const store = parameters.get('store') ?? '';
@@ -293,6 +371,17 @@ export function InventoryPage() {
   const canAdjustQuantity = hasPermission(user, 'INVENTORY_QUANTITY_ADJUST');
   const canExportInventory = hasPermission(user, 'INVENTORY_EXPORT');
   const canMergeModels = hasPermission(user, 'INVENTORY_MODELS_MERGE');
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        'assetdesk:inventory-columns:v1',
+        JSON.stringify(visibleColumns),
+      );
+    } catch {
+      // Column preferences are optional and must not interrupt inventory loading.
+    }
+  }, [visibleColumns]);
 
   const detailQuery = useQuery({
     queryKey: ['asset-details'],
@@ -581,7 +670,7 @@ export function InventoryPage() {
       {selectedInventoryType ? (
         <>
           <section className="rounded-[14px] border border-[var(--color-border)] bg-white p-3 shadow-[var(--shadow-card)]">
-            <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
               <SearchForm
                 id="inventory-search"
                 key={search}
@@ -746,6 +835,13 @@ export function InventoryPage() {
                   </FilterField>
                 </div>
               </FilterPopover>
+              {user?.role === 'ADMIN' ? (
+                <InventoryColumnPicker
+                  columns={visibleColumns}
+                  onChange={setVisibleColumns}
+                  onReset={() => setVisibleColumns(defaultInventoryColumns)}
+                />
+              ) : null}
             </div>
             {query.data ? (
               <PageCount count={query.data.meta.total} noun={selectedInventoryLabel} />
@@ -880,6 +976,7 @@ export function InventoryPage() {
                 canDelete={canDeleteInventory}
                 canEdit={canEditInventory}
                 materials={materials}
+                visibleColumns={visibleColumns}
                 onDelete={confirmDelete}
                 onAdjustQuantity={setQuantityTarget}
                 onAddCategory={setAddCategory}
@@ -1687,6 +1784,107 @@ function FilterField({ label, children }: { label: string; children: ReactNode }
   );
 }
 
+function InventoryColumnPicker({
+  columns,
+  onChange,
+  onReset,
+}: {
+  columns: InventoryColumnKey[];
+  onChange: (columns: InventoryColumnKey[]) => void;
+  onReset: () => void;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    function closeOnOutsideInteraction(event: PointerEvent) {
+      const details = detailsRef.current;
+      if (details?.open && !details.contains(event.target as Node)) details.open = false;
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape' && detailsRef.current?.open) {
+        detailsRef.current.open = false;
+        detailsRef.current.querySelector<HTMLElement>('summary')?.focus();
+      }
+    }
+    document.addEventListener('pointerdown', closeOnOutsideInteraction);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideInteraction);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
+  function toggleColumn(key: InventoryColumnKey) {
+    if (key === 'asset') return;
+    onChange(
+      columns.includes(key)
+        ? columns.filter((column) => column !== key)
+        : [...columns, key],
+    );
+  }
+
+  return (
+    <details className="relative" ref={detailsRef}>
+      <summary className="button-secondary flex min-h-11 cursor-pointer list-none items-center justify-center gap-2 [&::-webkit-details-marker]:hidden">
+        <Columns3 aria-hidden="true" size={18} />
+        Columns
+        <span className="grid size-5 place-items-center rounded-full bg-[var(--color-primary-soft)] text-xs font-extrabold text-[var(--color-primary)]">
+          {columns.length}
+        </span>
+      </summary>
+      <div className="issue-columns-popover absolute right-0 z-30 mt-2 w-[min(94vw,360px)] rounded-[10px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-overlay)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+              Inventory columns
+            </h2>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-text-muted)]">
+              Choose inventory-only fields and counts shown in the table.
+            </p>
+          </div>
+          <button className="button-quiet text-xs" onClick={onReset} type="button">
+            Reset
+          </button>
+        </div>
+        <div className="mt-4 grid gap-1.5">
+          {inventoryColumns.map((column) => {
+            const checked = columns.includes(column.key);
+            const required = column.key === 'asset';
+            return (
+              <label
+                className={`issue-column-option ${checked ? 'issue-column-option-selected' : ''}`}
+                key={column.key}
+              >
+                <input
+                  checked={checked}
+                  className="sr-only"
+                  disabled={required}
+                  onChange={() => toggleColumn(column.key)}
+                  type="checkbox"
+                />
+                <span
+                  aria-hidden="true"
+                  className={`issue-column-check ${checked ? 'issue-column-check-selected' : ''}`}
+                >
+                  {checked ? <Check size={13} strokeWidth={3} /> : null}
+                </span>
+                <span className="min-w-0 flex-1 text-sm font-bold text-[var(--color-text-strong)]">
+                  {column.label}
+                </span>
+                {required ? (
+                  <span className="text-[10px] font-extrabold uppercase tracking-[0.05em] text-[var(--color-text-muted)]">
+                    Required
+                  </span>
+                ) : null}
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    </details>
+  );
+}
+
 function MaterialActions({
   material,
   canEdit,
@@ -1829,6 +2027,7 @@ function MaterialCard({
 
 function MaterialTable({
   materials,
+  visibleColumns,
   canAdd,
   canEdit,
   canDelete,
@@ -1841,6 +2040,7 @@ function MaterialTable({
   onModelCrud,
 }: {
   materials: Material[];
+  visibleColumns: InventoryColumnKey[];
   canAdd: boolean;
   canEdit: boolean;
   canDelete: boolean;
@@ -1860,22 +2060,15 @@ function MaterialTable({
   const groups = groupMaterials(materials);
   return (
     <div className="hidden overflow-visible rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
-      <table className="w-full border-collapse text-left">
+      <table className="w-full min-w-[920px] border-collapse text-left">
         <caption className="sr-only">Inventory materials</caption>
         <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
           <tr>
-            <th className="h-11 px-4 font-bold" scope="col">
-              IT asset
-            </th>
-            <th className="h-11 px-4 font-bold" scope="col">
-              Tracking
-            </th>
-            <th className="h-11 px-4 font-bold" scope="col">
-              Availability
-            </th>
-            <th className="h-11 px-4 font-bold" scope="col">
-              Status
-            </th>
+            {visibleColumns.map((column) => (
+              <th className="h-11 px-4 font-bold" key={column} scope="col">
+                {inventoryColumns.find((definition) => definition.key === column)?.label}
+              </th>
+            ))}
             <th className="h-11 px-4 text-right font-bold" scope="col">
               Action
             </th>
@@ -1891,6 +2084,7 @@ function MaterialTable({
                   canEdit={canEdit}
                   key={material.materialCode}
                   material={material}
+                  visibleColumns={visibleColumns}
                   onDelete={onDelete}
                   onAdjustQuantity={onAdjustQuantity}
                   onView={onView}
@@ -1903,6 +2097,7 @@ function MaterialTable({
                 canAdjustQuantity={canAdjustQuantity}
                 canEdit={canEdit}
                 group={group}
+                visibleColumns={visibleColumns}
                 key={materialGroupKey(group.category, group.trackingMode)}
                 onDelete={onDelete}
                 onAdjustQuantity={onAdjustQuantity}
@@ -1921,6 +2116,7 @@ function MaterialTable({
 
 function GroupedMaterialRows({
   group,
+  visibleColumns,
   canAdd,
   canEdit,
   canDelete,
@@ -1933,6 +2129,7 @@ function GroupedMaterialRows({
   onModelCrud,
 }: {
   group: MaterialGroup;
+  visibleColumns: InventoryColumnKey[];
   canAdd: boolean;
   canEdit: boolean;
   canDelete: boolean;
@@ -1962,6 +2159,7 @@ function GroupedMaterialRows({
             canEdit={canEdit}
             key={material.materialCode}
             material={material}
+            visibleColumns={visibleColumns}
             onAdjustQuantity={onAdjustQuantity}
             onDelete={onDelete}
             onView={onView}
@@ -1975,15 +2173,13 @@ function GroupedMaterialRows({
     group.materials.reduce<
       Record<
         string,
-        { key: string; label: string; materials: Material[]; total: number; available: number }
+        { key: string; label: string; materials: Material[] }
       >
     >((result, material) => {
       const label = material.typeModelName ?? material.name;
       const key = label.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
-      const model = result[key] ?? { key, label, materials: [], total: 0, available: 0 };
+      const model = result[key] ?? { key, label, materials: [] };
       model.materials.push(material);
-      model.total += material.totalQuantity;
-      model.available += material.availableQuantity;
       result[key] = model;
       return result;
     }, {}),
@@ -1995,7 +2191,7 @@ function GroupedMaterialRows({
         className="cursor-pointer border-t border-[var(--color-border)] bg-[var(--color-primary-soft)] transition hover:bg-[#e9e3ff]"
         onClick={() => setOpen((value) => !value)}
       >
-        <td className="px-4 py-3" colSpan={5}>
+        <td className="px-4 py-3" colSpan={visibleColumns.length + 1}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <span className="grid size-8 place-items-center rounded-[9px] bg-white text-[var(--color-primary)] shadow-sm">
@@ -2017,9 +2213,15 @@ function GroupedMaterialRows({
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-[var(--color-text-muted)]">
-              <span>Total: {group.totalQuantity}</span>
-              <span>Available: {group.availableQuantity}</span>
-              <span>Issued: {group.issuedQuantity}</span>
+              {visibleColumns.map((column) => {
+                const count = aggregateInventoryCount(group.materials, column);
+                return count === null ? null : (
+                  <span key={column}>
+                    {inventoryColumns.find((definition) => definition.key === column)?.label}:{' '}
+                    {count}
+                  </span>
+                );
+              })}
               {canAdd || onMergeCategory ? (
                 <details
                   className="relative"
@@ -2075,7 +2277,7 @@ function GroupedMaterialRows({
                     )
                   }
                 >
-                  <td className="px-4 py-3" colSpan={5}>
+                  <td className="px-4 py-3" colSpan={visibleColumns.length + 1}>
                     <div className="flex items-center justify-between gap-4 pl-3">
                       <div className="flex min-w-0 items-center gap-3">
                         <ChevronDown
@@ -2094,9 +2296,19 @@ function GroupedMaterialRows({
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-3">
-                        <p className="text-xs font-bold text-[var(--color-text-muted)]">
-                          {model.available} / {model.total} available
-                        </p>
+                        <div className="flex flex-wrap justify-end gap-2 text-xs font-bold text-[var(--color-text-muted)]">
+                          {visibleColumns.map((column) => {
+                            const count = aggregateInventoryCount(model.materials, column);
+                            return count === null ? null : (
+                              <span key={column}>
+                                {inventoryColumns.find(
+                                  (definition) => definition.key === column,
+                                )?.label}
+                                : {count}
+                              </span>
+                            );
+                          })}
+                        </div>
                         {canAdd || onModelCrud ? (
                           <details
                             className="relative"
@@ -2168,6 +2380,7 @@ function GroupedMaterialRows({
                         canEdit={canEdit}
                         key={material.materialCode}
                         material={material}
+                        visibleColumns={visibleColumns}
                         onAdjustQuantity={onAdjustQuantity}
                         onDelete={onDelete}
                         onView={onView}
@@ -2184,6 +2397,7 @@ function GroupedMaterialRows({
 
 function MaterialVariantRows({
   material,
+  visibleColumns,
   canEdit,
   canDelete,
   canAdjustQuantity,
@@ -2192,6 +2406,7 @@ function MaterialVariantRows({
   onView,
 }: {
   material: Material;
+  visibleColumns: InventoryColumnKey[];
   canEdit: boolean;
   canDelete: boolean;
   canAdjustQuantity: boolean;
@@ -2205,7 +2420,7 @@ function MaterialVariantRows({
     queryFn: ({ signal }) => getAssetUnits(material.materialCode, 1, { pageSize: 100 }, signal),
     enabled: open && material.trackingMode === 'SERIALIZED',
   });
-  const columnCount = 5;
+  const columnCount = visibleColumns.length + 1;
 
   return (
     <>

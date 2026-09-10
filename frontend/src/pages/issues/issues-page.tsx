@@ -100,7 +100,7 @@ const issueColumns: Array<{ key: IssueColumnKey; label: string }> = [
   { key: 'expectedReturn', label: 'Expected return' },
   { key: 'status', label: 'Status' },
   { key: 'assignment', label: 'Assignment' },
-  { key: 'quantity', label: 'Issued qty' },
+  { key: 'quantity', label: 'Issue quantity' },
   { key: 'outstanding', label: 'Outstanding' },
   { key: 'issuedBy', label: 'Issued by' },
   { key: 'purpose', label: 'Purpose' },
@@ -110,6 +110,7 @@ const defaultIssueColumns: IssueColumnKey[] = [
   'issue',
   'receiver',
   'material',
+  'quantity',
   'category',
   'model',
   'serialNumber',
@@ -234,13 +235,19 @@ async function saveIssueWorkbook(issues: IssueSummary[], columns: IssueColumnKey
 }
 
 type IssueCategoryStatKey =
-  'totalQuantity' | 'availableQuantity' | 'issuedQuantity' | 'totalIssues' | 'outstanding';
+  | 'totalQuantity'
+  | 'availableQuantity'
+  | 'issuedQuantity'
+  | 'totalIssues'
+  | 'issueQuantity'
+  | 'outstanding';
 
 const issueCategoryStats: Array<{ key: IssueCategoryStatKey; label: string }> = [
   { key: 'totalQuantity', label: 'Total stock' },
   { key: 'availableQuantity', label: 'Available stock' },
   { key: 'issuedQuantity', label: 'Issued stock' },
   { key: 'totalIssues', label: 'Total issues' },
+  { key: 'issueQuantity', label: 'Quantity in issue records' },
   { key: 'outstanding', label: 'Outstanding' },
 ];
 
@@ -248,12 +255,13 @@ const defaultIssueCategoryStats: IssueCategoryStatKey[] = [
   'totalQuantity',
   'availableQuantity',
   'issuedQuantity',
+  'issueQuantity',
   'outstanding',
 ];
 
 function storedIssueColumns(): IssueColumnKey[] {
   try {
-    const stored = JSON.parse(window.localStorage.getItem('assetdesk:issue-columns') ?? 'null');
+    const stored = JSON.parse(window.localStorage.getItem('assetdesk:issue-columns:v2') ?? 'null');
     if (!Array.isArray(stored)) return defaultIssueColumns;
     const valid = stored.filter((value): value is IssueColumnKey =>
       issueColumns.some((column) => column.key === value),
@@ -298,6 +306,7 @@ interface IssueCategoryGroup {
   category: string;
   trackingMode: 'SERIALIZED' | 'QUANTITY';
   issues: IssueSummary[];
+  issueQuantity: number;
   outstanding: number;
   totalQuantity: number;
   availableQuantity: number;
@@ -314,12 +323,20 @@ function groupIssues(issues: IssueSummary[]): IssueCategoryGroup[] {
         category,
         trackingMode,
         issues: [],
+        issueQuantity: 0,
         outstanding: 0,
         totalQuantity: 0,
         availableQuantity: 0,
         issuedQuantity: 0,
       };
       group.issues.push(issue);
+      group.issueQuantity += issue.materialDetails
+        .filter(
+          (material) =>
+            material.trackingMode === trackingMode &&
+            material.category.toLocaleUpperCase('en-US') === category.toLocaleUpperCase('en-US'),
+        )
+        .reduce((total, material) => total + material.issuedQuantity, 0);
       group.outstanding += materialGroup.outstandingQuantity;
       groups.set(key, group);
     }
@@ -490,7 +507,7 @@ export function IssuesPage() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem('assetdesk:issue-columns', JSON.stringify(visibleColumns));
+      window.localStorage.setItem('assetdesk:issue-columns:v2', JSON.stringify(visibleColumns));
     } catch {
       // Column preferences are optional and should not interrupt the issue list.
     }
@@ -545,6 +562,7 @@ export function IssuesPage() {
           category: detail.name,
           trackingMode: detailMode,
           issues: [],
+          issueQuantity: 0,
           outstanding: 0,
           totalQuantity: 0,
           availableQuantity: 0,
@@ -562,6 +580,7 @@ export function IssuesPage() {
           category: material.category,
           trackingMode: material.trackingMode,
           issues: [],
+          issueQuantity: 0,
           outstanding: 0,
           totalQuantity: 0,
           availableQuantity: 0,
@@ -1002,7 +1021,9 @@ export function IssuesPage() {
                         </h2>
                         <p className="text-xs font-semibold text-[var(--color-text-muted)]">
                           {group.trackingMode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable'} ·{' '}
-                          {group.issues.length} issue{group.issues.length === 1 ? '' : 's'}
+                          {group.issues.length} issue record
+                          {group.issues.length === 1 ? '' : 's'} · {group.issueQuantity}{' '}
+                          {group.issueQuantity === 1 ? 'unit' : 'units'} issued
                         </p>
                       </div>
                     </div>
@@ -1018,6 +1039,9 @@ export function IssuesPage() {
                       ) : null}
                       {visibleCategoryStats.includes('totalIssues') ? (
                         <span>Total issues: {group.issues.length}</span>
+                      ) : null}
+                      {visibleCategoryStats.includes('issueQuantity') ? (
+                        <span>Issue quantity: {group.issueQuantity}</span>
                       ) : null}
                       {visibleCategoryStats.includes('outstanding') ? (
                         <span>Outstanding: {group.outstanding}</span>
@@ -1349,6 +1373,9 @@ function IssueCard({
             <CatalogBadge value={displayIssueStatus(issue)} />
           </div>
           <p className="mt-2 font-bold text-[var(--color-text-strong)]">{materialSummary(issue)}</p>
+          <p className="mt-1 text-sm font-extrabold text-[var(--color-primary)]">
+            Quantity: {issue.totalIssuedQuantity} {issue.totalIssuedQuantity === 1 ? 'unit' : 'units'}
+          </p>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             Receiver: {issue.receiver.fullName}
           </p>
