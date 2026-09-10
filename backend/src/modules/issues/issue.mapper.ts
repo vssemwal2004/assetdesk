@@ -168,6 +168,28 @@ export function toIssueSummary(issue: IssueDocument): IssueSummary {
     materialNames: [...new Set(lines.map((line) => line.material.name).filter(Boolean))],
     materialCategories: [...new Set(summaryLines.map((line) => line.category))],
     trackingModes: [...new Set(summaryLines.map((line) => line.trackingMode))],
+    materialDetails: lines.map((line) => {
+      const category = line.material.category?.trim() || 'Unassigned category';
+      const name = line.material.name.trim();
+      const model = name
+        .toLocaleUpperCase('en-US')
+        .startsWith(`${category.toLocaleUpperCase('en-US')} `)
+        ? name.slice(category.length).trim()
+        : name;
+      return {
+        name,
+        category,
+        model: model || null,
+        trackingMode: line.material.trackingMode,
+        issuedQuantity: line.issuedQuantity,
+        outstandingQuantity: line.outstandingQuantity,
+        assets: (line.assets ?? []).map((asset) => ({
+          assetTag: asset.assetTag,
+          serialNumber: asset.serialNumber ?? null,
+          outstanding: asset.outstanding,
+        })),
+      };
+    }),
     materialGroups: Object.values(
       summaryLines.reduce<
         Record<

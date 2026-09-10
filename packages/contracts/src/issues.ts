@@ -113,15 +113,18 @@ export const CreateCatalogIssueRequestSchema = z
     due: DueSelectionSchema.optional(),
     purpose: OptionalPurposeSchema,
     notes: OptionalNotesSchema,
-    outsideUniversity: z.object({
-      destination: z.string().trim().min(2).max(120),
-      organization: z.string().trim().max(120).optional(),
-      personCarryingMaterial: z.string().trim().min(2).max(120),
-      contact: z.string().trim().max(40).optional(),
-      vehicleNumber: z.string().trim().max(40).optional(),
-      expectedGateInAt: z.string().datetime({ offset: true }).optional(),
-      remarks: z.string().trim().max(1000).optional(),
-    }).strict().optional(),
+    outsideUniversity: z
+      .object({
+        destination: z.string().trim().min(2).max(120),
+        organization: z.string().trim().max(120).optional(),
+        personCarryingMaterial: z.string().trim().min(2).max(120),
+        contact: z.string().trim().max(40).optional(),
+        vehicleNumber: z.string().trim().max(40).optional(),
+        expectedGateInAt: z.string().datetime({ offset: true }).optional(),
+        remarks: z.string().trim().max(1000).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((request, context) => {
@@ -531,6 +534,23 @@ export const IssueSummarySchema = IssueBaseSchema.omit({ lines: true, returnEven
   materialNames: z.array(z.string().min(1)).min(1),
   materialCategories: z.array(z.string().min(1)).min(1),
   trackingModes: z.array(TrackingModeSchema).min(1),
+  materialDetails: z.array(
+    z.object({
+      name: z.string().min(1),
+      category: z.string().min(1),
+      model: z.string().nullable(),
+      trackingMode: TrackingModeSchema,
+      issuedQuantity: z.number().int().positive(),
+      outstandingQuantity: z.number().int().nonnegative(),
+      assets: z.array(
+        z.object({
+          assetTag: AssetTagSchema,
+          serialNumber: z.string().nullable(),
+          outstanding: z.boolean(),
+        }),
+      ),
+    }),
+  ),
   materialGroups: z
     .array(
       z

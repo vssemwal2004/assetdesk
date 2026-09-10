@@ -73,6 +73,9 @@ type IssueColumnKey =
   | 'issue'
   | 'receiver'
   | 'material'
+  | 'category'
+  | 'model'
+  | 'serialNumber'
   | 'block'
   | 'location'
   | 'issuedAt'
@@ -88,6 +91,9 @@ const issueColumns: Array<{ key: IssueColumnKey; label: string }> = [
   { key: 'issue', label: 'Issue ID' },
   { key: 'receiver', label: 'Receiver' },
   { key: 'material', label: 'Material' },
+  { key: 'category', label: 'Category' },
+  { key: 'model', label: 'Model' },
+  { key: 'serialNumber', label: 'Serial Number' },
   { key: 'block', label: 'Block' },
   { key: 'location', label: 'Location' },
   { key: 'issuedAt', label: 'Issued on' },
@@ -104,6 +110,9 @@ const defaultIssueColumns: IssueColumnKey[] = [
   'issue',
   'receiver',
   'material',
+  'category',
+  'model',
+  'serialNumber',
   'block',
   'location',
   'expectedReturn',
@@ -114,6 +123,9 @@ const issueColumnWidths: Record<IssueColumnKey, number> = {
   issue: 22,
   receiver: 24,
   material: 36,
+  category: 20,
+  model: 28,
+  serialNumber: 22,
   block: 18,
   location: 24,
   issuedAt: 21,
@@ -126,10 +138,23 @@ const issueColumnWidths: Record<IssueColumnKey, number> = {
   purpose: 36,
 };
 
-function issueExportValue(issue: IssueSummary, column: IssueColumnKey): string | number | Date {
+type IssueExportItem = IssueSummary['materialDetails'][number] & {
+  serialNumber: string;
+  rowQuantity: number;
+  rowOutstanding: number;
+};
+
+function issueExportValue(
+  issue: IssueSummary,
+  item: IssueExportItem,
+  column: IssueColumnKey,
+): string | number | Date {
   if (column === 'issue') return issue.issueId;
   if (column === 'receiver') return issue.receiver.fullName;
-  if (column === 'material') return issue.materialNames.join(', ');
+  if (column === 'material') return item.name;
+  if (column === 'category') return item.category;
+  if (column === 'model') return item.model ?? '';
+  if (column === 'serialNumber') return item.serialNumber;
   if (column === 'block') return issue.destinationBlock ?? '';
   if (column === 'location') return issue.destinationLocation ?? '';
   if (column === 'issuedAt') return new Date(issue.issuedAt);
@@ -137,8 +162,8 @@ function issueExportValue(issue: IssueSummary, column: IssueColumnKey): string |
     return issue.expectedReturnAt ? new Date(issue.expectedReturnAt) : '';
   if (column === 'status') return humanizeCatalogValue(issue.status);
   if (column === 'assignment') return humanizeCatalogValue(issue.assignmentType);
-  if (column === 'quantity') return issue.totalIssuedQuantity;
-  if (column === 'outstanding') return issue.totalOutstandingQuantity;
+  if (column === 'quantity') return item.rowQuantity;
+  if (column === 'outstanding') return item.rowOutstanding;
   if (column === 'issuedBy') return `${issue.issuedBy.name} (${issue.issuedBy.workerId})`;
   return issue.purpose ?? '';
 }
@@ -154,11 +179,37 @@ async function saveIssueWorkbook(issues: IssueSummary[], columns: IssueColumnKey
     wrap: true,
     height: 30,
   }));
+  const rows = issues.flatMap((issue) =>
+    issue.materialDetails.flatMap((material) => {
+      if (material.trackingMode === 'SERIALIZED') {
+        return material.assets.map((asset) => ({
+          issue,
+          item: {
+            ...material,
+            serialNumber: asset.serialNumber ?? asset.assetTag,
+            rowQuantity: 1,
+            rowOutstanding: asset.outstanding ? 1 : 0,
+          },
+        }));
+      }
+      return [
+        {
+          issue,
+          item: {
+            ...material,
+            serialNumber: '',
+            rowQuantity: material.issuedQuantity,
+            rowOutstanding: material.outstandingQuantity,
+          },
+        },
+      ];
+    }),
+  );
   const data: SheetData = [
     header,
-    ...issues.map((issue, rowIndex) =>
+    ...rows.map(({ issue, item }, rowIndex) =>
       selected.map((column): Cell => {
-        const value = issueExportValue(issue, column);
+        const value = issueExportValue(issue, item, column);
         return {
           value,
           ...(value instanceof Date ? { type: Date, format: 'dd mmm yyyy, hh:mm' } : {}),
@@ -1513,6 +1564,30 @@ function IssueTableCell({ column, issue }: { column: IssueColumnKey; issue: Issu
           <span className="line-clamp-2">{materialSummary(issue)}</span>
         </td>
       );
+    case 'category':
+      return (
+        <td className="px-4 text-sm text-[var(--color-text-muted)]">
+          {[...new Set(issue.materialDetails.map((item) => item.category))].join(', ')}
+        </td>
+      );
+    case 'model':
+      return (
+        <td className="max-w-60 px-4 text-sm text-[var(--color-text-muted)]">
+          {[...new Set(issue.materialDetails.map((item) => item.model).filter(Boolean))].join(
+            ', ',
+          ) || 'Not set'}
+        </td>
+      );
+    case 'serialNumber': {
+      const serials = issue.materialDetails.flatMap((item) =>
+        item.assets.map((asset) => asset.serialNumber ?? asset.assetTag),
+      );
+      return (
+        <td className="max-w-60 px-4 text-sm text-[var(--color-text-muted)]">
+          <span className="line-clamp-2">{serials.join(', ') || 'Not applicable'}</span>
+        </td>
+      );
+    }
     case 'block':
       return (
         <td className="px-4 text-sm font-semibold text-[var(--color-text-strong)]">
