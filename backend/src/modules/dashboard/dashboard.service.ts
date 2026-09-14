@@ -92,6 +92,7 @@ const issueSummaryFields = [
   'lines.material.name',
   'lines.material.category',
   'lines.material.trackingMode',
+  'lines.issuedQuantity',
   'lines.outstandingQuantity',
 ].join(' ');
 

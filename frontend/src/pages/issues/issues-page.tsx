@@ -59,6 +59,12 @@ import {
 } from '../../lib/issues-api';
 import { getAssetDetails, getInventory } from '../../lib/inventory-api';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
+import {
+  groupIssues,
+  scopedMaterialDetails,
+  type IssueCategoryGroup,
+  type IssueMaterialScope,
+} from './issue-grouping';
 
 const statuses: IssueStatus[] = [
   'ISSUED',
@@ -302,48 +308,6 @@ function assignmentType(value: string): AssignmentType | undefined {
   return ['LONG_TERM', 'SHORT_TERM'].includes(value) ? (value as AssignmentType) : undefined;
 }
 
-interface IssueCategoryGroup {
-  category: string;
-  trackingMode: 'SERIALIZED' | 'QUANTITY';
-  issues: IssueSummary[];
-  issueQuantity: number;
-  outstanding: number;
-  totalQuantity: number;
-  availableQuantity: number;
-  issuedQuantity: number;
-}
-
-function groupIssues(issues: IssueSummary[]): IssueCategoryGroup[] {
-  const groups = new Map<string, IssueCategoryGroup>();
-  for (const issue of issues) {
-    for (const materialGroup of issue.materialGroups) {
-      const { category, trackingMode } = materialGroup;
-      const key = `${trackingMode}:${category.toLocaleUpperCase('en-US')}`;
-      const group = groups.get(key) ?? {
-        category,
-        trackingMode,
-        issues: [],
-        issueQuantity: 0,
-        outstanding: 0,
-        totalQuantity: 0,
-        availableQuantity: 0,
-        issuedQuantity: 0,
-      };
-      group.issues.push(issue);
-      group.issueQuantity += issue.materialDetails
-        .filter(
-          (material) =>
-            material.trackingMode === trackingMode &&
-            material.category.toLocaleUpperCase('en-US') === category.toLocaleUpperCase('en-US'),
-        )
-        .reduce((total, material) => total + material.issuedQuantity, 0);
-      group.outstanding += materialGroup.outstandingQuantity;
-      groups.set(key, group);
-    }
-  }
-  return [...groups.values()].sort((left, right) => left.category.localeCompare(right.category));
-}
-
 function IssueTypeCard({
   title,
   description,
@@ -538,9 +502,15 @@ export function IssuesPage() {
     setParameters(next);
   }
 
-  const issues = query.data?.data ?? [];
+  const issues = useMemo(() => query.data?.data ?? [], [query.data?.data]);
+  const destinationFiltered = Boolean(block || location);
   const issueGroups = useMemo(() => {
-    const groups = groupIssues(issues);
+    const groups = groupIssues(issues, {
+      ...(trackingMode ? { trackingMode } : {}),
+      ...(category ? { category } : {}),
+    });
+    if (destinationFiltered) return groups;
+
     const byKey = new Map(
       groups.map((group) => [
         `${group.trackingMode}:${group.category.toLocaleUpperCase('en-US')}`,
@@ -598,7 +568,24 @@ export function IssuesPage() {
         left.trackingMode.localeCompare(right.trackingMode) ||
         left.category.localeCompare(right.category),
     );
-  }, [category, catalogQuery.data, inventoryQuery.data, issues, trackingMode]);
+  }, [category, catalogQuery.data, destinationFiltered, inventoryQuery.data, issues, trackingMode]);
+  const materialCategoryOptions = useMemo(() => {
+    if (!trackingMode) return [];
+    if (category) return [category];
+    if (destinationFiltered) {
+      return groupIssues(issues)
+        .filter((group) => group.trackingMode === trackingMode)
+        .map((group) => group.category)
+        .filter((value, index, values) => values.indexOf(value) === index)
+        .sort((left, right) => left.localeCompare(right));
+    }
+    return (catalogQuery.data ?? [])
+      .filter(
+        (detail) =>
+          detail.kind === (trackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE'),
+      )
+      .map((detail) => detail.name);
+  }, [catalogQuery.data, category, destinationFiltered, issues, trackingMode]);
   const filtered = Boolean(
     search ||
     status ||
@@ -824,7 +811,7 @@ export function IssuesPage() {
                   <select
                     className="field-input"
                     onChange={(event) =>
-                      updateParameters({ block: event.target.value, location: '' })
+                      updateParameters({ block: event.target.value, location: '', category: '' })
                     }
                     value={block}
                   >
@@ -840,7 +827,9 @@ export function IssuesPage() {
                   <select
                     className="field-input"
                     disabled={!block}
-                    onChange={(event) => updateParameters({ location: event.target.value })}
+                    onChange={(event) =>
+                      updateParameters({ location: event.target.value, category: '' })
+                    }
                     value={block ? location : ''}
                   >
                     <option value="">{block ? 'All locations' : 'Select a block first'}</option>
@@ -896,17 +885,11 @@ export function IssuesPage() {
                       <option value="">
                         {trackingMode ? 'All categories' : 'Select material type first'}
                       </option>
-                      {catalogQuery.data
-                        ?.filter(
-                          (detail) =>
-                            detail.kind ===
-                            (trackingMode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE'),
-                        )
-                        .map((detail) => (
-                          <option key={detail.id} value={detail.name}>
-                            {detail.name}
-                          </option>
-                        ))}
+                      {materialCategoryOptions.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
                     </select>
                   </FilterField>
                   <FilterField label="Source store">
@@ -1062,6 +1045,7 @@ export function IssuesPage() {
                           user={user}
                           issue={issue}
                           key={issue.issueId}
+                          materialScope={group}
                           onDelete={setDeleteTarget}
                           onExtend={setExtendTarget}
                           onView={setViewIssue}
@@ -1072,6 +1056,7 @@ export function IssuesPage() {
                       admin={admin}
                       user={user}
                       issues={group.issues}
+                      materialScope={group}
                       onDelete={setDeleteTarget}
                       onExtend={setExtendTarget}
                       onView={setViewIssue}
@@ -1283,9 +1268,12 @@ function ColumnPicker({
   );
 }
 
-function materialSummary(issue: IssueSummary): string {
-  const first = issue.materialNames[0] ?? 'Material';
-  const extra = issue.materialNames.length - 1;
+function materialSummary(issue: IssueSummary, scope?: IssueMaterialScope): string {
+  const names = scope
+    ? [...new Set(scopedMaterialDetails(issue, scope).map((material) => material.name))]
+    : issue.materialNames;
+  const first = names[0] ?? 'Material';
+  const extra = names.length - 1;
   return extra > 0 ? `${first} + ${extra} more` : first;
 }
 
@@ -1348,6 +1336,7 @@ function IssueCard({
   admin,
   user,
   issue,
+  materialScope,
   onDelete,
   onExtend,
   onView,
@@ -1355,10 +1344,15 @@ function IssueCard({
   admin: boolean;
   user: AuthUser | null;
   issue: IssueSummary;
+  materialScope: IssueMaterialScope;
   onDelete: (issue: IssueSummary) => void;
   onExtend: (issue: IssueSummary) => void;
   onView: (issue: IssueSummary) => void;
 }) {
+  const scopedQuantity = scopedMaterialDetails(issue, materialScope).reduce(
+    (total, material) => total + material.issuedQuantity,
+    0,
+  );
   return (
     <article className="rounded-[14px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]">
       <div className="flex items-start gap-3">
@@ -1372,9 +1366,11 @@ function IssueCard({
             </h2>
             <CatalogBadge value={displayIssueStatus(issue)} />
           </div>
-          <p className="mt-2 font-bold text-[var(--color-text-strong)]">{materialSummary(issue)}</p>
+          <p className="mt-2 font-bold text-[var(--color-text-strong)]">
+            {materialSummary(issue, materialScope)}
+          </p>
           <p className="mt-1 text-sm font-extrabold text-[var(--color-primary)]">
-            Quantity: {issue.totalIssuedQuantity} {issue.totalIssuedQuantity === 1 ? 'unit' : 'units'}
+            Quantity: {scopedQuantity} {scopedQuantity === 1 ? 'unit' : 'units'}
           </p>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
             Receiver: {issue.receiver.fullName}
@@ -1501,6 +1497,7 @@ function IssueTable({
   admin,
   user,
   issues,
+  materialScope,
   onDelete,
   onExtend,
   onView,
@@ -1509,6 +1506,7 @@ function IssueTable({
   admin: boolean;
   user: AuthUser | null;
   issues: IssueSummary[];
+  materialScope: IssueMaterialScope;
   onDelete: (issue: IssueSummary) => void;
   onExtend: (issue: IssueSummary) => void;
   onView: (issue: IssueSummary) => void;
@@ -1546,7 +1544,12 @@ function IssueTable({
                 tabIndex={0}
               >
                 {visibleColumns.map((key) => (
-                  <IssueTableCell issue={issue} key={key} column={key} />
+                  <IssueTableCell
+                    issue={issue}
+                    key={key}
+                    column={key}
+                    materialScope={materialScope}
+                  />
                 ))}
                 <td className="px-4 text-right">
                   <div onClick={(event) => event.stopPropagation()}>
@@ -1568,7 +1571,16 @@ function IssueTable({
   );
 }
 
-function IssueTableCell({ column, issue }: { column: IssueColumnKey; issue: IssueSummary }) {
+function IssueTableCell({
+  column,
+  issue,
+  materialScope,
+}: {
+  column: IssueColumnKey;
+  issue: IssueSummary;
+  materialScope: IssueMaterialScope;
+}) {
+  const materials = scopedMaterialDetails(issue, materialScope);
   switch (column) {
     case 'issue':
       return (
@@ -1588,25 +1600,22 @@ function IssueTableCell({ column, issue }: { column: IssueColumnKey; issue: Issu
     case 'material':
       return (
         <td className="max-w-60 px-4 text-sm text-[var(--color-text-muted)]">
-          <span className="line-clamp-2">{materialSummary(issue)}</span>
+          <span className="line-clamp-2">{materialSummary(issue, materialScope)}</span>
         </td>
       );
     case 'category':
       return (
-        <td className="px-4 text-sm text-[var(--color-text-muted)]">
-          {[...new Set(issue.materialDetails.map((item) => item.category))].join(', ')}
-        </td>
+        <td className="px-4 text-sm text-[var(--color-text-muted)]">{materialScope.category}</td>
       );
     case 'model':
       return (
         <td className="max-w-60 px-4 text-sm text-[var(--color-text-muted)]">
-          {[...new Set(issue.materialDetails.map((item) => item.model).filter(Boolean))].join(
-            ', ',
-          ) || 'Not set'}
+          {[...new Set(materials.map((item) => item.model).filter(Boolean))].join(', ') ||
+            'Not set'}
         </td>
       );
     case 'serialNumber': {
-      const serials = issue.materialDetails.flatMap((item) =>
+      const serials = materials.flatMap((item) =>
         item.assets.map((asset) => asset.serialNumber ?? asset.assetTag),
       );
       return (
@@ -1654,13 +1663,13 @@ function IssueTableCell({ column, issue }: { column: IssueColumnKey; issue: Issu
     case 'quantity':
       return (
         <td className="px-4 text-sm font-semibold text-[var(--color-text-strong)]">
-          {issue.totalIssuedQuantity}
+          {materials.reduce((total, material) => total + material.issuedQuantity, 0)}
         </td>
       );
     case 'outstanding':
       return (
         <td className="px-4 text-sm font-semibold text-[var(--color-text-strong)]">
-          {issue.totalOutstandingQuantity}
+          {materials.reduce((total, material) => total + material.outstandingQuantity, 0)}
         </td>
       );
     case 'issuedBy':

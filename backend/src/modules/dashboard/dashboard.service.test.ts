@@ -98,6 +98,20 @@ describe('Admin dashboard service', () => {
     expect(JSON.stringify(models.aggregate.mock.calls[1]?.[0])).toContain('"$facet"');
   });
 
+  it('selects every issue-line field required by the dashboard response contract', async () => {
+    await getAdminDashboard(new Date('2026-07-23T06:30:00.000Z'));
+
+    const attentionQuery = models.find.mock.results[0]?.value;
+    const recentQuery = models.find.mock.results[1]?.value;
+
+    expect(attentionQuery.select).toHaveBeenCalledWith(
+      expect.stringContaining('lines.issuedQuantity'),
+    );
+    expect(recentQuery.select).toHaveBeenCalledWith(
+      expect.stringContaining('lines.issuedQuantity'),
+    );
+  });
+
   it('returns empty dashboard stats when no issue documents exist', async () => {
     models.aggregate.mockResolvedValue([]);
 

@@ -623,12 +623,19 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
   }
   if (input.status) filter.status = input.status;
   if (input.assignmentType) filter.assignmentType = input.assignmentType;
+  const lineMaterialFilter: Record<string, unknown> = {};
   if (input.store) {
-    filter['lines.material.store'] = new RegExp(`^${escapeSearchRegex(input.store)}$`, 'i');
+    lineMaterialFilter['material.store'] = new RegExp(`^${escapeSearchRegex(input.store)}$`, 'i');
   }
-  if (input.trackingMode) filter['lines.material.trackingMode'] = input.trackingMode;
+  if (input.trackingMode) lineMaterialFilter['material.trackingMode'] = input.trackingMode;
   if (input.category) {
-    filter['lines.material.category'] = new RegExp(`^${escapeSearchRegex(input.category)}$`, 'i');
+    lineMaterialFilter['material.category'] = new RegExp(
+      `^${escapeSearchRegex(input.category)}$`,
+      'i',
+    );
+  }
+  if (Object.keys(lineMaterialFilter).length > 0) {
+    filter.lines = { $elemMatch: lineMaterialFilter };
   }
   if (input.location) {
     const location = new RegExp(`^${escapeSearchRegex(input.location)}$`, 'i');

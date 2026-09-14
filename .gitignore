@@ -17,6 +17,12 @@ temp/
 backups/
 .npm-task-cache/
 
+# Local spreadsheet imports and generated reconciliation artifacts
+*.xlsx
+*.xls
+/artifact-work/*/
+/outputs/*/
+
 # Editor and operating-system files
 .DS_Store
 Thumbs.db
