@@ -23,6 +23,7 @@ import {
   EmptyState,
   ErrorState,
   ErrorSummary,
+  FloatingActionMenu,
   LoadingPanel,
   PageHeader,
   SearchForm,
@@ -329,36 +330,33 @@ function WorkerActionsMenu({
   onDelete: (worker: Worker) => void;
 }) {
   return (
-    <details className="relative inline-block text-left" data-action-menu>
-      <summary
-        aria-label={`Actions for ${worker.name}`}
-        className="icon-button list-none marker:hidden"
+    <FloatingActionMenu
+      label={`Actions for ${worker.name}`}
+      icon={<MoreVertical aria-hidden="true" size={18} />}
+      panelClassName="w-52 p-1.5"
+      triggerClassName="icon-button"
+    >
+      <Link className="menu-item" to={`/workers/${worker.workerId}`}>
+        <Eye aria-hidden="true" size={17} />
+        View details
+      </Link>
+      <Link className="menu-item" to={`/workers/${worker.workerId}?edit=1`}>
+        <Pencil aria-hidden="true" size={17} />
+        Edit
+      </Link>
+      <button className="menu-item w-full" onClick={() => onManageAccess(worker)} type="button">
+        <ShieldCheck aria-hidden="true" size={17} />
+        Manage access
+      </button>
+      <button
+        className="menu-item w-full text-[var(--color-danger)]"
+        onClick={() => onDelete(worker)}
+        type="button"
       >
-        <MoreVertical aria-hidden="true" size={18} />
-      </summary>
-      <div className="absolute right-0 top-full z-[80] mt-2 w-52 rounded-[12px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
-        <Link className="menu-item" to={`/workers/${worker.workerId}`}>
-          <Eye aria-hidden="true" size={17} />
-          View details
-        </Link>
-        <Link className="menu-item" to={`/workers/${worker.workerId}?edit=1`}>
-          <Pencil aria-hidden="true" size={17} />
-          Edit
-        </Link>
-        <button className="menu-item w-full" onClick={() => onManageAccess(worker)} type="button">
-          <ShieldCheck aria-hidden="true" size={17} />
-          Manage access
-        </button>
-        <button
-          className="menu-item w-full text-[var(--color-danger)]"
-          onClick={() => onDelete(worker)}
-          type="button"
-        >
-          <Trash2 aria-hidden="true" size={17} />
-          Delete
-        </button>
-      </div>
-    </details>
+        <Trash2 aria-hidden="true" size={17} />
+        Delete
+      </button>
+    </FloatingActionMenu>
   );
 }
 

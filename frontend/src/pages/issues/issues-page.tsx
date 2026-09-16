@@ -43,6 +43,7 @@ import {
   EmptyState,
   ErrorState,
   FilterPopover,
+  FloatingActionMenu,
   LoadingPanel,
   PageHeader,
   SearchForm,
@@ -1392,7 +1393,6 @@ function IssueCard({
           admin={admin}
           user={user}
           issue={issue}
-          align="right"
           onDelete={onDelete}
           onExtend={onExtend}
         />
@@ -1407,14 +1407,12 @@ function IssueActionsMenu({
   issue,
   onDelete,
   onExtend,
-  align = 'right',
 }: {
   admin: boolean;
   user: AuthUser | null;
   issue: IssueSummary;
   onDelete: (issue: IssueSummary) => void;
   onExtend: (issue: IssueSummary) => void;
-  align?: 'right' | 'left';
 }) {
   const canEditIssue = hasPermission(user, 'ISSUES_EDIT');
   const canOpenSlip = hasPermission(user, 'ISSUE_SLIPS_VIEW');
@@ -1422,74 +1420,66 @@ function IssueActionsMenu({
   const canExtend = admin && hasPermission(user, 'RETURN_DATES_EXTEND');
   const canDelete = hasPermission(user, 'ISSUES_DELETE');
   return (
-    <details className="group relative inline-flex" data-action-menu>
-      <summary
-        aria-label={`Open actions for ${issue.issueId}`}
-        className="grid size-10 cursor-pointer list-none place-items-center rounded-[10px] border border-[var(--color-border)] bg-white text-[var(--color-text-muted)] transition hover:border-[var(--color-primary-border)] hover:text-[var(--color-primary)] [&::-webkit-details-marker]:hidden"
+    <FloatingActionMenu
+      label={`Open actions for ${issue.issueId}`}
+      icon={<MoreVertical aria-hidden="true" size={18} />}
+      triggerClassName="grid size-10 place-items-center rounded-[10px] border border-[var(--color-border)] bg-white text-[var(--color-text-muted)] transition hover:border-[var(--color-primary-border)] hover:text-[var(--color-primary)]"
+    >
+      <Link
+        className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
+        to={`/issues/${issue.issueId}`}
       >
-        <MoreVertical aria-hidden="true" size={18} />
-      </summary>
-      <div
-        className={`absolute top-full z-[80] mt-2 min-w-48 overflow-hidden rounded-[10px] border border-[var(--color-border)] bg-white py-1 text-left shadow-xl ${
-          align === 'right' ? 'right-0' : 'left-0'
-        }`}
-      >
+        <Eye aria-hidden="true" size={16} />
+        View details
+      </Link>
+      {canEditIssue ? (
         <Link
           className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
-          to={`/issues/${issue.issueId}`}
+          to={`/issues/${issue.issueId}?edit=1`}
         >
-          <Eye aria-hidden="true" size={16} />
-          View details
+          <Pencil aria-hidden="true" size={16} />
+          Edit Issue
         </Link>
-        {canEditIssue ? (
-          <Link
-            className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
-            to={`/issues/${issue.issueId}?edit=1`}
-          >
-            <Pencil aria-hidden="true" size={16} />
-            Edit Issue
-          </Link>
-        ) : null}
-        {canOpenSlip ? (
-          <Link
-            className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
-            to={receiptTarget(issue)}
-          >
-            <Printer aria-hidden="true" size={16} />
-            Generate receipt
-          </Link>
-        ) : null}
-        {canReturn && canRecordReturn(issue) ? (
-          <Link
-            className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
-            to={`/issues/${issue.issueId}/return`}
-          >
-            <RotateCcw aria-hidden="true" size={16} />
-            Record Return
-          </Link>
-        ) : null}
-        {canExtend && canExtendReturnDate(issue) ? (
-          <button
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
-            onClick={() => onExtend(issue)}
-            type="button"
-          >
-            <CalendarClock aria-hidden="true" size={16} />
-            Extend return date
-          </button>
-        ) : null}
-        {canDelete ? (
-          <button
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-bold text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
-            onClick={() => onDelete(issue)}
-            type="button"
-          >
-            <Trash2 aria-hidden="true" size={16} />
-            Delete Issue
-          </button>
-        ) : null}
-      </div>
-    </details>
+      ) : null}
+      {canOpenSlip ? (
+        <Link
+          className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
+          to={receiptTarget(issue)}
+        >
+          <Printer aria-hidden="true" size={16} />
+          Generate receipt
+        </Link>
+      ) : null}
+      {canReturn && canRecordReturn(issue) ? (
+        <Link
+          className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
+          to={`/issues/${issue.issueId}/return`}
+        >
+          <RotateCcw aria-hidden="true" size={16} />
+          Record Return
+        </Link>
+      ) : null}
+      {canExtend && canExtendReturnDate(issue) ? (
+        <button
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-bold text-[var(--color-text-strong)] hover:bg-[var(--color-surface-tint)]"
+          onClick={() => onExtend(issue)}
+          type="button"
+        >
+          <CalendarClock aria-hidden="true" size={16} />
+          Extend return date
+        </button>
+      ) : null}
+      {canDelete ? (
+        <button
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-bold text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
+          onClick={() => onDelete(issue)}
+          type="button"
+        >
+          <Trash2 aria-hidden="true" size={16} />
+          Delete Issue
+        </button>
+      ) : null}
+    </FloatingActionMenu>
   );
 }
 
@@ -1512,11 +1502,22 @@ function IssueTable({
   onView: (issue: IssueSummary) => void;
   visibleColumns: IssueColumnKey[];
 }) {
+  const tableWidth =
+    visibleColumns.reduce((total, column) => total + issueColumnWidths[column] * 8, 0) + 80;
   return (
     <div className="issue-table-shell hidden rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)] min-[840px]:block">
       <div className="issue-table-scroll">
-        <table className="w-full min-w-[860px] border-collapse text-left">
+        <table
+          className="table-fixed border-collapse text-left"
+          style={{ minWidth: Math.max(860, tableWidth), width: '100%' }}
+        >
           <caption className="sr-only">Issue Records</caption>
+          <colgroup>
+            {visibleColumns.map((column) => (
+              <col key={column} style={{ width: issueColumnWidths[column] * 8 }} />
+            ))}
+            <col style={{ width: 80 }} />
+          </colgroup>
           <thead className="bg-[var(--color-surface-tint)] text-xs text-[var(--color-text-muted)]">
             <tr>
               {visibleColumns.map((key) => (
@@ -1599,8 +1600,11 @@ function IssueTableCell({
       );
     case 'material':
       return (
-        <td className="max-w-60 px-4 text-sm text-[var(--color-text-muted)]">
-          <span className="line-clamp-2">{materialSummary(issue, materialScope)}</span>
+        <td className="px-4 text-sm text-[var(--color-text-muted)]">
+          <ExpandableTableValue
+            label="Materials"
+            values={[...new Set(materials.map((item) => item.name))]}
+          />
         </td>
       );
     case 'category':
@@ -1609,9 +1613,12 @@ function IssueTableCell({
       );
     case 'model':
       return (
-        <td className="max-w-60 px-4 text-sm text-[var(--color-text-muted)]">
-          {[...new Set(materials.map((item) => item.model).filter(Boolean))].join(', ') ||
-            'Not set'}
+        <td className="px-4 text-sm text-[var(--color-text-muted)]">
+          <ExpandableTableValue
+            empty="Not set"
+            label="Models"
+            values={[...new Set(materials.map((item) => item.model).filter(Boolean))] as string[]}
+          />
         </td>
       );
     case 'serialNumber': {
@@ -1619,8 +1626,8 @@ function IssueTableCell({
         item.assets.map((asset) => asset.serialNumber ?? asset.assetTag),
       );
       return (
-        <td className="max-w-60 px-4 text-sm text-[var(--color-text-muted)]">
-          <span className="line-clamp-2">{serials.join(', ') || 'Not applicable'}</span>
+        <td className="px-4 text-sm text-[var(--color-text-muted)]">
+          <ExpandableTableValue empty="Not applicable" label="Serial numbers" values={serials} />
         </td>
       );
     }
@@ -1681,6 +1688,46 @@ function IssueTableCell({
         </td>
       );
   }
+}
+
+function ExpandableTableValue({
+  values,
+  label,
+  empty = 'Not set',
+}: {
+  values: string[];
+  label: string;
+  empty?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const uniqueValues = [...new Set(values.filter(Boolean))];
+  if (uniqueValues.length === 0) return <span>{empty}</span>;
+  if (uniqueValues.length === 1) {
+    return (
+      <span className="block truncate" title={uniqueValues[0]}>
+        {uniqueValues[0]}
+      </span>
+    );
+  }
+  return (
+    <div className="min-w-0 leading-5">
+      <span className={expanded ? 'whitespace-normal break-words' : 'block truncate'}>
+        {expanded ? uniqueValues.join(', ') : uniqueValues[0]}
+      </span>
+      <button
+        aria-expanded={expanded}
+        aria-label={`${expanded ? 'Collapse' : 'Show all'} ${label.toLowerCase()}`}
+        className="mt-0.5 whitespace-nowrap text-xs font-extrabold text-[var(--color-primary)] hover:underline"
+        onClick={(event) => {
+          event.stopPropagation();
+          setExpanded((current) => !current);
+        }}
+        type="button"
+      >
+        {expanded ? 'Show less' : `+ ${uniqueValues.length - 1} more`}
+      </button>
+    </div>
+  );
 }
 
 function Dialog({
@@ -1882,7 +1929,6 @@ function IssueQuickViewDialog({
             <CatalogBadge value={displayIssueStatus(issue)} />
             <IssueActionsMenu
               admin={admin}
-              align="right"
               issue={issue}
               onDelete={(target) => {
                 onClose();

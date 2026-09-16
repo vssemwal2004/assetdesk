@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Material, TrackingMode } from '@assetdesk/contracts';
 
-import { groupMaterials } from './inventory-page';
+import { groupMaterialConfigurations, groupMaterialModels, groupMaterials } from './inventory-page';
 
 function material(materialCode: string, trackingMode: TrackingMode): Material {
   return {
@@ -41,5 +41,45 @@ describe('inventory category grouping', () => {
     expect(groups).toHaveLength(2);
     expect(groups.map((group) => group.trackingMode).sort()).toEqual(['QUANTITY', 'SERIALIZED']);
     expect(groups.every((group) => group.materials.length === 1)).toBe(true);
+  });
+
+  it('keeps one model summary while separating its configurations underneath', () => {
+    const firstStore = {
+      ...material('GEU-MAT-2026-000003', 'SERIALIZED'),
+      category: 'Laptop',
+      name: 'MacBook',
+      typeModelName: 'MacBook',
+      configuration: '8 GB / 256 GB SSD',
+      store: 'Param Centre Store',
+    };
+    const secondStore = {
+      ...material('GEU-MAT-2026-000004', 'SERIALIZED'),
+      category: 'Laptop',
+      name: 'MacBook',
+      typeModelName: 'MacBook',
+      configuration: '8GB / 256GB SSD',
+      store: 'Main Store',
+    };
+    const largerConfiguration = {
+      ...material('GEU-MAT-2026-000005', 'SERIALIZED'),
+      category: 'Laptop',
+      name: 'MacBook',
+      typeModelName: 'MacBook',
+      configuration: '16 GB / 512 GB SSD',
+      store: 'Param Centre Store',
+    };
+
+    const categoryGroups = groupMaterials([firstStore, secondStore, largerConfiguration]);
+    const modelGroups = groupMaterialModels(categoryGroups[0]?.materials ?? []);
+    const configurationGroups = groupMaterialConfigurations(
+      modelGroups[0]?.key ?? '',
+      modelGroups[0]?.materials ?? [],
+    );
+
+    expect(categoryGroups).toHaveLength(1);
+    expect(modelGroups).toHaveLength(1);
+    expect(modelGroups[0]?.label).toBe('MacBook');
+    expect(configurationGroups).toHaveLength(2);
+    expect(configurationGroups.map((group) => group.materials.length).sort()).toEqual([1, 2]);
   });
 });

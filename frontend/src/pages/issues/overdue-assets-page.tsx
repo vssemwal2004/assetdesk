@@ -11,6 +11,7 @@ import {
   EmptyState,
   ErrorState,
   ErrorSummary,
+  FloatingActionMenu,
   LoadingPanel,
   PageHeader,
   SearchForm,
@@ -233,32 +234,29 @@ function OverdueActions({
   onView: (issue: OverdueIssue) => void;
 }) {
   return (
-    <details className="group relative inline-flex" data-action-menu>
-      <summary
-        aria-label={`Open actions for ${issue.issueId}`}
-        className="grid size-10 cursor-pointer list-none place-items-center rounded-[10px] border border-[var(--color-border)] bg-white text-[var(--color-text-muted)] hover:text-[var(--color-primary)] [&::-webkit-details-marker]:hidden"
-      >
-        <MoreVertical aria-hidden="true" size={18} />
-      </summary>
-      <div className="absolute right-0 top-full z-[80] mt-2 min-w-52 overflow-hidden rounded-[10px] border border-[var(--color-border)] bg-white py-1 text-left shadow-xl">
-        <button className="menu-item w-full" onClick={() => onView(issue)} type="button">
-          <Eye aria-hidden="true" size={16} />
-          View details
-        </button>
-        <Link className="menu-item" to={`/issues/${issue.issueId}/return`}>
-          <RotateCcw aria-hidden="true" size={16} />
-          Record Return
-        </Link>
-        <Link className="menu-item" to={`/bills/${issue.issueId}`}>
-          <Printer aria-hidden="true" size={16} />
-          Issue receipt
-        </Link>
-        <button className="menu-item w-full" onClick={() => onRemind(issue)} type="button">
-          <Bell aria-hidden="true" size={16} />
-          Send reminder
-        </button>
-      </div>
-    </details>
+    <FloatingActionMenu
+      label={`Open actions for ${issue.issueId}`}
+      icon={<MoreVertical aria-hidden="true" size={18} />}
+      panelClassName="min-w-52"
+      triggerClassName="grid size-10 place-items-center rounded-[10px] border border-[var(--color-border)] bg-white text-[var(--color-text-muted)] hover:text-[var(--color-primary)]"
+    >
+      <button className="menu-item w-full" onClick={() => onView(issue)} type="button">
+        <Eye aria-hidden="true" size={16} />
+        View details
+      </button>
+      <Link className="menu-item" to={`/issues/${issue.issueId}/return`}>
+        <RotateCcw aria-hidden="true" size={16} />
+        Record Return
+      </Link>
+      <Link className="menu-item" to={`/bills/${issue.issueId}`}>
+        <Printer aria-hidden="true" size={16} />
+        Issue receipt
+      </Link>
+      <button className="menu-item w-full" onClick={() => onRemind(issue)} type="button">
+        <Bell aria-hidden="true" size={16} />
+        Send reminder
+      </button>
+    </FloatingActionMenu>
   );
 }
 

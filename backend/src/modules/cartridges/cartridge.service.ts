@@ -1,11 +1,12 @@
 import { Types } from 'mongoose';
-import type { CreateCartridgesRequest } from '@assetdesk/contracts';
+import type { CreateCartridgesRequest, UpdateCartridgeRequest } from '@assetdesk/contracts';
 import { AppError } from '../../middleware/error-handler.js';
 import { UserModel } from '../users/user.model.js';
 import { CartridgeModel, type CartridgeDocument } from './cartridge.model.js';
 import { CartridgeMovementModel } from './cartridge-movement.model.js';
 import { GatePassModel } from './gate-pass.model.js';
 import { AssetDetailModel } from '../inventory/asset-detail.model.js';
+import { CartridgeSerialCounterModel } from './cartridge-serial-counter.model.js';
 
 export interface CartridgeActor {
   userId: string;
@@ -17,6 +18,51 @@ function normalize(value: string) {
 }
 function normalizeDetail(value: string) {
   return value.trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
+}
+
+export function cartridgeSerialYear(date = new Date()): number {
+  return Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+    }).format(date),
+  );
+}
+
+export function formatCartridgeSerial(year: number, sequence: number): string {
+  return `${year}-${String(sequence).padStart(4, '0')}`;
+}
+
+async function allocateCartridgeSerials(quantity: number): Promise<string[]> {
+  const year = cartridgeSerialYear();
+  const prefix = `${year}-`;
+  const latest = await CartridgeModel.findOne({
+    serialNumberNormalized: new RegExp(`^${year}-\\d{4}$`),
+  })
+    .sort({ serialNumberNormalized: -1 })
+    .select('serialNumberNormalized')
+    .lean();
+  const highestExisting = latest ? Number(latest.serialNumberNormalized.slice(prefix.length)) : 0;
+
+  await CartridgeSerialCounterModel.updateOne(
+    { _id: String(year) },
+    { $max: { sequence: highestExisting } },
+    { upsert: true },
+  );
+  const counter = await CartridgeSerialCounterModel.findOneAndUpdate(
+    { _id: String(year) },
+    { $inc: { sequence: quantity } },
+    { new: true },
+  ).orFail();
+  if (counter.sequence > 9999) {
+    throw new AppError(
+      409,
+      'CARTRIDGE_SERIAL_LIMIT_REACHED',
+      `${year} cartridge serial numbers have reached the 4-digit limit.`,
+    );
+  }
+  const first = counter.sequence - quantity + 1;
+  return Array.from({ length: quantity }, (_, index) => formatCartridgeSerial(year, first + index));
 }
 function mapCartridge(item: CartridgeDocument) {
   return {
@@ -40,25 +86,6 @@ function mapCartridge(item: CartridgeDocument) {
 async function actorName(actor: CartridgeActor) {
   return (await UserModel.findById(actor.userId).select('name').lean())?.name ?? actor.workerId;
 }
-async function movement(
-  cartridge: CartridgeDocument,
-  type: string,
-  fromStatus: string | undefined,
-  actor: CartridgeActor,
-  extra: Record<string, unknown> = {},
-) {
-  await CartridgeMovementModel.create({
-    cartridgeId: cartridge._id,
-    serialNumber: cartridge.serialNumber,
-    type,
-    ...(fromStatus ? { fromStatus } : {}),
-    toStatus: cartridge.status,
-    actorUserId: new Types.ObjectId(actor.userId),
-    actorWorkerId: actor.workerId,
-    ...extra,
-  });
-}
-
 async function movements(
   cartridges: CartridgeDocument[],
   type: string,
@@ -99,18 +126,9 @@ export async function createCartridges(input: CreateCartridgesRequest, actor: Ca
       'CARTRIDGE_DETAIL_NOT_SAVED',
       'Choose a Location and Department saved by the Admin.',
     );
-  const normalized = input.serialNumbers.map(normalize);
-  const duplicates = await CartridgeModel.find({ serialNumberNormalized: { $in: normalized } })
-    .select('serialNumber')
-    .lean();
-  if (duplicates.length)
-    throw new AppError(
-      409,
-      'CARTRIDGE_SERIAL_EXISTS',
-      `Already registered: ${duplicates.map((x) => x.serialNumber).join(', ')}`,
-    );
+  const serialNumbers = await allocateCartridgeSerials(input.quantity);
   const docs = await CartridgeModel.insertMany(
-    input.serialNumbers.map((serialNumber) => ({
+    serialNumbers.map((serialNumber) => ({
       serialNumber: serialNumber.trim(),
       serialNumberNormalized: normalize(serialNumber),
       cartridgeModel: input.model,
@@ -256,7 +274,7 @@ export async function getCartridge(serial: string, actor: CartridgeActor) {
 }
 export async function issueCartridge(
   input: {
-    serialNumber: string;
+    serialNumbers: string[];
     employeeName: string;
     employeeId?: string | undefined;
     department?: string | undefined;
@@ -265,25 +283,38 @@ export async function issueCartridge(
   },
   actor: CartridgeActor,
 ) {
-  const item = await findCartridge(input.serialNumber);
-  if (item.status !== 'FILLED_AVAILABLE')
+  const normalized = [...new Set(input.serialNumbers.map(normalize))];
+  const items = await CartridgeModel.find({ serialNumberNormalized: { $in: normalized } });
+  if (items.length !== normalized.length)
+    throw new AppError(404, 'CARTRIDGE_NOT_FOUND', 'One or more cartridges were not found.');
+  if (items.some((item) => item.status !== 'FILLED_AVAILABLE'))
     throw new AppError(
       409,
       'CARTRIDGE_NOT_AVAILABLE',
-      'Only a filled available cartridge can be issued.',
+      'Every selected cartridge must be filled and available.',
     );
-  const from = item.status;
-  item.status = 'ISSUED';
-  item.currentHolderName = input.employeeName;
-  if (input.employeeId) item.currentHolderId = input.employeeId;
-  else delete item.currentHolderId;
-  await item.save();
-  await movement(item, 'ISSUED', from, actor, input);
-  return mapCartridge(item);
+  const fromStatuses = new Map(items.map((item) => [item._id.toString(), item.status]));
+  await Promise.all(
+    items.map(async (item) => {
+      item.status = 'ISSUED';
+      item.currentHolderName = input.employeeName;
+      if (input.employeeId) item.currentHolderId = input.employeeId;
+      else delete item.currentHolderId;
+      await item.save();
+    }),
+  );
+  await movements(items, 'ISSUED', fromStatuses, actor, {
+    employeeName: input.employeeName,
+    employeeId: input.employeeId,
+    department: input.department,
+    printerLocation: input.printerLocation,
+    remarks: input.remarks,
+  });
+  return items.map(mapCartridge);
 }
 export async function returnCartridge(
   input: {
-    serialNumber: string;
+    serialNumbers: string[];
     returnedByName: string;
     condition: string;
     defectReason?: string | undefined;
@@ -291,26 +322,128 @@ export async function returnCartridge(
   },
   actor: CartridgeActor,
 ) {
-  const item = await findCartridge(input.serialNumber);
-  if (item.status !== 'ISSUED')
-    throw new AppError(409, 'CARTRIDGE_NOT_ISSUED', 'Only an issued cartridge can be returned.');
-  const from = item.status;
-  item.status =
-    input.condition === 'EMPTY'
-      ? 'EMPTY'
-      : input.condition === 'FILLED_UNUSED'
-        ? 'FILLED_AVAILABLE'
-        : input.condition === 'DAMAGED'
-          ? 'DAMAGED'
-          : 'DEFECTIVE';
-  delete item.currentHolderName;
-  delete item.currentHolderId;
-  await item.save();
-  await movement(item, 'RETURNED', from, actor, {
+  const normalized = [...new Set(input.serialNumbers.map(normalize))];
+  const items = await CartridgeModel.find({ serialNumberNormalized: { $in: normalized } });
+  if (items.length !== normalized.length)
+    throw new AppError(404, 'CARTRIDGE_NOT_FOUND', 'One or more cartridges were not found.');
+  if (items.some((item) => item.status !== 'ISSUED'))
+    throw new AppError(409, 'CARTRIDGE_NOT_ISSUED', 'Every selected cartridge must be issued.');
+  const fromStatuses = new Map(items.map((item) => [item._id.toString(), item.status]));
+  await Promise.all(
+    items.map(async (item) => {
+      item.status =
+        input.condition === 'EMPTY'
+          ? 'EMPTY'
+          : input.condition === 'FILLED_UNUSED'
+            ? 'FILLED_AVAILABLE'
+            : input.condition === 'DAMAGED'
+              ? 'DAMAGED'
+              : 'DEFECTIVE';
+      delete item.currentHolderName;
+      delete item.currentHolderId;
+      await item.save();
+    }),
+  );
+  await movements(items, 'RETURNED', fromStatuses, actor, {
     employeeName: input.returnedByName,
     defectReason: input.defectReason,
     remarks: input.remarks,
   });
+  return items.map(mapCartridge);
+}
+
+export async function deleteCartridge(serialNumber: string, actor: CartridgeActor) {
+  const item = await findCartridge(serialNumber);
+  if (actor.dataScope === 'OWN' && item.createdBy.toString() !== actor.userId)
+    throw new AppError(403, 'PERMISSION_DENIED', 'You do not have access to this cartridge.');
+  if (!['FILLED_AVAILABLE', 'EMPTY'].includes(item.status))
+    throw new AppError(
+      409,
+      'CARTRIDGE_DELETE_NOT_ALLOWED',
+      'Only an unused available or empty cartridge can be deleted.',
+    );
+  const operationalMovement = await CartridgeMovementModel.exists({
+    cartridgeId: item._id,
+    type: { $ne: 'CREATED' },
+  });
+  if (operationalMovement)
+    throw new AppError(
+      409,
+      'CARTRIDGE_HAS_HISTORY',
+      'This cartridge has operational history and cannot be deleted.',
+    );
+  await Promise.all([
+    CartridgeMovementModel.deleteMany({ cartridgeId: item._id }),
+    CartridgeModel.deleteOne({ _id: item._id }),
+  ]);
+  return { serialNumber: item.serialNumber };
+}
+
+export async function updateCartridge(
+  currentSerialNumber: string,
+  input: UpdateCartridgeRequest,
+  actor: CartridgeActor,
+) {
+  const item = await findCartridge(currentSerialNumber);
+  if (actor.dataScope === 'OWN' && item.createdBy.toString() !== actor.userId)
+    throw new AppError(403, 'PERMISSION_DENIED', 'You do not have access to this cartridge.');
+
+  const nextSerial = input.serialNumber?.trim();
+  if (nextSerial && normalize(nextSerial) !== item.serialNumberNormalized) {
+    const [duplicate, operationalMovement, gatePass] = await Promise.all([
+      CartridgeModel.exists({ serialNumberNormalized: normalize(nextSerial) }),
+      CartridgeMovementModel.exists({ cartridgeId: item._id, type: { $ne: 'CREATED' } }),
+      GatePassModel.exists({ cartridgeIds: item._id }),
+    ]);
+    if (duplicate)
+      throw new AppError(
+        409,
+        'CARTRIDGE_SERIAL_EXISTS',
+        'A cartridge with this serial number already exists.',
+      );
+    if (operationalMovement || gatePass)
+      throw new AppError(
+        409,
+        'CARTRIDGE_SERIAL_LOCKED',
+        'The serial number cannot change after operational activity has started.',
+      );
+    item.serialNumber = nextSerial;
+    item.serialNumberNormalized = normalize(nextSerial);
+    await CartridgeMovementModel.updateMany(
+      { cartridgeId: item._id, type: 'CREATED' },
+      { $set: { serialNumber: nextSerial } },
+    );
+  }
+
+  if (input.location || input.department) {
+    const [savedLocation, savedDepartment] = await Promise.all([
+      AssetDetailModel.findOne({
+        kind: 'LOCATION',
+        normalizedName: normalizeDetail(input.location ?? item.location),
+      }).lean(),
+      AssetDetailModel.findOne({
+        kind: 'DEPARTMENT',
+        normalizedName: normalizeDetail(input.department ?? item.department),
+      }).lean(),
+    ]);
+    if (!savedLocation || !savedDepartment)
+      throw new AppError(
+        400,
+        'CARTRIDGE_DETAIL_NOT_SAVED',
+        'Choose a Location and Department saved by the Admin.',
+      );
+    item.location = savedLocation.name;
+    item.department = savedDepartment.name;
+  }
+  if (input.model !== undefined) item.cartridgeModel = input.model;
+  if (input.colour !== undefined) item.colour = input.colour;
+  if (input.compatiblePrinter === null) delete item.compatiblePrinter;
+  else if (input.compatiblePrinter !== undefined) item.compatiblePrinter = input.compatiblePrinter;
+  if (input.vendorName === null) delete item.vendorName;
+  else if (input.vendorName !== undefined) item.vendorName = input.vendorName;
+  if (input.notes === null) delete item.notes;
+  else if (input.notes !== undefined) item.notes = input.notes;
+  await item.save();
   return mapCartridge(item);
 }
 export async function createGatePass(

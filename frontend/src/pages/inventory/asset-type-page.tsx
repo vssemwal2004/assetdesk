@@ -29,6 +29,7 @@ import {
   Button,
   ErrorState,
   ErrorSummary,
+  FloatingActionMenu,
   LoadingPanel,
   PageHeader,
   TextField,
@@ -1227,41 +1228,38 @@ export function AssetTypePage() {
                       {(assetType.models?.length ?? 0).toLocaleString('en-IN')}
                     </span>
                     {canDeleteAssetTypes ? (
-                      <details className="relative" data-action-menu>
-                        <summary
-                          aria-label={`Actions for ${assetType.name}`}
-                          className="icon-button list-none marker:hidden"
-                        >
-                          <MoreVertical size={17} />
-                        </summary>
-                        <div className="absolute right-0 top-full z-50 mt-2 w-40 rounded-[10px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
-                          {canAddAssetTypes ? (
-                            <button
-                              className="menu-item w-full"
-                              onClick={() => {
-                                setMessage(null);
-                                setEditTarget(assetType);
-                                setEditName(assetType.name);
-                              }}
-                              type="button"
-                            >
-                              <Pencil size={16} />
-                              Edit
-                            </button>
-                          ) : null}
+                      <FloatingActionMenu
+                        label={`Actions for ${assetType.name}`}
+                        icon={<MoreVertical size={17} />}
+                        panelClassName="w-40 p-1.5"
+                        triggerClassName="icon-button"
+                      >
+                        {canAddAssetTypes ? (
                           <button
-                            className="menu-item w-full text-[var(--color-danger)]"
+                            className="menu-item w-full"
                             onClick={() => {
                               setMessage(null);
-                              setDeleteTarget(assetType);
+                              setEditTarget(assetType);
+                              setEditName(assetType.name);
                             }}
                             type="button"
                           >
-                            <Trash2 size={16} />
-                            Delete
+                            <Pencil size={16} />
+                            Edit
                           </button>
-                        </div>
-                      </details>
+                        ) : null}
+                        <button
+                          className="menu-item w-full text-[var(--color-danger)]"
+                          onClick={() => {
+                            setMessage(null);
+                            setDeleteTarget(assetType);
+                          }}
+                          type="button"
+                        >
+                          <Trash2 size={16} />
+                          Delete
+                        </button>
+                      </FloatingActionMenu>
                     ) : null}
                   </li>
                 ))}

@@ -60,19 +60,22 @@ export const CreateCartridgesRequestSchema = z
     vendorName: z.string().trim().max(120).optional(),
     status: z.enum(['FILLED_AVAILABLE', 'EMPTY']).default('FILLED_AVAILABLE'),
     quantity: z.number().int().min(1).max(500),
-    serialNumbers: z.array(Text).min(1).max(500),
+    // Kept optional for compatibility with older clients. New cartridge serials are
+    // allocated by the server as YYYY-0001 so concurrent users cannot collide.
+    serialNumbers: z.array(Text).min(1).max(500).optional(),
     notes: z.string().trim().max(500).optional(),
   })
   .superRefine((value, context) => {
-    if (value.quantity !== value.serialNumbers.length)
+    if (value.serialNumbers && value.quantity !== value.serialNumbers.length)
       context.addIssue({
         code: 'custom',
         path: ['serialNumbers'],
         message: 'Quantity must match the number of serial numbers.',
       });
     if (
+      value.serialNumbers &&
       new Set(value.serialNumbers.map((item) => item.toUpperCase())).size !==
-      value.serialNumbers.length
+        value.serialNumbers.length
     )
       context.addIssue({
         code: 'custom',
@@ -80,21 +83,53 @@ export const CreateCartridgesRequestSchema = z
         message: 'Serial numbers must be unique.',
       });
   });
-export const IssueCartridgeRequestSchema = z.object({
-  serialNumber: Text,
-  employeeName: Text,
-  employeeId: z.string().trim().max(40).optional(),
-  department: z.string().trim().max(120).optional(),
-  printerLocation: z.string().trim().max(120).optional(),
-  remarks: z.string().trim().max(500).optional(),
-});
-export const ReturnCartridgeRequestSchema = z.object({
-  serialNumber: Text,
-  returnedByName: Text,
-  condition: CartridgeReturnConditionSchema,
-  defectReason: z.string().trim().max(500).optional(),
-  remarks: z.string().trim().max(500).optional(),
-});
+export const UpdateCartridgeRequestSchema = z
+  .object({
+    serialNumber: Text.optional(),
+    model: Text.optional(),
+    colour: CartridgeColourSchema.optional(),
+    compatiblePrinter: z.string().trim().max(120).nullable().optional(),
+    location: Text.optional(),
+    department: Text.optional(),
+    vendorName: z.string().trim().max(120).nullable().optional(),
+    notes: z.string().trim().max(500).nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, 'Provide at least one field to update.');
+export const IssueCartridgeRequestSchema = z
+  .object({
+    serialNumbers: z.array(Text).min(1).max(500).optional(),
+    serialNumber: Text.optional(),
+    employeeName: Text,
+    employeeId: z.string().trim().max(40).optional(),
+    department: z.string().trim().max(120).optional(),
+    printerLocation: z.string().trim().max(120).optional(),
+    remarks: z.string().trim().max(500).optional(),
+  })
+  .refine((value) => value.serialNumbers?.length || value.serialNumber, {
+    path: ['serialNumbers'],
+    message: 'Select at least one cartridge.',
+  })
+  .transform(({ serialNumber, serialNumbers, ...value }) => ({
+    ...value,
+    serialNumbers: [...new Set(serialNumbers ?? [serialNumber!])],
+  }));
+export const ReturnCartridgeRequestSchema = z
+  .object({
+    serialNumbers: z.array(Text).min(1).max(500).optional(),
+    serialNumber: Text.optional(),
+    returnedByName: Text,
+    condition: CartridgeReturnConditionSchema,
+    defectReason: z.string().trim().max(500).optional(),
+    remarks: z.string().trim().max(500).optional(),
+  })
+  .refine((value) => value.serialNumbers?.length || value.serialNumber, {
+    path: ['serialNumbers'],
+    message: 'Select at least one cartridge.',
+  })
+  .transform(({ serialNumber, serialNumbers, ...value }) => ({
+    ...value,
+    serialNumbers: [...new Set(serialNumbers ?? [serialNumber!])],
+  }));
 export const CreateGatePassRequestSchema = z.object({
   vendorName: Text,
   personTakingMaterial: Text,
@@ -141,3 +176,4 @@ export const CartridgeListResponseSchema = z.object({
 export type CartridgeStatus = z.infer<typeof CartridgeStatusSchema>;
 export type Cartridge = z.infer<typeof CartridgeSchema>;
 export type CreateCartridgesRequest = z.infer<typeof CreateCartridgesRequestSchema>;
+export type UpdateCartridgeRequest = z.infer<typeof UpdateCartridgeRequestSchema>;

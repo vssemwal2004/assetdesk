@@ -22,6 +22,7 @@ import { ReminderModel } from '../modules/reminders/reminder.model.js';
 import { UserModel } from '../modules/users/user.model.js';
 import { WorkerImportModel } from '../modules/workers/worker-import.model.js';
 import { CartridgeModel } from '../modules/cartridges/cartridge.model.js';
+import { CartridgeSerialCounterModel } from '../modules/cartridges/cartridge-serial-counter.model.js';
 import { CartridgeMovementModel } from '../modules/cartridges/cartridge-movement.model.js';
 import { GatePassModel } from '../modules/cartridges/gate-pass.model.js';
 import { InventoryGatePassModel } from '../modules/inventory-gate-passes/inventory-gate-pass.model.js';
@@ -51,6 +52,7 @@ const indexedModels: Array<{
   IssueModel,
   EmailJobModel,
   CartridgeModel,
+  CartridgeSerialCounterModel,
   CartridgeMovementModel,
   GatePassModel,
   InventoryGatePassModel,

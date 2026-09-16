@@ -50,6 +50,7 @@ export const WorkerPermissionSchema = z.enum([
   'CARTRIDGES_VIEW',
   'CARTRIDGES_ADD',
   'CARTRIDGES_EDIT',
+  'CARTRIDGES_DELETE',
   'CARTRIDGES_ISSUE',
   'CARTRIDGES_RETURN',
   'CARTRIDGE_GATE_PASSES_VIEW',
@@ -69,6 +70,7 @@ const LEGACY_BROAD_PERMISSIONS = [
   'RECEIVERS_MANAGE',
   'INVENTORY_MODELS_ADD',
   'INVENTORY_MODELS_MERGE',
+  'CARTRIDGES_DELETE',
 ] satisfies string[];
 
 export const DEFAULT_WORKER_PERMISSIONS = WorkerPermissionSchema.options.filter(

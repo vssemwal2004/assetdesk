@@ -40,6 +40,7 @@ import {
   ErrorState,
   ErrorSummary,
   FilterPopover,
+  FloatingActionMenu,
   LoadingPanel,
   PageHeader,
   SearchForm,
@@ -194,6 +195,53 @@ export interface MaterialGroup {
   totalQuantity: number;
   availableQuantity: number;
   issuedQuantity: number;
+}
+
+export interface MaterialConfigurationGroup {
+  key: string;
+  label: string;
+  materials: Material[];
+}
+
+export interface MaterialModelGroup {
+  key: string;
+  label: string;
+  materials: Material[];
+}
+
+function inventoryGroupingKey(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/g, '')
+    .replace(/\s+/g, '')
+    .toLocaleUpperCase('en-US');
+}
+
+export function groupMaterialConfigurations(
+  modelKey: string,
+  materials: Material[],
+): MaterialConfigurationGroup[] {
+  const groups = new Map<string, MaterialConfigurationGroup>();
+  for (const material of materials) {
+    const label = material.configuration?.trim() || 'Standard configuration';
+    const key = `${modelKey}|${inventoryGroupingKey(label)}`;
+    const group = groups.get(key) ?? { key, label, materials: [] };
+    group.materials.push(material);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((left, right) => left.label.localeCompare(right.label));
+}
+
+export function groupMaterialModels(materials: Material[]): MaterialModelGroup[] {
+  const groups = new Map<string, MaterialModelGroup>();
+  for (const material of materials) {
+    const label = material.typeModelName?.trim() || material.name.trim() || 'Unnamed model';
+    const key = inventoryGroupingKey(label);
+    const group = groups.get(key) ?? { key, label, materials: [] };
+    group.materials.push(material);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((left, right) => left.label.localeCompare(right.label));
 }
 
 export function groupMaterials(materials: Material[]): MaterialGroup[] {
@@ -922,45 +970,15 @@ export function InventoryPage() {
                       />
                     ))
                   ) : (
-                    <details
-                      className="group space-y-2"
+                    <MobileGroupedMaterialCards
+                      canAdjustQuantity={canAdjustQuantity}
+                      canDelete={canDeleteInventory}
+                      canEdit={canEditInventory}
+                      group={group}
                       key={materialGroupKey(group.category, group.trackingMode)}
-                    >
-                      <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <ChevronDown
-                              className="text-[var(--color-primary)] transition-transform group-open:rotate-180"
-                              size={18}
-                            />
-                            <div>
-                              <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-                                {group.category}
-                              </h2>
-                              <p className="text-xs font-semibold text-[var(--color-text-muted)]">
-                                {humanizeCatalogValue(group.trackingMode)} ·{' '}
-                                {group.materials.length} material
-                                {group.materials.length === 1 ? '' : 's'}
-                              </p>
-                            </div>
-                          </div>
-                          <p className="text-right text-xs font-bold text-[var(--color-text-muted)]">
-                            {group.availableQuantity} / {group.totalQuantity} available
-                          </p>
-                        </div>
-                      </summary>
-                      {group.materials.map((material) => (
-                        <MaterialCard
-                          canAdjustQuantity={canAdjustQuantity}
-                          canDelete={canDeleteInventory}
-                          canEdit={canEditInventory}
-                          key={material.materialCode}
-                          material={material}
-                          onDelete={confirmDelete}
-                          onAdjustQuantity={setQuantityTarget}
-                        />
-                      ))}
-                    </details>
+                      onAdjustQuantity={setQuantityTarget}
+                      onDelete={confirmDelete}
+                    />
                   ),
                 )}
               </div>
@@ -1890,72 +1908,50 @@ function MaterialActions({
   onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
 }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    const close = (event: PointerEvent) => {
-      if (detailsRef.current?.open && !detailsRef.current.contains(event.target as Node)) {
-        detailsRef.current.open = false;
-      }
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && detailsRef.current?.open) detailsRef.current.open = false;
-    };
-    document.addEventListener('pointerdown', close);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('pointerdown', close);
-      document.removeEventListener('keydown', escape);
-    };
-  }, []);
   return (
-    <details className="relative inline-block text-left" data-action-menu ref={detailsRef}>
-      <summary
-        aria-label={`Actions for ${material.name}`}
-        className="icon-button list-none marker:hidden"
-      >
-        <MoreVertical aria-hidden="true" size={18} />
-      </summary>
-      <div className="absolute right-0 top-full z-[80] mt-2 w-52 rounded-[12px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
-        <Link className="menu-item" to={`/inventory/${material.materialCode}`}>
-          <Eye aria-hidden="true" size={17} />
-          View details
+    <FloatingActionMenu
+      label={`Actions for ${material.name}`}
+      icon={<MoreVertical aria-hidden="true" size={18} />}
+      panelClassName="w-52 p-1.5"
+      triggerClassName="icon-button"
+    >
+      <Link className="menu-item" to={`/inventory/${material.materialCode}`}>
+        <Eye aria-hidden="true" size={17} />
+        View details
+      </Link>
+      {canEdit ? (
+        <Link className="menu-item" to={`/inventory/${material.materialCode}?status=1`}>
+          <Pencil aria-hidden="true" size={17} />
+          Change status
         </Link>
-        {canEdit ? (
-          <Link className="menu-item" to={`/inventory/${material.materialCode}?status=1`}>
-            <Pencil aria-hidden="true" size={17} />
-            Change status
-          </Link>
-        ) : null}
-        {canAdjustQuantity &&
-        material.trackingMode === 'QUANTITY' &&
-        material.status === 'ACTIVE' ? (
-          <button
-            className="menu-item w-full"
-            onClick={() => onAdjustQuantity(material)}
-            type="button"
-          >
-            <Pencil aria-hidden="true" size={17} />
-            Add or adjust quantity
-          </button>
-        ) : null}
-        {canEdit ? (
-          <Link className="menu-item" to={`/inventory/${material.materialCode}?edit=1`}>
-            <Pencil aria-hidden="true" size={17} />
-            Edit
-          </Link>
-        ) : null}
-        {canDelete ? (
-          <button
-            className="menu-item w-full text-[var(--color-danger)]"
-            onClick={() => onDelete(material)}
-            type="button"
-          >
-            <Trash2 aria-hidden="true" size={17} />
-            Delete
-          </button>
-        ) : null}
-      </div>
-    </details>
+      ) : null}
+      {canAdjustQuantity && material.trackingMode === 'QUANTITY' && material.status === 'ACTIVE' ? (
+        <button
+          className="menu-item w-full"
+          onClick={() => onAdjustQuantity(material)}
+          type="button"
+        >
+          <Pencil aria-hidden="true" size={17} />
+          Add or adjust quantity
+        </button>
+      ) : null}
+      {canEdit ? (
+        <Link className="menu-item" to={`/inventory/${material.materialCode}?edit=1`}>
+          <Pencil aria-hidden="true" size={17} />
+          Edit
+        </Link>
+      ) : null}
+      {canDelete ? (
+        <button
+          className="menu-item w-full text-[var(--color-danger)]"
+          onClick={() => onDelete(material)}
+          type="button"
+        >
+          <Trash2 aria-hidden="true" size={17} />
+          Delete
+        </button>
+      ) : null}
+    </FloatingActionMenu>
   );
 }
 
@@ -1966,6 +1962,7 @@ function MaterialCard({
   canAdjustQuantity,
   onAdjustQuantity,
   onDelete,
+  nestedUnderConfiguration = false,
 }: {
   material: Material;
   canEdit: boolean;
@@ -1973,6 +1970,7 @@ function MaterialCard({
   canAdjustQuantity: boolean;
   onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
+  nestedUnderConfiguration?: boolean;
 }) {
   return (
     <article className="rounded-[14px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]">
@@ -1982,7 +1980,11 @@ function MaterialCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <h2 className="font-extrabold text-[var(--color-text-strong)]">{material.name}</h2>
+            <h2 className="font-extrabold text-[var(--color-text-strong)]">
+              {nestedUnderConfiguration
+                ? (material.store ?? material.locationBlock ?? material.location ?? 'Stock record')
+                : material.name}
+            </h2>
             <div className="flex items-center gap-2">
               <CatalogBadge value={material.status} />
               <MaterialActions
@@ -2012,6 +2014,127 @@ function MaterialCard({
         View inventory details
       </Link>
     </article>
+  );
+}
+
+function MobileGroupedMaterialCards({
+  group,
+  canEdit,
+  canDelete,
+  canAdjustQuantity,
+  onAdjustQuantity,
+  onDelete,
+}: {
+  group: MaterialGroup;
+  canEdit: boolean;
+  canDelete: boolean;
+  canAdjustQuantity: boolean;
+  onAdjustQuantity: (material: Material) => void;
+  onDelete: (material: Material) => void;
+}) {
+  const modelGroups = groupMaterialModels(group.materials);
+  return (
+    <details className="group/category space-y-2">
+      <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <ChevronDown
+              className="text-[var(--color-primary)] transition-transform group-open/category:rotate-180"
+              size={18}
+            />
+            <div>
+              <h2 className="font-extrabold text-[var(--color-primary-strong)]">
+                {group.category}
+              </h2>
+              <p className="text-xs font-semibold text-[var(--color-text-muted)]">
+                {humanizeCatalogValue(group.trackingMode)} · {modelGroups.length} model
+                {modelGroups.length === 1 ? '' : 's'}
+              </p>
+            </div>
+          </div>
+          <p className="text-right text-xs font-bold text-[var(--color-text-muted)]">
+            {group.availableQuantity} / {group.totalQuantity} available
+          </p>
+        </div>
+      </summary>
+      {modelGroups.map((model) => {
+        const configurations = groupMaterialConfigurations(model.key, model.materials);
+        return (
+          <details className="group/model ml-2 space-y-2" key={model.key}>
+            <summary className="list-none rounded-[10px] border border-[var(--color-border)] bg-white p-3 marker:hidden">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
+                  <ChevronDown
+                    className="shrink-0 text-[var(--color-primary)] transition-transform group-open/model:rotate-180"
+                    size={17}
+                  />
+                  <div className="min-w-0">
+                    <p className="break-words font-extrabold text-[var(--color-text-strong)]">
+                      {model.label}
+                    </p>
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      {group.trackingMode === 'SERIALIZED'
+                        ? `${configurations.length} configuration${configurations.length === 1 ? '' : 's'} · `
+                        : ''}
+                      {model.materials.length} store variant
+                      {model.materials.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                </div>
+                <p className="shrink-0 text-xs font-bold text-[var(--color-text-muted)]">
+                  {aggregateInventoryCount(model.materials, 'total')} total
+                </p>
+              </div>
+            </summary>
+            {group.trackingMode === 'SERIALIZED'
+              ? configurations.map((configuration) => (
+                  <details className="group/config ml-2 space-y-2" key={configuration.key}>
+                    <summary className="list-none rounded-[10px] border border-[var(--color-border)] bg-[#fbfaff] p-3 marker:hidden">
+                      <div className="flex items-center gap-2">
+                        <ChevronDown
+                          className="shrink-0 text-[var(--color-text-muted)] transition-transform group-open/config:rotate-180"
+                          size={16}
+                        />
+                        <div className="min-w-0">
+                          <p className="break-words text-sm font-bold text-[var(--color-text-strong)]">
+                            {configuration.label}
+                          </p>
+                          <p className="text-xs text-[var(--color-text-muted)]">
+                            {configuration.materials.length} store/stock record
+                            {configuration.materials.length === 1 ? '' : 's'}
+                          </p>
+                        </div>
+                      </div>
+                    </summary>
+                    {configuration.materials.map((material) => (
+                      <MaterialCard
+                        canAdjustQuantity={canAdjustQuantity}
+                        canDelete={canDelete}
+                        canEdit={canEdit}
+                        key={material.materialCode}
+                        material={material}
+                        nestedUnderConfiguration
+                        onAdjustQuantity={onAdjustQuantity}
+                        onDelete={onDelete}
+                      />
+                    ))}
+                  </details>
+                ))
+              : model.materials.map((material) => (
+                  <MaterialCard
+                    canAdjustQuantity={canAdjustQuantity}
+                    canDelete={canDelete}
+                    canEdit={canEdit}
+                    key={material.materialCode}
+                    material={material}
+                    onAdjustQuantity={onAdjustQuantity}
+                    onDelete={onDelete}
+                  />
+                ))}
+          </details>
+        );
+      })}
+    </details>
   );
 }
 
@@ -2138,6 +2261,7 @@ function GroupedMaterialRows({
 }) {
   const [open, setOpen] = useState(false);
   const [openModels, setOpenModels] = useState<string[]>([]);
+  const [openConfigurations, setOpenConfigurations] = useState<string[]>([]);
 
   if (group.category.trim().toLowerCase() === 'consumable') {
     return (
@@ -2159,19 +2283,7 @@ function GroupedMaterialRows({
     );
   }
 
-  const modelGroups = Object.values(
-    group.materials.reduce<Record<string, { key: string; label: string; materials: Material[] }>>(
-      (result, material) => {
-        const label = material.typeModelName ?? material.name;
-        const key = label.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleUpperCase('en-US');
-        const model = result[key] ?? { key, label, materials: [] };
-        model.materials.push(material);
-        result[key] = model;
-        return result;
-      },
-      {},
-    ),
-  );
+  const modelGroups = groupMaterialModels(group.materials);
 
   return (
     <>
@@ -2211,40 +2323,33 @@ function GroupedMaterialRows({
                 );
               })}
               {canAdd || onMergeCategory ? (
-                <details
-                  className="relative"
-                  data-action-menu
-                  onClick={(event) => event.stopPropagation()}
+                <FloatingActionMenu
+                  label={`Actions for ${group.category}`}
+                  icon={<MoreVertical aria-hidden="true" size={17} />}
+                  panelClassName="w-44 p-1.5"
+                  triggerClassName="icon-button"
                 >
-                  <summary
-                    aria-label={`Actions for ${group.category}`}
-                    className="icon-button list-none marker:hidden"
-                  >
-                    <MoreVertical aria-hidden="true" size={17} />
-                  </summary>
-                  <div className="absolute right-0 top-full z-[80] mt-2 w-44 rounded-[12px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
-                    {canAdd ? (
-                      <button
-                        className="menu-item w-full"
-                        onClick={() => onAddCategory(group)}
-                        type="button"
-                      >
-                        <PackagePlus aria-hidden="true" size={17} />
-                        Add material
-                      </button>
-                    ) : null}
-                    {onMergeCategory ? (
-                      <button
-                        className="menu-item w-full"
-                        onClick={() => onMergeCategory(group)}
-                        type="button"
-                      >
-                        <PackageSearch aria-hidden="true" size={17} />
-                        Merge models
-                      </button>
-                    ) : null}
-                  </div>
-                </details>
+                  {canAdd ? (
+                    <button
+                      className="menu-item w-full"
+                      onClick={() => onAddCategory(group)}
+                      type="button"
+                    >
+                      <PackagePlus aria-hidden="true" size={17} />
+                      Add material
+                    </button>
+                  ) : null}
+                  {onMergeCategory ? (
+                    <button
+                      className="menu-item w-full"
+                      onClick={() => onMergeCategory(group)}
+                      type="button"
+                    >
+                      <PackageSearch aria-hidden="true" size={17} />
+                      Merge models
+                    </button>
+                  ) : null}
+                </FloatingActionMenu>
               ) : null}
             </div>
           </div>
@@ -2253,6 +2358,7 @@ function GroupedMaterialRows({
       {open
         ? modelGroups.map((model) => {
             const modelOpen = openModels.includes(model.key);
+            const configurationGroups = groupMaterialConfigurations(model.key, model.materials);
             return (
               <Fragment key={model.key}>
                 <tr
@@ -2278,7 +2384,10 @@ function GroupedMaterialRows({
                             {model.label}
                           </p>
                           <p className="text-xs text-[var(--color-text-muted)]">
-                            {model.materials.length} configuration/store variant
+                            {group.trackingMode === 'SERIALIZED'
+                              ? `${configurationGroups.length} configuration${configurationGroups.length === 1 ? '' : 's'} · `
+                              : ''}
+                            {model.materials.length} store variant
                             {model.materials.length === 1 ? '' : 's'}
                           </p>
                         </div>
@@ -2299,83 +2408,149 @@ function GroupedMaterialRows({
                           })}
                         </div>
                         {canAdd || onModelCrud ? (
-                          <details
-                            className="relative"
-                            data-action-menu
-                            onClick={(event) => event.stopPropagation()}
+                          <FloatingActionMenu
+                            label={`Actions for ${model.label}`}
+                            icon={<MoreVertical size={17} />}
+                            panelClassName="w-44 p-1.5"
+                            triggerClassName="icon-button"
                           >
-                            <summary
-                              aria-label={`Actions for ${model.label}`}
-                              className="icon-button list-none marker:hidden"
-                            >
-                              <MoreVertical size={17} />
-                            </summary>
-                            <div className="absolute right-0 top-full z-[90] mt-2 w-44 rounded-[10px] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-overlay)]">
-                              {canAdd ? (
-                                <Link
-                                  className="menu-item"
-                                  to={`/inventory/new?category=${encodeURIComponent(group.category)}&trackingMode=${group.trackingMode}&typeModelName=${encodeURIComponent(model.label)}`}
+                            {canAdd ? (
+                              <Link
+                                className="menu-item"
+                                to={`/inventory/new?category=${encodeURIComponent(group.category)}&trackingMode=${group.trackingMode}&typeModelName=${encodeURIComponent(model.label)}`}
+                              >
+                                <PackagePlus size={16} />
+                                Add stock variant
+                              </Link>
+                            ) : null}
+                            {onModelCrud ? (
+                              <>
+                                <button
+                                  className="menu-item w-full"
+                                  onClick={() =>
+                                    onModelCrud({
+                                      category: group.category,
+                                      name: model.label,
+                                      trackingMode: group.trackingMode,
+                                      action: 'EDIT',
+                                    })
+                                  }
+                                  type="button"
                                 >
-                                  <PackagePlus size={16} />
-                                  Add stock variant
-                                </Link>
-                              ) : null}
-                              {onModelCrud ? (
-                                <>
-                                  <button
-                                    className="menu-item w-full"
-                                    onClick={() =>
-                                      onModelCrud({
-                                        category: group.category,
-                                        name: model.label,
-                                        trackingMode: group.trackingMode,
-                                        action: 'EDIT',
-                                      })
-                                    }
-                                    type="button"
-                                  >
-                                    <Pencil size={16} />
-                                    Edit model
-                                  </button>
-                                  <button
-                                    className="menu-item w-full text-[var(--color-danger)]"
-                                    onClick={() =>
-                                      onModelCrud({
-                                        category: group.category,
-                                        name: model.label,
-                                        trackingMode: group.trackingMode,
-                                        action: 'DELETE',
-                                      })
-                                    }
-                                    type="button"
-                                  >
-                                    <Trash2 size={16} />
-                                    Delete model
-                                  </button>
-                                </>
-                              ) : null}
-                            </div>
-                          </details>
+                                  <Pencil size={16} />
+                                  Edit model
+                                </button>
+                                <button
+                                  className="menu-item w-full text-[var(--color-danger)]"
+                                  onClick={() =>
+                                    onModelCrud({
+                                      category: group.category,
+                                      name: model.label,
+                                      trackingMode: group.trackingMode,
+                                      action: 'DELETE',
+                                    })
+                                  }
+                                  type="button"
+                                >
+                                  <Trash2 size={16} />
+                                  Delete model
+                                </button>
+                              </>
+                            ) : null}
+                          </FloatingActionMenu>
                         ) : null}
                       </div>
                     </div>
                   </td>
                 </tr>
-                {modelOpen
-                  ? model.materials.map((material) => (
-                      <MaterialVariantRows
-                        canAdjustQuantity={canAdjustQuantity}
-                        canDelete={canDelete}
-                        canEdit={canEdit}
-                        key={material.materialCode}
-                        material={material}
-                        visibleColumns={visibleColumns}
-                        onAdjustQuantity={onAdjustQuantity}
-                        onDelete={onDelete}
-                        onView={onView}
-                      />
-                    ))
-                  : null}
+                {modelOpen && group.trackingMode === 'SERIALIZED'
+                  ? configurationGroups.map((configuration) => {
+                      const configurationOpen = openConfigurations.includes(configuration.key);
+                      return (
+                        <Fragment key={configuration.key}>
+                          <tr
+                            className="cursor-pointer border-t border-[var(--color-border)] bg-[#fbfaff] hover:bg-white"
+                            onClick={() =>
+                              setOpenConfigurations((current) =>
+                                current.includes(configuration.key)
+                                  ? current.filter((key) => key !== configuration.key)
+                                  : [...current, configuration.key],
+                              )
+                            }
+                          >
+                            <td className="px-4 py-3" colSpan={visibleColumns.length + 1}>
+                              <div className="flex flex-wrap items-center justify-between gap-3 pl-10">
+                                <div className="flex min-w-0 items-center gap-3">
+                                  <ChevronDown
+                                    aria-hidden="true"
+                                    className={`shrink-0 text-[var(--color-text-muted)] transition-transform ${configurationOpen ? 'rotate-180' : ''}`}
+                                    size={16}
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="break-words text-sm font-bold text-[var(--color-text-strong)]">
+                                      {configuration.label}
+                                    </p>
+                                    <p className="text-xs text-[var(--color-text-muted)]">
+                                      {configuration.materials.length} store/stock record
+                                      {configuration.materials.length === 1 ? '' : 's'}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap justify-end gap-2 text-xs font-bold text-[var(--color-text-muted)]">
+                                  {visibleColumns.map((column) => {
+                                    const count = aggregateInventoryCount(
+                                      configuration.materials,
+                                      column,
+                                    );
+                                    return count === null ? null : (
+                                      <span key={column}>
+                                        {
+                                          inventoryColumns.find(
+                                            (definition) => definition.key === column,
+                                          )?.label
+                                        }
+                                        : {count}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                          {configurationOpen
+                            ? configuration.materials.map((material) => (
+                                <MaterialVariantRows
+                                  canAdjustQuantity={canAdjustQuantity}
+                                  canDelete={canDelete}
+                                  canEdit={canEdit}
+                                  key={material.materialCode}
+                                  material={material}
+                                  nestedUnderConfiguration
+                                  visibleColumns={visibleColumns}
+                                  onAdjustQuantity={onAdjustQuantity}
+                                  onDelete={onDelete}
+                                  onView={onView}
+                                />
+                              ))
+                            : null}
+                        </Fragment>
+                      );
+                    })
+                  : modelOpen
+                    ? model.materials.map((material) => (
+                        <MaterialVariantRows
+                          canAdjustQuantity={canAdjustQuantity}
+                          canDelete={canDelete}
+                          canEdit={canEdit}
+                          key={material.materialCode}
+                          material={material}
+                          visibleColumns={visibleColumns}
+                          onAdjustQuantity={onAdjustQuantity}
+                          onDelete={onDelete}
+                          onView={onView}
+                        />
+                      ))
+                    : null}
               </Fragment>
             );
           })
@@ -2393,6 +2568,7 @@ function MaterialVariantRows({
   onAdjustQuantity,
   onDelete,
   onView,
+  nestedUnderConfiguration = false,
 }: {
   material: Material;
   visibleColumns: InventoryColumnKey[];
@@ -2402,6 +2578,7 @@ function MaterialVariantRows({
   onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
+  nestedUnderConfiguration?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const unitsQuery = useQuery({
@@ -2419,6 +2596,7 @@ function MaterialVariantRows({
             column={column}
             key={column}
             material={material}
+            nestedUnderConfiguration={nestedUnderConfiguration}
             onToggle={() => setOpen((value) => !value)}
             open={open}
           />
@@ -2501,11 +2679,13 @@ function MaterialInventoryCell({
   column,
   open,
   onToggle,
+  nestedUnderConfiguration,
 }: {
   material: Material;
   column: InventoryColumnKey;
   open: boolean;
   onToggle: () => void;
+  nestedUnderConfiguration: boolean;
 }) {
   if (column === 'asset') {
     return (
@@ -2522,14 +2702,17 @@ function MaterialInventoryCell({
           />
           <span className="min-w-0">
             <span className="block truncate text-sm font-bold text-[var(--color-text-strong)]">
-              {material.typeModelName ||
-                material.name ||
-                material.configuration ||
-                'Standard configuration'}
+              {nestedUnderConfiguration
+                ? 'Stock record'
+                : material.typeModelName || material.name || 'Inventory item'}
             </span>
-            {material.configuration ? (
+            {!nestedUnderConfiguration && material.configuration ? (
               <span className="mt-0.5 block max-w-64 truncate text-xs text-[var(--color-text-muted)]">
                 {material.configuration}
+              </span>
+            ) : nestedUnderConfiguration ? (
+              <span className="mt-0.5 block text-xs text-[var(--color-text-muted)]">
+                {material.store ?? material.locationBlock ?? material.location ?? 'Store not set'}
               </span>
             ) : null}
           </span>

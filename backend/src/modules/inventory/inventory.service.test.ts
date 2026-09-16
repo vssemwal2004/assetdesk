@@ -154,12 +154,14 @@ describe('inventory access filters', () => {
     });
 
     const storeFilter = (filter.$and as Array<{ $or: Array<Record<string, RegExp>> }>)[0];
-    expect(storeFilter?.$or[0]?.store?.test('Param Centre Store / Param Computer Centre')).toBe(true);
-    expect(storeFilter?.$or[1]?.location?.test('Param Centre Store')).toBe(true);
-    expect(storeFilter?.$or[1]?.block?.test('Param Computer Centre')).toBe(true);
-    expect(storeFilter?.$or[2]?.locationBlock?.test('Param Centre Store / Param Computer Centre')).toBe(
+    expect(storeFilter?.$or[0]?.store?.test('Param Centre Store / Param Computer Centre')).toBe(
       true,
     );
+    expect(storeFilter?.$or[1]?.location?.test('Param Centre Store')).toBe(true);
+    expect(storeFilter?.$or[1]?.block?.test('Param Computer Centre')).toBe(true);
+    expect(
+      storeFilter?.$or[2]?.locationBlock?.test('Param Centre Store / Param Computer Centre'),
+    ).toBe(true);
   });
 
   it('allows Worker inventory unit reads to include issued units while Admin filters remain selectable', () => {
@@ -237,6 +239,27 @@ describe('material identity', () => {
     expect(buildMaterialIdentity('QUANTITY', 'Paper A4', 'Paper', 'Store', 'A', undefined)).toBe(
       'QUANTITY|PAPERA4|PAPER|STORE|A',
     );
+  });
+
+  it('keeps the same model in different configurations as separate stock variants', () => {
+    const compact = buildMaterialIdentity(
+      'SERIALIZED',
+      'MacBook',
+      'Laptop',
+      'Param Centre Store',
+      '',
+      '8 GB / 256 GB SSD',
+    );
+    const larger = buildMaterialIdentity(
+      'SERIALIZED',
+      'MacBook',
+      'Laptop',
+      'Param Centre Store',
+      '',
+      '16 GB / 512 GB SSD',
+    );
+
+    expect(compact).not.toBe(larger);
   });
 });
 

@@ -24,7 +24,14 @@ import {
 } from '@assetdesk/contracts';
 
 import { CatalogBadge, DetailRow } from '../../components/catalog-ui';
-import { AppCard, Button, ErrorState, LoadingPanel, PageHeader } from '../../components/ui';
+import {
+  AppCard,
+  Button,
+  ErrorState,
+  FloatingActionMenu,
+  LoadingPanel,
+  PageHeader,
+} from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
 import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import { getAssetDetails } from '../../lib/inventory-api';
@@ -145,75 +152,67 @@ export function IssueDetailPage() {
     <div className="space-y-6">
       <PageHeader
         actions={
-          <details className="relative" data-action-menu>
-            <summary
-              aria-label={`Open actions for ${issue.issueId}`}
-              className="grid size-11 cursor-pointer list-none place-items-center rounded-[10px] border border-[var(--color-primary-border)] bg-white text-[var(--color-primary-strong)] transition hover:bg-[var(--color-primary-soft)] [&::-webkit-details-marker]:hidden"
-              title="Issue actions"
+          <FloatingActionMenu
+            label={`Open actions for ${issue.issueId}`}
+            icon={<MoreVertical aria-hidden="true" size={20} />}
+            panelClassName="min-w-56"
+            triggerClassName="grid size-11 place-items-center rounded-[10px] border border-[var(--color-primary-border)] bg-white text-[var(--color-primary-strong)] transition hover:bg-[var(--color-primary-soft)]"
+          >
+            <Link className="menu-item w-full" to="/issues">
+              <ArrowLeft aria-hidden="true" size={16} />
+              Back to Issues
+            </Link>
+            <Link
+              className="menu-item w-full"
+              to={full ? receiptTarget(full) : `/bills/${issue.issueId}`}
             >
-              <MoreVertical aria-hidden="true" size={20} />
-            </summary>
-            <div className="absolute right-0 top-full z-[80] mt-2 min-w-56 overflow-hidden rounded-[10px] border border-[var(--color-border)] bg-white py-1 text-left shadow-xl">
-              <Link className="menu-item w-full" to="/issues">
-                <ArrowLeft aria-hidden="true" size={16} />
-                Back to Issues
-              </Link>
-              <Link
-                className="menu-item w-full"
-                to={full ? receiptTarget(full) : `/bills/${issue.issueId}`}
-              >
-                <Printer aria-hidden="true" size={16} />
-                Generate receipt
-              </Link>
-              {full ? (
-                editing ? (
-                  <button
-                    className="menu-item w-full"
-                    onClick={() => setEditing(false)}
-                    type="button"
-                  >
-                    <X aria-hidden="true" size={16} />
-                    Close edit mode
-                  </button>
-                ) : (
-                  <button
-                    className="menu-item w-full"
-                    onClick={() => setEditing(true)}
-                    type="button"
-                  >
-                    <Pencil aria-hidden="true" size={16} />
-                    Edit Issue
-                  </button>
-                )
-              ) : null}
-              {returnable ? (
-                <Link className="menu-item w-full" to={`/issues/${issue.issueId}/return`}>
-                  <RotateCcw aria-hidden="true" size={16} />
-                  Record Return
-                </Link>
-              ) : null}
-              {full && canExtendReturnDate(issue) ? (
+              <Printer aria-hidden="true" size={16} />
+              Generate receipt
+            </Link>
+            {full ? (
+              editing ? (
                 <button
                   className="menu-item w-full"
-                  onClick={() => setExtendDialogOpen(true)}
+                  onClick={() => setEditing(false)}
                   type="button"
                 >
-                  <CalendarClock aria-hidden="true" size={16} />
-                  Extend date
+                  <X aria-hidden="true" size={16} />
+                  Close edit mode
                 </button>
-              ) : null}
-              {full ? (
-                <button
-                  className="menu-item w-full text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
-                  onClick={() => setDeleteDialogOpen(true)}
-                  type="button"
-                >
-                  <Trash2 aria-hidden="true" size={16} />
-                  Delete Issue
+              ) : (
+                <button className="menu-item w-full" onClick={() => setEditing(true)} type="button">
+                  <Pencil aria-hidden="true" size={16} />
+                  Edit Issue
                 </button>
-              ) : null}
-            </div>
-          </details>
+              )
+            ) : null}
+            {returnable ? (
+              <Link className="menu-item w-full" to={`/issues/${issue.issueId}/return`}>
+                <RotateCcw aria-hidden="true" size={16} />
+                Record Return
+              </Link>
+            ) : null}
+            {full && canExtendReturnDate(issue) ? (
+              <button
+                className="menu-item w-full"
+                onClick={() => setExtendDialogOpen(true)}
+                type="button"
+              >
+                <CalendarClock aria-hidden="true" size={16} />
+                Extend date
+              </button>
+            ) : null}
+            {full ? (
+              <button
+                className="menu-item w-full text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
+                onClick={() => setDeleteDialogOpen(true)}
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={16} />
+                Delete Issue
+              </button>
+            ) : null}
+          </FloatingActionMenu>
         }
         description={`${issue.receiver.fullName} · Issued ${formatIstDateTime(issue.issuedAt)}`}
         title={issue.issueId}
@@ -277,10 +276,7 @@ export function IssueDetailPage() {
             </div>
             <dl className="mt-3 divide-y divide-[var(--color-border)]">
               <DetailRow label="Name" value={issue.receiver.fullName} />
-              <DetailRow
-                label="Issued location"
-                value={full?.destinationLocation ?? 'Not set'}
-              />
+              <DetailRow label="Issued location" value={full?.destinationLocation ?? 'Not set'} />
               <DetailRow label="Receiver code" value={issue.receiver.receiverCode} />
               <DetailRow
                 label="University ID"
@@ -612,7 +608,12 @@ function EditIssueCard({
               </div>
             </div>
             <div className="flex gap-2">
-              <Button disabled={mutation.isPending} onClick={onCancel} type="button" variant="quiet">
+              <Button
+                disabled={mutation.isPending}
+                onClick={onCancel}
+                type="button"
+                variant="quiet"
+              >
                 Cancel
               </Button>
               <Button disabled={mutation.isPending} type="submit" variant="primary">
@@ -667,7 +668,9 @@ function EditIssueCard({
           </section>
           <section className="border-t border-[var(--color-border)] pt-6">
             <div>
-              <h3 className="font-extrabold text-[var(--color-primary-strong)]">Issue destination</h3>
+              <h3 className="font-extrabold text-[var(--color-primary-strong)]">
+                Issue destination
+              </h3>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                 Correct the Block or Location if it was entered incorrectly. This updates the Issue
                 Record only; issued materials and quantities remain unchanged.
@@ -716,7 +719,9 @@ function EditIssueCard({
           </section>
           <section className="border-t border-[var(--color-border)] pt-6">
             <div>
-              <h3 className="font-extrabold text-[var(--color-primary-strong)]">Purpose and notes</h3>
+              <h3 className="font-extrabold text-[var(--color-primary-strong)]">
+                Purpose and notes
+              </h3>
               <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                 Add context for the updated Issue Record when needed.
               </p>

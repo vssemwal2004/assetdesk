@@ -22,7 +22,7 @@ import {
 } from '../../components/ui';
 import {
   createGatePass,
-  getCartridges,
+  getAllCartridges,
   getGatePass,
   getGatePasses,
 } from '../../lib/cartridges-api';
@@ -74,7 +74,11 @@ export function GatePassesPage() {
               label="With vendor"
               value={outCount}
             />
-            <SummaryCard icon={<Clock3 size={19} />} label="Partially returned" value={returnedCount} />
+            <SummaryCard
+              icon={<Clock3 size={19} />}
+              label="Partially returned"
+              value={returnedCount}
+            />
             <SummaryCard
               icon={<CheckCircle2 size={19} />}
               label="Completed"
@@ -378,7 +382,7 @@ export function CreateGatePassPage() {
   const eligibleQueries = useQueries({
     queries: gatePassEligibleStatuses.map((status) => ({
       queryKey: ['cartridges', { status, page: 1, pageSize: 100 }],
-      queryFn: () => getCartridges({ status, page: 1, pageSize: 100 }),
+      queryFn: () => getAllCartridges({ status }),
     })),
   });
   const eligibleCartridges = eligibleQueries
@@ -449,10 +453,35 @@ export function CreateGatePassPage() {
           <label className="block space-y-1.5">
             <span className="field-label">Cartridge serial numbers</span>
             <div className="rounded-[8px] border border-[var(--color-border)]">
-              <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-tint)] px-3 py-2 text-sm font-bold text-[var(--color-text-muted)]">
-                {eligibleLoading
-                  ? 'Loading eligible serial numbers...'
-                  : `${form.serials.length} selected from ${eligibleCartridges.length} eligible cartridges`}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-tint)] px-3 py-2 text-sm font-bold text-[var(--color-text-muted)]">
+                <span>
+                  {eligibleLoading
+                    ? 'Loading eligible serial numbers...'
+                    : `${form.serials.length} selected from ${eligibleCartridges.length} eligible cartridges`}
+                </span>
+                <span className="flex gap-3">
+                  <button
+                    className="text-xs font-extrabold text-[var(--color-primary)] hover:underline"
+                    disabled={eligibleLoading || eligibleCartridges.length === 0}
+                    onClick={() =>
+                      setForm((current) => ({
+                        ...current,
+                        serials: eligibleCartridges.map((item) => item.serialNumber),
+                      }))
+                    }
+                    type="button"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    className="text-xs font-extrabold hover:underline"
+                    disabled={form.serials.length === 0}
+                    onClick={() => setForm((current) => ({ ...current, serials: [] }))}
+                    type="button"
+                  >
+                    Clear
+                  </button>
+                </span>
               </div>
               {eligibleError ? (
                 <p className="p-3 text-sm font-bold text-[var(--color-danger)]">
@@ -696,23 +725,23 @@ export function GatePassPrintPage() {
   if (!query.data) return <ErrorSummary message="Gate Pass could not be loaded." />;
   const p = query.data.data;
   return (
-    <div className="mx-auto max-w-[800px] bg-white p-8 text-black print:max-w-none print:p-0">
+    <div className="cartridge-gate-pass-page mx-auto max-w-[800px] bg-white p-6 text-black print:max-w-none print:p-0">
       <div className="mb-4 text-right print:hidden">
         <Button onClick={() => window.print()}>
           <Printer size={18} />
           Print
         </Button>
       </div>
-      <div className="border-2 border-black p-5">
-        <div className="mb-6 flex items-start justify-between gap-4 border-b-2 border-black pb-4">
+      <div className="cartridge-gate-pass-sheet border-2 border-black p-4">
+        <div className="mb-4 flex items-start justify-between gap-4 border-b-2 border-black pb-3">
           <div className="flex min-w-0 items-center gap-3">
             <img
               alt="Graphic Era University crest"
-              className="h-14 w-14 shrink-0 object-contain"
+              className="h-12 w-12 shrink-0 object-contain"
               src="/graphic-era-mark.png"
             />
             <div className="min-w-0">
-              <p className="text-xl font-black leading-tight">AssetDesk</p>
+              <p className="text-lg font-black leading-tight">AssetDesk</p>
               <p className="mt-1 max-w-[220px] text-[11px] font-extrabold uppercase leading-snug">
                 Graphic Era Asset Management System
               </p>
@@ -723,55 +752,67 @@ export function GatePassPrintPage() {
             <p>Dehradun</p>
           </div>
         </div>
-        <h1 className="text-center text-2xl font-extrabold">
+        <h1 className="text-center text-xl font-extrabold leading-tight">
           Toner Cartridge Refilling
           <br />
           <u>Returnable Gate Pass</u>
         </h1>
-        <div className="mt-6 grid grid-cols-2 border border-black text-sm">
-          <b className="border-b border-r border-black p-2">Gate Pass No: {p.gatePassNumber}</b>
-          <b className="border-b border-black p-2">
+        <div className="mt-4 grid grid-cols-2 border border-black text-xs">
+          <b className="border-b border-r border-black p-1.5">Gate Pass No: {p.gatePassNumber}</b>
+          <b className="border-b border-black p-1.5">
             Date: {new Date(p.createdAt).toLocaleDateString('en-IN')}
           </b>
-          <b className="border-r border-black p-2">Vendor Name: {p.vendorName}</b>
-          <b className="p-2">Person Taking Material: {p.personTakingMaterial}</b>
+          <b className="border-r border-black p-1.5">Vendor Name: {p.vendorName}</b>
+          <b className="p-1.5">Person Taking Material: {p.personTakingMaterial}</b>
         </div>
-        <table className="mt-5 w-full border-collapse border border-black">
+        <table className="mt-3 w-full table-fixed border-collapse border border-black text-xs">
+          <colgroup>
+            <col className="w-[16%]" />
+            <col className="w-[62%]" />
+            <col className="w-[22%]" />
+          </colgroup>
           <thead>
             <tr>
-              <th className="border border-black p-2">Sr. No.</th>
-              <th className="border border-black p-2">Cartridge Number</th>
-              <th className="border border-black p-2">Quantity</th>
+              <th className="border border-black p-1.5">Sr. No.</th>
+              <th className="border border-black p-1.5">Cartridge Number</th>
+              <th className="border border-black p-1.5">Total Quantity</th>
             </tr>
           </thead>
           <tbody>
             {p.cartridgeSerialNumbers.map((x, i) => (
               <tr key={x}>
-                <td className="border border-black p-2 text-center">{i + 1}</td>
-                <td className="border border-black p-2">{x}</td>
-                <td className="border border-black p-2 text-center">1</td>
+                <td className="border border-black px-2 py-1 text-center">{i + 1}</td>
+                <td className="break-words border border-black px-2 py-1">{x}</td>
+                {i === 0 ? (
+                  <td
+                    className="border border-black px-2 py-1 text-center text-base font-extrabold"
+                    rowSpan={p.cartridgeSerialNumbers.length}
+                  >
+                    {p.quantity}
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
         </table>
-        <div className="mt-5 grid grid-cols-2 border border-black">
-          <div className="min-h-24 border-r border-black p-3">
+        <div className="mt-3 grid grid-cols-2 border border-black text-xs">
+          <div className="min-h-16 border-r border-black p-2">
             <b>Prepared by:</b>
-            <p className="mt-3">{p.preparedByName}</p>
+            <p className="mt-2">{p.preparedByName}</p>
           </div>
-          <div className="min-h-24 p-3">
+          <div className="min-h-16 p-2">
             <b>Verified by:</b>
-            <p className="mt-3">{p.verifiedByName ?? ''}</p>
+            <p className="mt-2">{p.verifiedByName ?? ''}</p>
           </div>
         </div>
-        <div className="mt-6">
+        <div className="mt-3 text-xs">
           <b>General Instructions:-</b>
-          <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">
+          <ol className="mt-1 list-decimal pl-5 leading-5">
             <li>Gate Pass is an authorization to allow the material to leave the premises.</li>
             <li>Security Department is to keep the record of Gate Pass.</li>
           </ol>
         </div>
-        <div className="mt-16 flex justify-between font-bold">
+        <div className="mt-8 flex justify-between text-xs font-bold">
           <span>Stamp (Gate IN)</span>
           <span>Stamp (Gate OUT)</span>
         </div>

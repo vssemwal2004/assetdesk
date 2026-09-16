@@ -3,6 +3,7 @@ import {
   CartridgeSchema,
   type Cartridge,
   type CreateCartridgesRequest,
+  type UpdateCartridgeRequest,
 } from '@assetdesk/contracts';
 import { apiRequest } from './api-client';
 export async function getCartridges(
@@ -77,12 +78,23 @@ export async function returnCartridge(input: Record<string, unknown>) {
     json: input,
   });
 }
+export async function deleteCartridge(serialNumber: string) {
+  return apiRequest<{ data: { serialNumber: string } }>(
+    `/api/v1/cartridges/${encodeURIComponent(serialNumber)}`,
+    { method: 'DELETE' },
+  );
+}
+export async function updateCartridge(serialNumber: string, input: UpdateCartridgeRequest) {
+  const result = await apiRequest<{ data: unknown }>(
+    `/api/v1/cartridges/${encodeURIComponent(serialNumber)}`,
+    { method: 'PATCH', json: input },
+  );
+  return CartridgeSchema.parse(result.data);
+}
 export async function getCartridgeDashboard() {
   return apiRequest<{
     data: { counts: Record<string, number>; openGatePasses: number; refilled: number };
-  }>(
-    '/api/v1/cartridges/dashboard',
-  );
+  }>('/api/v1/cartridges/dashboard');
 }
 export async function getGatePasses() {
   return apiRequest<{ data: GatePass[] }>('/api/v1/cartridges/gate-passes');

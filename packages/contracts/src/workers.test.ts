@@ -40,4 +40,12 @@ describe('worker access contracts', () => {
       }),
     ).toThrow();
   });
+  it('allows an admin to grant cartridge deletion independently', () => {
+    expect(
+      UpdateWorkerAccessRequestSchema.parse({
+        permissions: ['CARTRIDGES_VIEW', 'CARTRIDGES_DELETE'],
+        dataAccess: { cartridges: 'ALL' },
+      }).permissions,
+    ).toContain('CARTRIDGES_DELETE');
+  });
 });

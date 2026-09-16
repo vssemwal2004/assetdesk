@@ -10,11 +10,7 @@ import {
   PageHeader,
   TextField,
 } from '../../components/ui';
-import {
-  getGatePasses,
-  recordGateIn,
-  type GatePass,
-} from '../../lib/cartridges-api';
+import { getGatePasses, recordGateIn, type GatePass } from '../../lib/cartridges-api';
 
 type GateInCondition = 'EMPTY' | 'DEFECTIVE' | 'FILLED_UNUSED' | 'DAMAGED' | 'WRONG_MODEL';
 
@@ -178,7 +174,6 @@ export function CartridgeQcPage() {
               </div>
             )}
           </AppCard>
-
         </>
       ) : null}
 
@@ -194,6 +189,11 @@ export function CartridgeQcPage() {
           onClose={closeModal}
           onRemarksChange={setRemarks}
           onSerialToggle={toggleSerial}
+          onAllSerialsToggle={(checked) => {
+            const serials = pendingGateInSerials(selectedPass);
+            setSelectedSerials(checked ? serials : []);
+            if (!checked) setConditions(Object.fromEntries(serials.map((serial) => [serial, ''])));
+          }}
           onConditionChange={(serialNumber, condition) =>
             setConditions((current) => ({ ...current, [serialNumber]: condition }))
           }
@@ -215,6 +215,7 @@ function GateInModal({
   onClose,
   onRemarksChange,
   onSerialToggle,
+  onAllSerialsToggle,
   onConditionChange,
   onSubmit,
 }: {
@@ -228,9 +229,11 @@ function GateInModal({
   onClose: () => void;
   onRemarksChange: (value: string) => void;
   onSerialToggle: (serialNumber: string, checked: boolean) => void;
+  onAllSerialsToggle: (checked: boolean) => void;
   onConditionChange: (serialNumber: string, condition: GateInCondition | '') => void;
   onSubmit: () => void;
 }) {
+  const [commonCondition, setCommonCondition] = useState<GateInCondition | ''>('');
   const pendingSerials = pendingGateInSerials(pass);
   const canSubmit = selectedSerials.length > 0 && selectedConditionCount === selectedSerials.length;
   return (
@@ -283,9 +286,54 @@ function GateInModal({
                   A condition is required for every selected item.
                 </p>
               </div>
-              <span className="text-xs font-extrabold text-[var(--color-text-muted)]">
-                {selectedSerials.length} of {pendingSerials.length} selected
-              </span>
+              <div className="flex flex-wrap items-center gap-3 text-xs font-extrabold">
+                <span className="text-[var(--color-text-muted)]">
+                  {selectedSerials.length} of {pendingSerials.length} selected
+                </span>
+                <button
+                  className="text-[var(--color-primary)] hover:underline"
+                  onClick={() => onAllSerialsToggle(true)}
+                  type="button"
+                >
+                  Select all
+                </button>
+                <button
+                  className="text-[var(--color-text-muted)] hover:underline"
+                  onClick={() => onAllSerialsToggle(false)}
+                  type="button"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-tint)] p-3 sm:flex-row sm:items-end">
+              <label className="min-w-0 flex-1 space-y-1">
+                <span className="field-label">Apply one condition to selected cartridges</span>
+                <select
+                  className="field-input"
+                  value={commonCondition}
+                  onChange={(event) =>
+                    setCommonCondition(event.target.value as GateInCondition | '')
+                  }
+                >
+                  <option value="">Choose condition</option>
+                  {conditionOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                disabled={!commonCondition || selectedSerials.length === 0}
+                onClick={() => {
+                  selectedSerials.forEach((serial) => onConditionChange(serial, commonCondition));
+                }}
+                type="button"
+                variant="secondary"
+              >
+                Apply to selected
+              </Button>
             </div>
             <div className="grid gap-2">
               {pendingSerials.map((serialNumber) => {

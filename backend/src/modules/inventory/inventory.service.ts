@@ -466,8 +466,8 @@ function materialConflict(): AppError {
   return new AppError(
     409,
     'MATERIAL_ALREADY_EXISTS',
-    'A material with this name, group and type already exists.',
-    { name: 'Use the existing material or enter a different name or group.' },
+    'This model, configuration and store variant already exists.',
+    { name: 'Open the existing variant, or enter a different configuration or store.' },
   );
 }
 
@@ -891,6 +891,7 @@ export async function exportMaterialsCsv(input: MaterialExportInput): Promise<st
     'IT Asset',
     'Asset Type',
     'Type/Model Name',
+    'Configuration',
     'Store',
     'Department',
     'Vendor Name',
@@ -910,6 +911,7 @@ export async function exportMaterialsCsv(input: MaterialExportInput): Promise<st
     material.name,
     material.category,
     material.typeModelName ?? material.name,
+    material.configuration ?? '',
     material.store ?? material.locationBlock ?? material.location ?? '',
     material.department ?? '',
     material.vendorName ?? '',

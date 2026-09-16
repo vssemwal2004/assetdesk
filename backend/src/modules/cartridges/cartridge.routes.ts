@@ -7,6 +7,7 @@ import {
   GateInRequestSchema,
   IssueCartridgeRequestSchema,
   ReturnCartridgeRequestSchema,
+  UpdateCartridgeRequestSchema,
 } from '@assetdesk/contracts';
 import { AppError } from '../../middleware/error-handler.js';
 import {
@@ -21,6 +22,7 @@ import {
   cartridgeDashboard,
   createCartridges,
   createGatePass,
+  deleteCartridge,
   gateIn,
   gateOut,
   getCartridge,
@@ -30,6 +32,7 @@ import {
   listCartridges,
   listGatePasses,
   returnCartridge,
+  updateCartridge,
   verifyGatePass,
 } from './cartridge.service.js';
 
@@ -236,5 +239,37 @@ export function createCartridgeRouter(): Router {
       next(e);
     }
   });
+  router.patch(
+    '/:serialNumber',
+    requirePermission('CARTRIDGES_EDIT'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (req, res, next) => {
+      try {
+        res.json({
+          data: await updateCartridge(
+            String(req.params.serialNumber),
+            UpdateCartridgeRequestSchema.parse(req.body),
+            actor(req),
+          ),
+        });
+      } catch (e) {
+        next(e);
+      }
+    },
+  );
+  router.delete(
+    '/:serialNumber',
+    requirePermission('CARTRIDGES_DELETE'),
+    requireTrustedOrigin,
+    requireCsrf,
+    async (req, res, next) => {
+      try {
+        res.json({ data: await deleteCartridge(String(req.params.serialNumber), actor(req)) });
+      } catch (e) {
+        next(e);
+      }
+    },
+  );
   return router;
 }

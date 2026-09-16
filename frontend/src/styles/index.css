@@ -1937,6 +1937,25 @@ dialog::backdrop {
   .bill-table-wrap {
     overflow: visible;
   }
+
+  .cartridge-gate-pass-page {
+    width: 100%;
+    font-size: 10pt;
+  }
+
+  .cartridge-gate-pass-sheet {
+    break-inside: avoid;
+    padding: 4mm !important;
+  }
+
+  .cartridge-gate-pass-sheet table {
+    break-inside: auto;
+  }
+
+  .cartridge-gate-pass-sheet tr {
+    height: 6.5mm;
+    break-inside: avoid;
+  }
 }
 
 @media (min-width: 840px) {
@@ -2034,9 +2053,14 @@ dialog::backdrop {
   scrollbar-color: var(--color-primary-border) transparent;
 }
 
-.issue-table-scroll th,
-.issue-table-scroll td {
+.issue-table-scroll th {
   white-space: nowrap;
+}
+
+.issue-table-scroll td {
+  min-width: 0;
+  overflow: hidden;
+  vertical-align: middle;
 }
 
 .issue-detail-drawer {

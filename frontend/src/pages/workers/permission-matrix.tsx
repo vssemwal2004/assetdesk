@@ -168,16 +168,66 @@ export const permissionDefinitions: PermissionDefinition[] = [
     label: 'Delete asset units',
     description: 'Delete available asset units with no issue history.',
   },
-  { permission: 'GATE_PASS_VIEW', group: 'Gate Pass', label: 'View Gate Pass', description: 'Open Inventory Gate Pass Out, In, details, and data.' },
-  { permission: 'GATE_PASS_VIEW_ALL', group: 'Gate Pass', label: 'View all Gate Pass data', description: 'View Gate Pass activity created by every employee.' },
-  { permission: 'GATE_PASS_CREATE', group: 'Gate Pass', label: 'Create Gate Pass', description: 'Create an Asset, Consumable, or mixed Gate Pass.' },
-  { permission: 'GATE_PASS_CREATE_FROM_ISSUE', group: 'Gate Pass', label: 'Create from Issue', description: 'Generate a Gate Pass while issuing material outside the university.' },
-  { permission: 'GATE_PASS_EDIT_READY', group: 'Gate Pass', label: 'Edit before Gate Out', description: 'Edit a Gate Pass while it is waiting for Gate Out.' },
-  { permission: 'GATE_PASS_GATE_OUT', group: 'Gate Pass', label: 'Record Gate Pass Out', description: 'Confirm material leaving the university.' },
-  { permission: 'GATE_PASS_GATE_IN', group: 'Gate Pass', label: 'Record Gate Pass In', description: 'Receive all or part of an outgoing Gate Pass.' },
-  { permission: 'GATE_PASS_CANCEL', group: 'Gate Pass', label: 'Cancel Gate Pass', description: 'Cancel a pass before Gate Out.' },
-  { permission: 'GATE_PASS_PRINT', group: 'Gate Pass', label: 'Print and download', description: 'Print Gate Pass Out and Gate Pass In receipts.' },
-  { permission: 'GATE_PASS_EXPORT', group: 'Gate Pass', label: 'Export Gate Pass data', description: 'Download the filtered Gate Pass register.' },
+  {
+    permission: 'GATE_PASS_VIEW',
+    group: 'Gate Pass',
+    label: 'View Gate Pass',
+    description: 'Open Inventory Gate Pass Out, In, details, and data.',
+  },
+  {
+    permission: 'GATE_PASS_VIEW_ALL',
+    group: 'Gate Pass',
+    label: 'View all Gate Pass data',
+    description: 'View Gate Pass activity created by every employee.',
+  },
+  {
+    permission: 'GATE_PASS_CREATE',
+    group: 'Gate Pass',
+    label: 'Create Gate Pass',
+    description: 'Create an Asset, Consumable, or mixed Gate Pass.',
+  },
+  {
+    permission: 'GATE_PASS_CREATE_FROM_ISSUE',
+    group: 'Gate Pass',
+    label: 'Create from Issue',
+    description: 'Generate a Gate Pass while issuing material outside the university.',
+  },
+  {
+    permission: 'GATE_PASS_EDIT_READY',
+    group: 'Gate Pass',
+    label: 'Edit before Gate Out',
+    description: 'Edit a Gate Pass while it is waiting for Gate Out.',
+  },
+  {
+    permission: 'GATE_PASS_GATE_OUT',
+    group: 'Gate Pass',
+    label: 'Record Gate Pass Out',
+    description: 'Confirm material leaving the university.',
+  },
+  {
+    permission: 'GATE_PASS_GATE_IN',
+    group: 'Gate Pass',
+    label: 'Record Gate Pass In',
+    description: 'Receive all or part of an outgoing Gate Pass.',
+  },
+  {
+    permission: 'GATE_PASS_CANCEL',
+    group: 'Gate Pass',
+    label: 'Cancel Gate Pass',
+    description: 'Cancel a pass before Gate Out.',
+  },
+  {
+    permission: 'GATE_PASS_PRINT',
+    group: 'Gate Pass',
+    label: 'Print and download',
+    description: 'Print Gate Pass Out and Gate Pass In receipts.',
+  },
+  {
+    permission: 'GATE_PASS_EXPORT',
+    group: 'Gate Pass',
+    label: 'Export Gate Pass data',
+    description: 'Download the filtered Gate Pass register.',
+  },
   {
     permission: 'RECEIVERS_VIEW',
     group: 'Receivers',
@@ -225,6 +275,12 @@ export const permissionDefinitions: PermissionDefinition[] = [
     group: 'Cartridges',
     label: 'Edit cartridges',
     description: 'Edit cartridge master details and notes.',
+  },
+  {
+    permission: 'CARTRIDGES_DELETE',
+    group: 'Cartridges',
+    label: 'Delete cartridges',
+    description: 'Delete unused cartridge serial records that have no operational history.',
   },
   {
     permission: 'CARTRIDGES_ISSUE',
@@ -439,7 +495,14 @@ export function PermissionMatrix({
 }
 
 type PermissionGroupName =
-  'Dashboard' | 'Issues' | 'Returns' | 'Inventory' | 'Gate Pass' | 'Receivers' | 'Reports' | 'Cartridges';
+  | 'Dashboard'
+  | 'Issues'
+  | 'Returns'
+  | 'Inventory'
+  | 'Gate Pass'
+  | 'Receivers'
+  | 'Reports'
+  | 'Cartridges';
 
 interface PermissionGroupMetadata {
   description: string;

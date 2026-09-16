@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ClipboardCheck, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { useLocation } from 'react-router';
+import type { Cartridge } from '@assetdesk/contracts';
 import {
   AppCard,
   Button,
@@ -11,12 +12,12 @@ import {
   PageHeader,
   TextField,
 } from '../../components/ui';
-import { getCartridges, issueCartridge, returnCartridge } from '../../lib/cartridges-api';
+import { getAllCartridges, issueCartridge, returnCartridge } from '../../lib/cartridges-api';
 export function IssueCartridgePage() {
   const preset = new URLSearchParams(useLocation().search).get('serial') ?? '';
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
-    serialNumber: preset,
+    serialNumbers: preset ? [preset] : ([] as string[]),
     employeeName: '',
     employeeId: '',
     department: '',
@@ -26,7 +27,7 @@ export function IssueCartridgePage() {
   const [done, setDone] = useState(false);
   const availableQuery = useQuery({
     queryKey: ['cartridges', { status: 'FILLED_AVAILABLE', page: 1, pageSize: 100 }],
-    queryFn: () => getCartridges({ status: 'FILLED_AVAILABLE', page: 1, pageSize: 100 }),
+    queryFn: () => getAllCartridges({ status: 'FILLED_AVAILABLE' }),
   });
   const availableCartridges = availableQuery.data?.data ?? [];
   const mutation = useMutation({
@@ -44,34 +45,16 @@ export function IssueCartridgePage() {
       error={mutation.error}
       done={done}
       pending={mutation.isPending}
-      submitDisabled={availableQuery.isPending || !form.serialNumber}
+      submitDisabled={availableQuery.isPending || form.serialNumbers.length === 0}
       submit={() => mutation.mutate()}
     >
-      <label className="space-y-1.5">
-        <span className="field-label">Cartridge serial number</span>
-        <select
-          className="field-input"
-          disabled={availableQuery.isPending || availableCartridges.length === 0}
-          onChange={(event) => setForm({ ...form, serialNumber: event.target.value })}
-          value={form.serialNumber}
-        >
-          <option value="">
-            {availableQuery.isPending
-              ? 'Loading available serial numbers...'
-              : availableCartridges.length === 0
-                ? 'No filled cartridges available'
-                : 'Select serial number'}
-          </option>
-          {preset && !availableCartridges.some((item) => item.serialNumber === preset) ? (
-            <option value={preset}>{preset}</option>
-          ) : null}
-          {availableCartridges.map((item) => (
-            <option key={item.id} value={item.serialNumber}>
-              {item.serialNumber} - {item.model} - {item.location}
-            </option>
-          ))}
-        </select>
-      </label>
+      <CartridgeMultiSelect
+        items={availableCartridges}
+        label="Filled cartridges"
+        loading={availableQuery.isPending}
+        selected={form.serialNumbers}
+        onChange={(serialNumbers) => setForm({ ...form, serialNumbers })}
+      />
       {availableQuery.isError ? (
         <p className="text-sm font-bold text-[var(--color-danger)]">
           Serial numbers could not be loaded.
@@ -107,7 +90,7 @@ export function ReturnCartridgePage() {
   const preset = new URLSearchParams(useLocation().search).get('serial') ?? '';
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
-    serialNumber: preset,
+    serialNumbers: preset ? [preset] : ([] as string[]),
     returnedByName: '',
     condition: 'EMPTY',
     defectReason: '',
@@ -116,11 +99,11 @@ export function ReturnCartridgePage() {
   const [done, setDone] = useState(false);
   const issuedQuery = useQuery({
     queryKey: ['cartridges', { status: 'ISSUED', page: 1, pageSize: 100 }],
-    queryFn: () => getCartridges({ status: 'ISSUED', page: 1, pageSize: 100 }),
+    queryFn: () => getAllCartridges({ status: 'ISSUED' }),
   });
   const issuedCartridges = issuedQuery.data?.data ?? [];
-  const selectedCartridge = issuedCartridges.find(
-    (item) => item.serialNumber === form.serialNumber,
+  const selectedCartridges = issuedCartridges.filter((item) =>
+    form.serialNumbers.includes(item.serialNumber),
   );
   const mutation = useMutation({
     mutationFn: () => returnCartridge(form),
@@ -200,43 +183,33 @@ export function ReturnCartridgePage() {
                 title="No issued cartridges"
               />
             ) : (
-              <label className="space-y-1.5">
-                <span className="field-label">Issued cartridge</span>
-                <select
-                  className="field-input"
-                  onChange={(event) => setForm({ ...form, serialNumber: event.target.value })}
-                  required
-                  value={selectedCartridge ? form.serialNumber : ''}
-                >
-                  <option value="">Select issued cartridge</option>
-                  {preset && !issuedCartridges.some((item) => item.serialNumber === preset) ? (
-                    <option disabled value={preset}>
-                      {preset} is not currently issued
-                    </option>
-                  ) : null}
-                  {issuedCartridges.map((item) => (
-                    <option key={item.id} value={item.serialNumber}>
-                      {item.serialNumber} - {item.model} - {item.currentHolderName ?? 'Issued'}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <CartridgeMultiSelect
+                items={issuedCartridges}
+                label="Issued cartridges"
+                selected={form.serialNumbers}
+                onChange={(serialNumbers) => setForm({ ...form, serialNumbers })}
+              />
             )}
-            {selectedCartridge ? (
+            {selectedCartridges.length ? (
               <div className="rounded-[12px] border border-[var(--color-border)] bg-white">
                 <div className="border-b border-[var(--color-border)] px-4 py-3">
                   <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
-                    Issued cartridge details
+                    {selectedCartridges.length} selected cartridge
+                    {selectedCartridges.length === 1 ? '' : 's'}
                   </p>
                 </div>
-                <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-4">
-                  <ReturnDetail label="Serial" value={selectedCartridge.serialNumber} />
-                  <ReturnDetail label="Model" value={selectedCartridge.model} />
-                  <ReturnDetail
-                    label="Issued to"
-                    value={selectedCartridge.currentHolderName ?? 'Issued'}
-                  />
-                  <ReturnDetail label="Location" value={selectedCartridge.location} />
+                <div className="grid max-h-56 gap-2 overflow-auto p-3 sm:grid-cols-2">
+                  {selectedCartridges.map((item) => (
+                    <div className="rounded-[9px] bg-[var(--color-surface-tint)] p-3" key={item.id}>
+                      <ReturnDetail
+                        label="Serial / model"
+                        value={`${item.serialNumber} · ${item.model}`}
+                      />
+                      <p className="mt-1 text-xs font-bold text-[var(--color-text-muted)]">
+                        {item.currentHolderName ?? 'Issued'} · {item.location}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : null}
@@ -290,7 +263,9 @@ export function ReturnCartridgePage() {
               <Button
                 className="w-full"
                 disabled={
-                  issuedQuery.isPending || !selectedCartridge || !form.returnedByName.trim()
+                  issuedQuery.isPending ||
+                  selectedCartridges.length === 0 ||
+                  !form.returnedByName.trim()
                 }
                 loading={mutation.isPending}
                 type="submit"
@@ -302,6 +277,89 @@ export function ReturnCartridgePage() {
         </AppCard>
       </form>
     </div>
+  );
+}
+
+function CartridgeMultiSelect({
+  items,
+  selected,
+  label,
+  loading = false,
+  onChange,
+}: {
+  items: Cartridge[];
+  selected: string[];
+  label: string;
+  loading?: boolean;
+  onChange: (serialNumbers: string[]) => void;
+}) {
+  const allSelected =
+    items.length > 0 && items.every((item) => selected.includes(item.serialNumber));
+  function toggle(serialNumber: string, checked: boolean) {
+    onChange(
+      checked
+        ? [...new Set([...selected, serialNumber])]
+        : selected.filter((item) => item !== serialNumber),
+    );
+  }
+  return (
+    <fieldset className="space-y-1.5 md:col-span-2">
+      <legend className="field-label">{label}</legend>
+      <div className="overflow-hidden rounded-[12px] border border-[var(--color-border)] bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-tint)] px-3 py-2">
+          <span className="text-sm font-extrabold text-[var(--color-text-muted)]">
+            {loading ? 'Loading cartridges…' : `${selected.length} of ${items.length} selected`}
+          </span>
+          <div className="flex gap-2">
+            <button
+              className="text-xs font-extrabold text-[var(--color-primary)] hover:underline"
+              disabled={loading || items.length === 0 || allSelected}
+              onClick={() => onChange(items.map((item) => item.serialNumber))}
+              type="button"
+            >
+              Select all
+            </button>
+            <button
+              className="text-xs font-extrabold text-[var(--color-text-muted)] hover:underline"
+              disabled={selected.length === 0}
+              onClick={() => onChange([])}
+              type="button"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+        <div className="max-h-72 overflow-auto p-2">
+          {!loading && items.length === 0 ? (
+            <p className="p-3 text-sm font-bold text-[var(--color-text-muted)]">
+              No eligible cartridges are available.
+            </p>
+          ) : (
+            items.map((item) => (
+              <label
+                className="flex cursor-pointer items-start gap-3 rounded-[9px] px-3 py-2 hover:bg-[var(--color-surface-tint)]"
+                key={item.id}
+              >
+                <input
+                  checked={selected.includes(item.serialNumber)}
+                  className="mt-1"
+                  onChange={(event) => toggle(item.serialNumber, event.target.checked)}
+                  type="checkbox"
+                />
+                <span className="min-w-0">
+                  <span className="block font-extrabold text-[var(--color-text-strong)]">
+                    {item.serialNumber} · {item.model}
+                  </span>
+                  <span className="block text-xs font-bold text-[var(--color-text-muted)]">
+                    {item.currentHolderName ?? item.location}
+                  </span>
+                </span>
+              </label>
+            ))
+          )}
+        </div>
+      </div>
+    </fieldset>
   );
 }
 

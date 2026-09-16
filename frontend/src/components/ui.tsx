@@ -13,6 +13,7 @@ import {
   forwardRef,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -20,9 +21,114 @@ import {
   type InputHTMLAttributes,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 export function cn(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(' ');
+}
+
+export function FloatingActionMenu({
+  label,
+  icon,
+  children,
+  triggerClassName,
+  panelClassName,
+}: {
+  label: string;
+  icon: ReactNode;
+  children: ReactNode;
+  triggerClassName?: string;
+  panelClassName?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 8, top: 8 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const trigger = triggerRef.current?.getBoundingClientRect();
+      const panel = panelRef.current?.getBoundingClientRect();
+      if (!trigger || !panel) return;
+      const gap = 8;
+      const edge = 8;
+      const left = Math.min(
+        window.innerWidth - panel.width - edge,
+        Math.max(edge, trigger.right - panel.width),
+      );
+      const roomBelow = window.innerHeight - trigger.bottom;
+      const top =
+        roomBelow >= panel.height + gap
+          ? trigger.bottom + gap
+          : Math.max(edge, trigger.top - panel.height - gap);
+      setPosition({ left, top });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !panelRef.current?.contains(target))
+        setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [open]);
+
+  return (
+    <span className="inline-flex" data-action-menu>
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={label}
+        className={triggerClassName}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((current) => !current);
+        }}
+        ref={triggerRef}
+        type="button"
+      >
+        {icon}
+      </button>
+      {open
+        ? createPortal(
+            <div
+              className={cn(
+                'fixed z-[300] min-w-48 overflow-hidden rounded-[10px] border border-[var(--color-border)] bg-white py-1 text-left shadow-[var(--shadow-overlay)]',
+                panelClassName,
+              )}
+              onClick={() => setOpen(false)}
+              ref={panelRef}
+              role="menu"
+              style={position}
+            >
+              {children}
+            </div>,
+            document.body,
+          )
+        : null}
+    </span>
+  );
 }
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

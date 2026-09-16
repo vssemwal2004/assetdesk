@@ -113,6 +113,7 @@ const UserSchema = new Schema<UserRecord>(
         'CARTRIDGES_VIEW',
         'CARTRIDGES_ADD',
         'CARTRIDGES_EDIT',
+        'CARTRIDGES_DELETE',
         'CARTRIDGES_ISSUE',
         'CARTRIDGES_RETURN',
         'CARTRIDGE_GATE_PASSES_VIEW',
