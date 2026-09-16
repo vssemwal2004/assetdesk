@@ -4,6 +4,7 @@ import { AppError } from '../../middleware/error-handler.js';
 import {
   importInputToCreateMaterialRequest,
   normalizeImportConfiguration,
+  parseInventoryImportCsv,
   parseInventoryImportTable,
 } from './inventory-import.service.js';
 
@@ -58,6 +59,39 @@ describe('inventory import parsing', () => {
       description: 'Staff laptop',
       status: 'Active / in use',
     });
+  });
+
+  it('accepts tab-delimited data saved with a CSV extension', () => {
+    const table = parseInventoryImportCsv(
+      [
+        'IT Asset\tType/Model Name\tConfiguration\tSerial Number\tStore\tDepartment',
+        'Accesspoint\tAP21\tINSTANT ON\tVNVFM1K0CY\tParam Centre Store\tParam Computer Centre',
+      ].join('\r\n'),
+    );
+
+    expect(parseInventoryImportTable(table, 'SERIALIZED')[0]?.values).toMatchObject({
+      category: 'Accesspoint',
+      typeModelName: 'AP21',
+      configuration: 'INSTANT ON',
+      serialNumber: 'VNVFM1K0CY',
+      store: 'Param Centre Store',
+      department: 'Param Computer Centre',
+    });
+  });
+
+  it('accepts semicolon-delimited CSV exports', () => {
+    const table = parseInventoryImportCsv(
+      'IT Asset;Type/Model Name;Configuration;Serial Number;Store\r\nComputer;Latitude 5450;16 GB RAM;DL-001;Main Store',
+    );
+
+    expect(parseInventoryImportTable(table, 'SERIALIZED')).toHaveLength(1);
+  });
+
+  it('detects the delimiter even when none of the headings are recognized', () => {
+    expect(parseInventoryImportCsv('First heading\tSecond heading\r\none\ttwo')[0]).toEqual([
+      'First heading',
+      'Second heading',
+    ]);
   });
 
   it('accepts case-insensitive asset headers and preserves one serial per row', () => {
@@ -131,11 +165,46 @@ describe('inventory import parsing', () => {
     ).toThrowError(AppError);
   });
 
+  it('reports friendly column names and the headers that were found', () => {
+    expect(() =>
+      parseInventoryImportTable(
+        [
+          ['IT Asset', 'Type/Model Name', 'Store'],
+          ['Computer', 'Latitude 5450', 'Main Store'],
+        ],
+        'SERIALIZED',
+      ),
+    ).toThrowError(
+      'Missing required columns: Configuration, Serial Number. Found columns: IT Asset, Type/Model Name, Store.',
+    );
+  });
+
+  it('requires a type/model column and accepts Location / Block as the store source', () => {
+    expect(() =>
+      parseInventoryImportTable(
+        [
+          ['IT Asset', 'Configuration', 'Serial Number', 'Store'],
+          ['Computer', '16 GB RAM', 'DL-001', 'Main Store'],
+        ],
+        'SERIALIZED',
+      ),
+    ).toThrowError('Missing required column: Type/Model Name.');
+
+    const rows = parseInventoryImportTable(
+      [
+        ['IT Asset', 'Type/Model Name', 'Configuration', 'Serial Number', 'Location / Block'],
+        ['Computer', 'Latitude 5450', '16 GB RAM', 'DL-001', 'Main Store / A Block'],
+      ],
+      'SERIALIZED',
+    );
+    expect(rows[0]?.values.locationBlock).toBe('Main Store / A Block');
+  });
+
   it('preserves blank required cells so preview can report the exact missing value', () => {
     const rows = parseInventoryImportTable(
       [
-      ['IT Consumable', 'Type/Model Name', 'Quantity', 'Unit Label', 'Store'],
-      ['Cartridge', 'CARTRIDGE 05A', 10, 'pieces', ''],
+        ['IT Consumable', 'Type/Model Name', 'Quantity', 'Unit Label', 'Store'],
+        ['Cartridge', 'CARTRIDGE 05A', 10, 'pieces', ''],
       ],
       'QUANTITY',
     );

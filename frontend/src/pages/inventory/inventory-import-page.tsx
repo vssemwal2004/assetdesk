@@ -155,15 +155,16 @@ export function InventoryImportPage() {
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
               CSV and XLSX, maximum 5 MB and 1,000 rows.
               {mode === 'SERIALIZED'
-                ? ' Required columns: IT Asset, Type/Model Name, Serial Number, Store. Optional columns: Department, Vendor Name, Description, Inventory Status.'
+                ? ' Required columns: IT Asset, Type/Model Name, Configuration, Serial Number, Store. Optional columns: Department, Vendor Name, Description, Inventory Status.'
                 : ' Required columns: IT Consumable, Type/Model Name, Quantity, Unit Label, Store. Optional columns: Department, Vendor Name, Return Policy, Description, Inventory Status.'}
             </p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              IT Asset, IT Consumable, Store, and Department are matched from saved asset
-              details; spacing and letter case are ignored. Vendor Name is saved as entered.
+              IT Asset, IT Consumable, Store, and Department are matched from saved asset details;
+              spacing and letter case are ignored. Vendor Name is saved as entered.
             </p>
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-              Inventory Status accepts Active / in use, Faulty (scrap), and Outdated (not in use).
+              Inventory Status accepts Active / in use, Under maintenance, Faulty (scrap), and
+              Outdated (not in use).
             </p>
             <input
               accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

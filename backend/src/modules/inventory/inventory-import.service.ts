@@ -104,6 +104,30 @@ const HEADER_ALIASES: Record<string, Field> = {
   condition: 'status',
 };
 
+const FIELD_LABELS: Record<Field, string> = {
+  name: 'Material Name',
+  category: 'IT Asset / IT Consumable',
+  typeModelName: 'Type/Model Name',
+  configuration: 'Configuration',
+  store: 'Store',
+  location: 'Location',
+  block: 'Block',
+  department: 'Department',
+  vendorName: 'Vendor Name',
+  locationBlock: 'Location / Block',
+  description: 'Description',
+  serialNumber: 'Serial Number',
+  quantity: 'Quantity',
+  unitLabel: 'Unit Label',
+  returnPolicy: 'Return Policy',
+  status: 'Inventory Status',
+};
+
+function fieldLabel(field: Field, mode: TrackingMode): string {
+  if (field === 'category') return mode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable';
+  return FIELD_LABELS[field];
+}
+
 interface ImportRow {
   rowNumber: number;
   values: Record<Field, string>;
@@ -169,13 +193,20 @@ export function parseInventoryImportTable(
     mode === 'SERIALIZED'
       ? ['category', 'configuration', 'serialNumber']
       : ['category', 'quantity', 'unitLabel'];
-  if (!columns.has('store') && !columns.has('location')) required.push('store');
+  if (!columns.has('typeModelName') && !columns.has('name')) required.push('typeModelName');
+  if (!columns.has('store') && !columns.has('location') && !columns.has('locationBlock')) {
+    required.push('store');
+  }
   const missing = required.filter((field) => !columns.has(field));
   if (missing.length)
     throw new AppError(
       400,
       'INVENTORY_IMPORT_COLUMNS_MISSING',
-      `Add the required columns: ${missing.join(', ')}.`,
+      `Missing required ${missing.length === 1 ? 'column' : 'columns'}: ${missing
+        .map((field) => fieldLabel(field, mode))
+        .join(
+          ', ',
+        )}. Found columns: ${headings.map(text).filter(Boolean).join(', ') || 'none'}. Download the template for the selected upload type and keep its header row unchanged.`,
     );
 
   const rows = table
@@ -199,16 +230,61 @@ export function parseInventoryImportTable(
   return rows;
 }
 
-async function fileTable(file: Express.Multer.File): Promise<readonly (readonly unknown[])[]> {
-  const extension = extname(basename(file.originalname)).toLowerCase();
-  try {
-    if (extension === '.csv')
-      return parseCsv(file.buffer.toString('utf8'), {
+function recognizedHeaderCount(table: readonly (readonly unknown[])[]): number {
+  const headerIndex = table.findIndex(hasValues);
+  if (headerIndex < 0) return 0;
+  return new Set(
+    (table[headerIndex] ?? [])
+      .map((value) => HEADER_ALIASES[header(value)])
+      .filter((field): field is Field => Boolean(field)),
+  ).size;
+}
+
+function headerColumnCount(table: readonly (readonly unknown[])[]): number {
+  const headerIndex = table.findIndex(hasValues);
+  return headerIndex < 0 ? 0 : (table[headerIndex]?.length ?? 0);
+}
+
+export function parseInventoryImportCsv(contents: string): readonly (readonly unknown[])[] {
+  const delimiters = [',', '\t', ';'] as const;
+  let best: { table: unknown[][]; recognizedHeaders: number; headerColumns: number } | undefined;
+  let parseError: unknown;
+
+  for (const delimiter of delimiters) {
+    try {
+      const table = parseCsv(contents, {
         bom: true,
+        delimiter,
         relax_column_count: true,
         skip_empty_lines: false,
         max_record_size: 16_384,
       }) as unknown[][];
+      const candidate = {
+        table,
+        recognizedHeaders: recognizedHeaderCount(table),
+        headerColumns: headerColumnCount(table),
+      };
+      if (
+        !best ||
+        candidate.recognizedHeaders > best.recognizedHeaders ||
+        (candidate.recognizedHeaders === best.recognizedHeaders &&
+          candidate.headerColumns > best.headerColumns)
+      ) {
+        best = candidate;
+      }
+    } catch (error) {
+      parseError ??= error;
+    }
+  }
+
+  if (!best) throw parseError ?? new Error('The CSV file could not be parsed.');
+  return best.table;
+}
+
+async function fileTable(file: Express.Multer.File): Promise<readonly (readonly unknown[])[]> {
+  const extension = extname(basename(file.originalname)).toLowerCase();
+  try {
+    if (extension === '.csv') return parseInventoryImportCsv(file.buffer.toString('utf8'));
     if (extension === '.xlsx') return (await readSheet(file.buffer)) as SheetData;
   } catch {
     throw new AppError(
@@ -351,6 +427,10 @@ function materialName(assetType: string, typeModelName: string): string {
     : `${category} ${model}`;
 }
 
+function rowStore(values: Record<Field, string>): string {
+  return values.store || values.location || values.locationBlock;
+}
+
 function categoryKind(mode: TrackingMode): 'ASSET_TYPE' | 'CONSUMABLE_TYPE' {
   return mode === 'SERIALIZED' ? 'ASSET_TYPE' : 'CONSUMABLE_TYPE';
 }
@@ -413,7 +493,7 @@ export async function previewInventoryImport(
   const groups = Object.values(
     rows.reduce<Record<string, ImportRow[]>>((result, row) => {
       const itemName = row.values.typeModelName || row.values.name;
-      const storeValue = row.values.store || row.values.location;
+      const storeValue = rowStore(row.values);
       const configuration =
         mode === 'SERIALIZED' ? `\0${normalizeImportConfiguration(row.values.configuration)}` : '';
       const key = `${itemName.trim().toUpperCase()}\0${row.values.category.trim().toUpperCase()}\0${normalizedLookup(storeValue)}${configuration}`;
@@ -431,8 +511,8 @@ export async function previewInventoryImport(
         category: row.values.category,
         ...(row.values.typeModelName ? { typeModelName: row.values.typeModelName } : {}),
         ...(row.values.configuration ? { configuration: row.values.configuration } : {}),
-        ...(row.values.store || row.values.location
-          ? { store: row.values.store || row.values.location }
+        ...(rowStore(row.values)
+          ? { store: rowStore(row.values) }
           : {}),
         ...(row.values.location ? { location: row.values.location } : {}),
         ...(row.values.block ? { block: row.values.block } : {}),
@@ -521,7 +601,7 @@ export async function previewInventoryImport(
     ),
   );
   const storeEntries = await Promise.all(
-    [...new Set(rows.map((row) => row.values.store || row.values.location))].map(
+    [...new Set(rows.map((row) => rowStore(row.values)))].map(
       async (value) => [normalizedLookup(value), await savedLookup('STORE', value)] as const,
     ),
   );
@@ -557,7 +637,7 @@ export async function previewInventoryImport(
     try {
       const values = first.values;
       const itemName = values.typeModelName || values.name;
-      const storeValue = values.store || values.location;
+      const storeValue = rowStore(values);
       requireRowValue(itemName, 'Type/model name');
       requireRowValue(values.category, mode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable');
       requireRowValue(storeValue, 'Store');
