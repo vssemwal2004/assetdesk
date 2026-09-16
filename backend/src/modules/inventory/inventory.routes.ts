@@ -101,6 +101,14 @@ const OptionalQueryTextSchema = z.preprocess(
   z.string().trim().min(1).max(120).optional(),
 );
 
+const OptionalQueryTextListSchema = z.preprocess(
+  (value) => {
+    if (value === '' || value === undefined) return undefined;
+    return Array.isArray(value) ? value.filter((item) => item !== '') : [value];
+  },
+  z.array(z.string().trim().min(1).max(120)).min(1).max(50).optional(),
+);
+
 const OptionalDateSchema = z.preprocess(
   (value) => (value === '' ? undefined : value),
   z.coerce.date().optional(),
@@ -141,11 +149,11 @@ const MaterialListQuerySchema = z
       (value) => (value === '' ? undefined : value),
       z.enum(['AVAILABLE', 'LOW_STOCK', 'OUT_OF_STOCK', 'ISSUED', 'FULLY_ISSUED']).optional(),
     ),
-    category: OptionalQueryTextSchema,
-    store: OptionalQueryTextSchema,
-    location: OptionalQueryTextSchema,
-    block: OptionalQueryTextSchema,
-    department: OptionalQueryTextSchema,
+    category: OptionalQueryTextListSchema,
+    store: OptionalQueryTextListSchema,
+    location: OptionalQueryTextListSchema,
+    block: OptionalQueryTextListSchema,
+    department: OptionalQueryTextListSchema,
     vendorName: OptionalQueryTextSchema,
     createdFrom: OptionalDateSchema,
     createdTo: OptionalDateSchema,
@@ -318,7 +326,6 @@ export function createInventoryRouter(): Router {
   router.get('/', async (request, response, next) => {
     try {
       const input = MaterialListQuerySchema.parse(request.query);
-      const store = input.store ?? input.location;
       ensureInventoryListAccess(request, input.issueable);
       const actor = authenticated(request);
       const result = await listMaterials({
@@ -337,7 +344,8 @@ export function createInventoryRouter(): Router {
         ...(input.returnPolicy ? { returnPolicy: input.returnPolicy } : {}),
         ...(input.stockState ? { stockState: input.stockState } : {}),
         ...(input.category ? { category: input.category } : {}),
-        ...(store ? { store } : {}),
+        ...(input.store ? { store: input.store } : {}),
+        ...(input.location ? { location: input.location } : {}),
         ...(input.block ? { block: input.block } : {}),
         ...(input.department ? { department: input.department } : {}),
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),
@@ -582,7 +590,6 @@ export function createInventoryRouter(): Router {
   router.get('/export', requirePermission('INVENTORY_EXPORT'), async (request, response, next) => {
     try {
       const input = MaterialListQuerySchema.parse(request.query);
-      const store = input.store ?? input.location;
       const actor = authenticated(request);
       const csv = await exportMaterialsCsv({
         role: actor.role,
@@ -595,7 +602,8 @@ export function createInventoryRouter(): Router {
         ...(input.returnPolicy ? { returnPolicy: input.returnPolicy } : {}),
         ...(input.stockState ? { stockState: input.stockState } : {}),
         ...(input.category ? { category: input.category } : {}),
-        ...(store ? { store } : {}),
+        ...(input.store ? { store: input.store } : {}),
+        ...(input.location ? { location: input.location } : {}),
         ...(input.block ? { block: input.block } : {}),
         ...(input.department ? { department: input.department } : {}),
         ...(input.vendorName ? { vendorName: input.vendorName } : {}),

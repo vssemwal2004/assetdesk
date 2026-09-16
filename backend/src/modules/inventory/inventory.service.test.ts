@@ -103,6 +103,44 @@ describe('inventory access filters', () => {
     expect(filter.vendorName).toEqual(/^HP$/i);
   });
 
+  it('matches any selected category, location, block, department, or store', () => {
+    const filter = buildMaterialListFilter({
+      page: 1,
+      pageSize: 100,
+      role: 'ADMIN',
+      category: ['CPU', 'Monitor'],
+      store: ['Param Store', 'Main Store'],
+      block: ['A Block', 'B Block'],
+      department: ['CSIT', 'CSE'],
+    });
+
+    expect(filter.category).toEqual({ $in: [/^CPU$/i, /^Monitor$/i] });
+    expect(filter.block).toEqual({ $in: [/^A Block$/i, /^B Block$/i] });
+    expect(filter.department).toEqual({ $in: [/^CSIT$/i, /^CSE$/i] });
+    expect(filter.$and).toEqual([
+      {
+        $or: [
+          { store: /^Param\s+Store$/i },
+          { location: /^Param\s+Store$/i },
+          { locationBlock: /^Param\s+Store$/i },
+          { store: /^Main\s+Store$/i },
+          { location: /^Main\s+Store$/i },
+          { locationBlock: /^Main\s+Store$/i },
+        ],
+      },
+    ]);
+
+    const locationFilter = buildMaterialListFilter({
+      page: 1,
+      pageSize: 100,
+      role: 'ADMIN',
+      location: ['Param Centre', 'Computer Centre'],
+    });
+    expect(locationFilter.location).toEqual({
+      $in: [/^Param Centre$/i, /^Computer Centre$/i],
+    });
+  });
+
   it('lets the issue picker include active and outdated inventory only', () => {
     const workerFilter = buildMaterialListFilter({
       page: 1,

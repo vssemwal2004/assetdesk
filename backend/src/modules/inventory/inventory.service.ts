@@ -56,11 +56,11 @@ export interface MaterialListInput {
   trackingMode?: TrackingMode;
   returnPolicy?: ReturnPolicy;
   stockState?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
-  category?: string;
-  store?: string;
-  location?: string;
-  block?: string;
-  department?: string;
+  category?: string | string[];
+  store?: string | string[];
+  location?: string | string[];
+  block?: string | string[];
+  department?: string | string[];
   vendorName?: string;
   createdFrom?: Date;
   createdTo?: Date;
@@ -237,13 +237,19 @@ async function issueableStoreNames(): Promise<string[]> {
 
 function storeMatches(
   storeNames: string[],
-  selectedStore?: string,
+  selectedStore?: string | string[],
 ): Array<Record<string, unknown>> {
-  const names =
-    selectedStore &&
-    storeNames.some((store) => normalizeLookupValue(store) === normalizeLookupValue(selectedStore))
-      ? [selectedStore]
-      : storeNames;
+  const selectedStores = selectedStore
+    ? Array.isArray(selectedStore)
+      ? selectedStore
+      : [selectedStore]
+    : [];
+  const matchingStores = storeNames.filter((store) =>
+    selectedStores.some(
+      (selected) => normalizeLookupValue(store) === normalizeLookupValue(selected),
+    ),
+  );
+  const names = matchingStores.length ? matchingStores : storeNames;
   return names.flatMap((name): Array<Record<string, unknown>> => {
     const [location, block] = name.split('/').map((part) => part.trim());
     const exactStore = exactCaseInsensitiveWhitespace(name);
@@ -541,20 +547,33 @@ export function buildMaterialListFilter(input: MaterialListInput): Record<string
       ],
     };
   }
-  if (input.category) filter.category = exactCaseInsensitive(input.category);
+  const exactValues = (value: string | string[] | undefined): RegExp[] =>
+    (Array.isArray(value) ? value : value ? [value] : []).map(exactCaseInsensitive);
+  const whitespaceValues = (value: string | string[] | undefined): RegExp[] =>
+    (Array.isArray(value) ? value : value ? [value] : []).map(exactCaseInsensitiveWhitespace);
+  const exactFilter = (value: string | string[] | undefined): RegExp | { $in: RegExp[] } | null => {
+    const values = exactValues(value);
+    if (!values.length) return null;
+    return values.length === 1 ? values[0]! : { $in: values };
+  };
+  const categoryFilter = exactFilter(input.category);
+  if (categoryFilter) filter.category = categoryFilter;
   if (input.store && !input.issueable) {
-    const store = exactCaseInsensitiveWhitespace(input.store);
+    const stores = whitespaceValues(input.store);
     filter.$and = [
       ...((filter.$and as Record<string, unknown>[] | undefined) ?? []),
       {
-        $or: [{ store }, { location: store }, { locationBlock: store }],
+        $or: stores.flatMap((store) => [{ store }, { location: store }, { locationBlock: store }]),
       },
     ];
-  } else if (input.location && !input.issueable) {
-    filter.location = exactCaseInsensitive(input.location);
   }
-  if (input.block) filter.block = exactCaseInsensitive(input.block);
-  if (input.department) filter.department = exactCaseInsensitive(input.department);
+  if (input.location && !input.issueable) {
+    filter.location = exactFilter(input.location);
+  }
+  const blockFilter = exactFilter(input.block);
+  if (blockFilter) filter.block = blockFilter;
+  const departmentFilter = exactFilter(input.department);
+  if (departmentFilter) filter.department = departmentFilter;
   if (input.vendorName) filter.vendorName = exactCaseInsensitive(input.vendorName);
   if (input.createdFrom || input.createdTo) {
     filter.createdAt = {

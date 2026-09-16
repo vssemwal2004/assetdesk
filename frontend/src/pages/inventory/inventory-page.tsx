@@ -308,20 +308,18 @@ function materialStatsLabel(material: Material): string {
 function assetDetailOptions(
   details: AssetDetail[],
   kind: AssetDetailKind | AssetDetailKind[],
-  selectedValue: string,
+  selectedValues: string[],
 ): string[] {
   const kinds = Array.isArray(kind) ? kind : [kind];
   const values = details
     .filter((detail) => kinds.includes(detail.kind))
     .map((detail) => detail.name)
     .sort((left, right) => left.localeCompare(right));
-  if (
-    selectedValue &&
-    !values.some((value) => value.toLocaleLowerCase() === selectedValue.toLocaleLowerCase())
-  ) {
-    return [selectedValue, ...values];
-  }
-  return values;
+  const missingSelected = selectedValues.filter(
+    (selected) =>
+      !values.some((value) => value.toLocaleLowerCase() === selected.toLocaleLowerCase()),
+  );
+  return [...missingSelected, ...values];
 }
 
 function InventoryTypeCard({
@@ -400,9 +398,11 @@ export function InventoryPage() {
   const [visibleColumns, setVisibleColumns] =
     useState<InventoryColumnKey[]>(storedInventoryColumns);
   const search = parameters.get('search') ?? '';
-  const category = parameters.get('category') ?? '';
-  const store = parameters.get('store') ?? '';
-  const department = parameters.get('department') ?? '';
+  const categories = parameters.getAll('category').filter(Boolean);
+  const stores = parameters.getAll('store').filter(Boolean);
+  const locations = parameters.getAll('location').filter(Boolean);
+  const blocks = parameters.getAll('block').filter(Boolean);
+  const departments = parameters.getAll('department').filter(Boolean);
   const vendorName = parameters.get('vendorName') ?? '';
   const createdFrom = parameters.get('createdFrom') ?? '';
   const createdTo = parameters.get('createdTo') ?? '';
@@ -435,9 +435,11 @@ export function InventoryPage() {
       'inventory',
       {
         search,
-        category,
-        store,
-        department,
+        categories,
+        stores,
+        locations,
+        blocks,
+        departments,
         vendorName,
         createdFrom,
         createdTo,
@@ -450,9 +452,11 @@ export function InventoryPage() {
     queryFn: async ({ signal }) => {
       const filters = {
         ...(search ? { search } : {}),
-        ...(category ? { category } : {}),
-        ...(store ? { store } : {}),
-        ...(department ? { department } : {}),
+        ...(categories.length ? { category: categories } : {}),
+        ...(stores.length ? { store: stores } : {}),
+        ...(locations.length ? { location: locations } : {}),
+        ...(blocks.length ? { block: blocks } : {}),
+        ...(departments.length ? { department: departments } : {}),
         ...(vendorName ? { vendorName } : {}),
         ...(createdFrom ? { createdFrom } : {}),
         ...(createdTo ? { createdTo } : {}),
@@ -546,11 +550,13 @@ export function InventoryPage() {
       setActionError(isApiError(error) ? error.message : 'Model could not be deleted.'),
   });
 
-  function updateParameters(updates: Record<string, string>) {
+  function updateParameters(updates: Record<string, string | string[]>) {
     const next = new URLSearchParams(parameters);
     for (const [key, value] of Object.entries(updates)) {
-      if (value) next.set(key, value);
-      else next.delete(key);
+      next.delete(key);
+      for (const item of Array.isArray(value) ? value : value ? [value] : []) {
+        next.append(key, item);
+      }
     }
     next.delete('page');
     setParameters(next);
@@ -565,10 +571,12 @@ export function InventoryPage() {
       : mode === 'QUANTITY'
         ? 'CONSUMABLE_TYPE'
         : ['ASSET_TYPE', 'CONSUMABLE_TYPE'],
-    category,
+    categories,
   );
-  const storeOptions = assetDetailOptions(assetDetails, 'STORE', store);
-  const departmentOptions = assetDetailOptions(assetDetails, 'DEPARTMENT', department);
+  const storeOptions = assetDetailOptions(assetDetails, 'STORE', stores);
+  const locationOptions = assetDetailOptions(assetDetails, 'LOCATION', locations);
+  const blockOptions = assetDetailOptions(assetDetails, 'BLOCK', blocks);
+  const departmentOptions = assetDetailOptions(assetDetails, 'DEPARTMENT', departments);
   const materialGroups = groupMaterials(materials);
   const summary = inventorySummary(materials);
   const selectedInventoryType = mode ?? null;
@@ -576,9 +584,11 @@ export function InventoryPage() {
     selectedInventoryType === 'QUANTITY' ? 'IT Consumable' : 'IT Asset';
   const filtered = Boolean(
     search ||
-    category ||
-    store ||
-    department ||
+    categories.length ||
+    stores.length ||
+    locations.length ||
+    blocks.length ||
+    departments.length ||
     vendorName ||
     createdFrom ||
     createdTo ||
@@ -613,9 +623,11 @@ export function InventoryPage() {
     try {
       const blob = await downloadInventoryCsv({
         ...(search ? { search } : {}),
-        ...(category ? { category } : {}),
-        ...(store ? { store } : {}),
-        ...(department ? { department } : {}),
+        ...(categories.length ? { category: categories } : {}),
+        ...(stores.length ? { store: stores } : {}),
+        ...(locations.length ? { location: locations } : {}),
+        ...(blocks.length ? { block: blocks } : {}),
+        ...(departments.length ? { department: departments } : {}),
         ...(vendorName ? { vendorName } : {}),
         ...(createdFrom ? { createdFrom } : {}),
         ...(createdTo ? { createdTo } : {}),
@@ -640,7 +652,7 @@ export function InventoryPage() {
   function chooseInventoryType(value: TrackingMode) {
     updateParameters({
       trackingMode: value,
-      category: '',
+      category: [],
       returnPolicy: '',
     });
   }
@@ -724,9 +736,11 @@ export function InventoryPage() {
               <FilterPopover
                 activeCount={
                   [
-                    category,
-                    store,
-                    department,
+                    ...categories,
+                    ...stores,
+                    ...locations,
+                    ...blocks,
+                    ...departments,
                     vendorName,
                     createdFrom,
                     createdTo,
@@ -737,9 +751,11 @@ export function InventoryPage() {
                 }
                 onClear={() =>
                   updateParameters({
-                    category: '',
-                    store: '',
-                    department: '',
+                    category: [],
+                    store: [],
+                    location: [],
+                    block: [],
+                    department: [],
                     vendorName: '',
                     createdFrom: '',
                     createdTo: '',
@@ -753,49 +769,54 @@ export function InventoryPage() {
                 <div className="rounded-[8px] bg-[var(--color-surface-tint)] p-3">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <FilterField label={selectedInventoryLabel}>
-                      <FilterSelect
+                      <MultiFilterSelect
+                        anyLabel={`Any ${selectedInventoryLabel}`}
                         id="inventory-category-filter"
                         label={`Filter by ${selectedInventoryLabel}`}
                         onChange={(value) => updateParameters({ category: value })}
-                        value={category}
-                      >
-                        <option value="">Any {selectedInventoryLabel}</option>
-                        {categoryOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </FilterSelect>
+                        options={categoryOptions}
+                        values={categories}
+                      />
                     </FilterField>
                     <FilterField label="Store">
-                      <FilterSelect
+                      <MultiFilterSelect
+                        anyLabel="Any store"
                         id="inventory-store-filter"
                         label="Filter by store"
                         onChange={(value) => updateParameters({ store: value })}
-                        value={store}
-                      >
-                        <option value="">Any store</option>
-                        {storeOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </FilterSelect>
+                        options={storeOptions}
+                        values={stores}
+                      />
+                    </FilterField>
+                    <FilterField label="Location">
+                      <MultiFilterSelect
+                        anyLabel="Any location"
+                        id="inventory-location-filter"
+                        label="Filter by location"
+                        onChange={(value) => updateParameters({ location: value })}
+                        options={locationOptions}
+                        values={locations}
+                      />
+                    </FilterField>
+                    <FilterField label="Block">
+                      <MultiFilterSelect
+                        anyLabel="Any block"
+                        id="inventory-block-filter"
+                        label="Filter by block"
+                        onChange={(value) => updateParameters({ block: value })}
+                        options={blockOptions}
+                        values={blocks}
+                      />
                     </FilterField>
                     <FilterField label="Department">
-                      <FilterSelect
+                      <MultiFilterSelect
+                        anyLabel="Any department"
                         id="inventory-department-filter"
                         label="Filter by department"
                         onChange={(value) => updateParameters({ department: value })}
-                        value={department}
-                      >
-                        <option value="">Any department</option>
-                        {departmentOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </FilterSelect>
+                        options={departmentOptions}
+                        values={departments}
+                      />
                     </FilterField>
                     <FilterField label="Vendor">
                       <SearchForm
@@ -1784,6 +1805,76 @@ function FilterSelect({
         {children}
       </select>
     </div>
+  );
+}
+
+function MultiFilterSelect({
+  id,
+  label,
+  anyLabel,
+  options,
+  values,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  anyLabel: string;
+  options: string[];
+  values: string[];
+  onChange: (values: string[]) => void;
+}) {
+  function toggle(option: string) {
+    onChange(
+      values.includes(option)
+        ? values.filter((value) => value !== option)
+        : [...values, option],
+    );
+  }
+
+  return (
+    <details className="group/multi-filter relative" id={id}>
+      <summary
+        aria-label={label}
+        className="field-input flex cursor-pointer list-none items-center justify-between gap-2"
+      >
+        <span className="truncate">{values.length ? `${values.length} selected` : anyLabel}</span>
+        <ChevronDown
+          aria-hidden="true"
+          className="shrink-0 transition-transform group-open/multi-filter:rotate-180"
+          size={17}
+        />
+      </summary>
+      <div className="absolute z-30 mt-1 max-h-64 w-full min-w-[220px] overflow-auto rounded-[8px] border border-[var(--color-border)] bg-white p-2 shadow-[var(--shadow-overlay)]">
+        <button
+          className="mb-1 flex w-full items-center gap-2 rounded-[6px] px-2 py-2 text-left text-sm font-bold hover:bg-[var(--color-surface-tint)]"
+          onClick={() => onChange([])}
+          type="button"
+        >
+          <span className="grid size-4 place-items-center rounded border border-[var(--color-border)]">
+            {values.length === 0 ? <Check aria-hidden="true" size={13} /> : null}
+          </span>
+          {anyLabel}
+        </button>
+        {options.length ? (
+          options.map((option) => (
+            <label
+              className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-2 text-sm font-semibold hover:bg-[var(--color-surface-tint)]"
+              key={option}
+            >
+              <input
+                checked={values.includes(option)}
+                className="size-4 accent-[var(--color-primary)]"
+                onChange={() => toggle(option)}
+                type="checkbox"
+              />
+              <span className="break-words">{option}</span>
+            </label>
+          ))
+        ) : (
+          <p className="px-2 py-3 text-sm text-[var(--color-text-muted)]">No options saved.</p>
+        )}
+      </div>
+    </details>
   );
 }
 

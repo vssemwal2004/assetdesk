@@ -117,6 +117,26 @@ describe('inventory route authorization', () => {
     );
   });
 
+  it('passes repeated inventory filters as multi-select values', async () => {
+    authState.role = 'ADMIN';
+
+    await request(testApp())
+      .get(
+        '/api/v1/inventory?category=CPU&category=Monitor&store=Param%20Store&store=Main%20Store&location=Computer%20Centre&block=A%20Block&block=B%20Block&department=CSIT&department=CSE',
+      )
+      .expect(200);
+
+    expect(service.listMaterials).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: ['CPU', 'Monitor'],
+        store: ['Param Store', 'Main Store'],
+        location: ['Computer Centre'],
+        block: ['A Block', 'B Block'],
+        department: ['CSIT', 'CSE'],
+      }),
+    );
+  });
+
   it('allows assignment creators to load only issueable inventory for the issue picker', async () => {
     authState.permissions = ['ASSIGNMENTS_CREATE'];
 

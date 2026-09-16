@@ -51,9 +51,11 @@ export interface InventoryFilters {
   trackingMode?: TrackingMode;
   returnPolicy?: ReturnPolicy;
   stockState?: 'AVAILABLE' | 'LOW_STOCK' | 'OUT_OF_STOCK' | 'ISSUED' | 'FULLY_ISSUED';
-  category?: string;
-  store?: string;
-  department?: string;
+  category?: string | string[];
+  store?: string | string[];
+  location?: string | string[];
+  block?: string | string[];
+  department?: string | string[];
   vendorName?: string;
   createdFrom?: string;
   createdTo?: string;
@@ -77,9 +79,16 @@ export async function getInventory(
   if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
-  if (filters.category) parameters.set('category', filters.category);
-  if (filters.store) parameters.set('store', filters.store);
-  if (filters.department) parameters.set('department', filters.department);
+  const appendValues = (key: string, value: string | string[] | undefined) => {
+    for (const item of Array.isArray(value) ? value : value ? [value] : []) {
+      parameters.append(key, item);
+    }
+  };
+  appendValues('category', filters.category);
+  appendValues('store', filters.store);
+  appendValues('location', filters.location);
+  appendValues('block', filters.block);
+  appendValues('department', filters.department);
   if (filters.vendorName) parameters.set('vendorName', filters.vendorName);
   if (filters.createdFrom) parameters.set('createdFrom', filters.createdFrom);
   if (filters.createdTo) parameters.set('createdTo', filters.createdTo);
@@ -218,9 +227,16 @@ export async function downloadInventoryCsv(
   if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
   if (filters.returnPolicy) parameters.set('returnPolicy', filters.returnPolicy);
   if (filters.stockState) parameters.set('stockState', filters.stockState);
-  if (filters.category) parameters.set('category', filters.category);
-  if (filters.store) parameters.set('store', filters.store);
-  if (filters.department) parameters.set('department', filters.department);
+  const appendValues = (key: string, value: string | string[] | undefined) => {
+    for (const item of Array.isArray(value) ? value : value ? [value] : []) {
+      parameters.append(key, item);
+    }
+  };
+  appendValues('category', filters.category);
+  appendValues('store', filters.store);
+  appendValues('location', filters.location);
+  appendValues('block', filters.block);
+  appendValues('department', filters.department);
   if (filters.vendorName) parameters.set('vendorName', filters.vendorName);
   if (filters.createdFrom) parameters.set('createdFrom', filters.createdFrom);
   if (filters.createdTo) parameters.set('createdTo', filters.createdTo);
