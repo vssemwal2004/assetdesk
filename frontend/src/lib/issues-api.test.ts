@@ -36,13 +36,13 @@ describe('Issue and Return idempotency', () => {
     vi.stubGlobal('fetch', fetchMock);
     setCsrfToken('csrf-test-token');
 
-    await getIssuesForExport('FILTERED', { block: 'CSIT', category: 'CPU' });
+    await getIssuesForExport('FILTERED', { block: ['CSIT', 'Library'], category: 'CPU' });
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/issues/export');
     const options = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(JSON.parse(String(options.body))).toEqual({
       scope: 'FILTERED',
-      filters: { block: 'CSIT', category: 'CPU' },
+      filters: { block: ['CSIT', 'Library'], category: 'CPU' },
     });
   });
 
@@ -60,12 +60,12 @@ describe('Issue and Return idempotency', () => {
 
     await getIssues({
       page: 1,
-      block: 'Btech Block',
-      destinationLocation: 'Placement Office',
+      block: ['Btech Block', 'CSIT'],
+      destinationLocation: ['Placement Office', 'Lab 1'],
     });
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      '/api/v1/issues?page=1&pageSize=20&block=Btech+Block&location=Placement+Office',
+      '/api/v1/issues?page=1&pageSize=20&block=Btech+Block&block=CSIT&location=Placement+Office&location=Lab+1',
     );
   });
 

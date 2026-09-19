@@ -94,7 +94,7 @@ describe('Issue routes', () => {
   it('passes exact dashboard drill-down filters to the list service', async () => {
     await request(testApp())
       .get(
-        '/api/v1/issues?period=TODAY&returnState=DUE_TODAY&assignmentType=LONG_TERM&store=Main%20Store&destinationLocation=CSIT%20Lab%201',
+        '/api/v1/issues?period=TODAY&returnState=DUE_TODAY&assignmentType=LONG_TERM&store=Main%20Store&destinationLocation=CSIT%20Lab%201&destinationLocation=Library',
       )
       .expect(200);
 
@@ -104,7 +104,7 @@ describe('Issue routes', () => {
         returnState: 'DUE_TODAY',
         assignmentType: 'LONG_TERM',
         store: 'Main Store',
-        location: 'CSIT Lab 1',
+        location: ['CSIT Lab 1', 'Library'],
       }),
     );
   });
@@ -116,18 +116,18 @@ describe('Issue routes', () => {
 
     expect(service.listIssues).toHaveBeenCalledWith(
       expect.objectContaining({
-        location: 'Legacy Lab',
+        location: ['Legacy Lab'],
       }),
     );
   });
 
   it('loads block-scoped Issue filter options through the actor-scoped service', async () => {
     const response = await request(testApp())
-      .get('/api/v1/issues/filter-options?block=Btech%20Block')
+      .get('/api/v1/issues/filter-options?block=Btech%20Block&block=CSIT')
       .expect(200);
 
     expect(service.listIssueFilterOptions).toHaveBeenCalledWith({
-      block: 'Btech Block',
+      block: ['Btech Block', 'CSIT'],
       actorUserId: '507f1f77bcf86cd799439011',
       actorRole: 'WORKER',
       issueDataScope: 'ALL',

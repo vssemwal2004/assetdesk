@@ -44,6 +44,11 @@ const OptionalQueryTextSchema = z.preprocess(
   z.string().trim().min(1).max(120).optional(),
 );
 
+const OptionalQueryTextListSchema = z.preprocess(
+  (value) => (value === undefined || value === '' ? undefined : Array.isArray(value) ? value : [value]),
+  z.array(z.string().trim().min(1).max(120)).max(100).optional(),
+);
+
 const IssueListQuerySchema = z
   .object({
     page: z.coerce.number().int().positive().default(1),
@@ -66,10 +71,10 @@ const IssueListQuerySchema = z
       AssignmentTypeSchema.optional(),
     ),
     store: OptionalQueryTextSchema,
-    location: OptionalQueryTextSchema,
-    block: OptionalQueryTextSchema,
-    destinationLocation: OptionalQueryTextSchema,
-    destinationBlock: OptionalQueryTextSchema,
+    location: OptionalQueryTextListSchema,
+    block: OptionalQueryTextListSchema,
+    destinationLocation: OptionalQueryTextListSchema,
+    destinationBlock: OptionalQueryTextListSchema,
     trackingMode: z.enum(['SERIALIZED', 'QUANTITY']).optional(),
     category: OptionalQueryTextSchema,
   })
@@ -83,7 +88,7 @@ const ReturnSearchQuerySchema = z
   })
   .strict();
 
-const IssueFilterOptionsQuerySchema = z.object({ block: OptionalQueryTextSchema }).strip();
+const IssueFilterOptionsQuerySchema = z.object({ block: OptionalQueryTextListSchema }).strip();
 
 const IssueExportSchema = z
   .object({

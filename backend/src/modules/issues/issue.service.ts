@@ -64,8 +64,8 @@ export interface IssueListInput {
   returnState?: IssueReturnState;
   assignmentType?: AssignmentType;
   store?: string;
-  location?: string;
-  block?: string;
+  location?: string[];
+  block?: string[];
   trackingMode?: 'SERIALIZED' | 'QUANTITY';
   category?: string;
 }
@@ -154,7 +154,7 @@ export interface IssueFilterOptionsInput {
   actorUserId: string;
   actorRole: UserRole;
   issueDataScope?: 'OWN' | 'ALL';
-  block?: string;
+  block?: string[];
 }
 
 export interface IssueFilterOptionsResult {
@@ -637,23 +637,25 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
   if (Object.keys(lineMaterialFilter).length > 0) {
     filter.lines = { $elemMatch: lineMaterialFilter };
   }
-  if (input.location) {
-    const location = new RegExp(`^${escapeSearchRegex(input.location)}$`, 'i');
+  if (input.location?.length) {
+    const locations = input.location.map(
+      (value) => new RegExp(`^${escapeSearchRegex(value)}$`, 'i'),
+    );
     accessClauses.push({
-      $or: [{ destinationLocation: location }],
+      destinationLocation: { $in: locations },
     });
   }
-  if (input.block) {
-    const block = new RegExp(`^${escapeSearchRegex(input.block)}$`, 'i');
+  if (input.block?.length) {
+    const blocks = input.block.map((value) => new RegExp(`^${escapeSearchRegex(value)}$`, 'i'));
     accessClauses.push({
       $or: [
-        { destinationBlock: block },
+        { destinationBlock: { $in: blocks } },
         // Issue records created before Block was stored separately used the
         // destination location as their only destination value. Keep those
         // production records discoverable without weakening matches for new data.
         {
           destinationBlock: { $exists: false },
-          destinationLocation: block,
+          destinationLocation: { $in: blocks },
         },
       ],
     });
@@ -763,14 +765,14 @@ export async function listIssueFilterOptions(
       $or: [{ createdByUserId: actorUserId }, { 'returnEvents.performedBy.userId': actorUserId }],
     });
   }
-  if (input.block) {
-    const block = new RegExp(`^${escapeSearchRegex(input.block)}$`, 'i');
+  if (input.block?.length) {
+    const blocks = input.block.map((value) => new RegExp(`^${escapeSearchRegex(value)}$`, 'i'));
     accessClauses.push({
       $or: [
-        { destinationBlock: block },
+        { destinationBlock: { $in: blocks } },
         {
           destinationBlock: { $exists: false },
-          destinationLocation: block,
+          destinationLocation: { $in: blocks },
         },
       ],
     });

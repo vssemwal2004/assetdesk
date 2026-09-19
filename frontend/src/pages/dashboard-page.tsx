@@ -284,9 +284,8 @@ function DashboardContent({
   const canSeeCartridges = admin || hasPermission(user, 'CARTRIDGES_VIEW');
   const canSeeLowStock = admin || hasPermission(user, 'DASHBOARD_LOW_STOCK');
   const canSeeTotalActivity = admin || hasPermission(user, 'DASHBOARD_TOTAL_ACTIVITY');
-  const availability = data.inventory.totalQuantity
-    ? Math.round((data.inventory.availableQuantity / data.inventory.totalQuantity) * 100)
-    : 0;
+  const operationalQuantity = operationalInventoryQuantity(data.inventory);
+  const availability = stockAvailabilityPercentage(data.inventory);
   const primaryMetrics = [
     {
       label: 'Issued today',
@@ -317,7 +316,7 @@ function DashboardContent({
           label: 'Stock available',
           value: availability,
           suffix: '%',
-          helper: `${data.inventory.availableQuantity.toLocaleString('en-IN')} of ${data.inventory.totalQuantity.toLocaleString('en-IN')} units`,
+          helper: `${data.inventory.availableQuantity.toLocaleString('en-IN')} of ${operationalQuantity.toLocaleString('en-IN')} usable units`,
           icon: PackageCheck,
           to: '/inventory?stockState=AVAILABLE',
           tone: availability >= 60 ? ('success' as const) : ('warning' as const),
@@ -741,9 +740,7 @@ function InventoryHealth({ inventory }: { inventory: DashboardInventory }) {
   );
   const visibleRows = modeRows.filter((row) => status === 'ALL' || row.status === status);
   const totals = sumInventory(visibleRows);
-  const availability = totals.totalQuantity
-    ? Math.round((totals.availableQuantity / totals.totalQuantity) * 100)
-    : 0;
+  const availability = stockAvailabilityPercentage(totals);
   const distribution = inventoryStatuses
     .filter((item) => item.value !== 'ALL')
     .map((item) => ({
@@ -1440,6 +1437,23 @@ function sumInventory(rows: DashboardInventory['breakdown']) {
     }),
     { materialCount: 0, totalQuantity: 0, availableQuantity: 0, issuedQuantity: 0 },
   );
+}
+
+export function operationalInventoryQuantity(inventory: {
+  availableQuantity: number;
+  issuedQuantity: number;
+}): number {
+  return inventory.availableQuantity + inventory.issuedQuantity;
+}
+
+export function stockAvailabilityPercentage(inventory: {
+  availableQuantity: number;
+  issuedQuantity: number;
+}): number {
+  const operationalQuantity = operationalInventoryQuantity(inventory);
+  return operationalQuantity
+    ? Math.round((inventory.availableQuantity / operationalQuantity) * 100)
+    : 0;
 }
 
 function permissionGroup(user: AuthUser, permissions: WorkerPermission[]): boolean {

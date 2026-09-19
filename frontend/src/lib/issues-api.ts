@@ -39,8 +39,8 @@ export interface IssueFilters {
   returnState?: IssueReturnState;
   assignmentType?: AssignmentType;
   store?: string;
-  block?: string;
-  destinationLocation?: string;
+  block?: string[];
+  destinationLocation?: string[];
   trackingMode?: 'SERIALIZED' | 'QUANTITY';
   category?: string;
 }
@@ -59,8 +59,8 @@ export async function getIssues(
   if (filters.returnState) parameters.set('returnState', filters.returnState);
   if (filters.assignmentType) parameters.set('assignmentType', filters.assignmentType);
   if (filters.store) parameters.set('store', filters.store);
-  if (filters.block) parameters.set('block', filters.block);
-  if (filters.destinationLocation) parameters.set('location', filters.destinationLocation);
+  filters.block?.forEach((value) => parameters.append('block', value));
+  filters.destinationLocation?.forEach((value) => parameters.append('location', value));
   if (filters.trackingMode) parameters.set('trackingMode', filters.trackingMode);
   if (filters.category) parameters.set('category', filters.category);
   const payload = await apiRequest<unknown>(`/api/v1/issues?${parameters.toString()}`, {
@@ -81,11 +81,11 @@ export async function getIssuesForExport(
 }
 
 export async function getIssueFilterOptions(
-  block?: string,
+  blocks: string[] = [],
   signal?: AbortSignal,
 ): Promise<IssueFilterOptionsResponse['data']> {
   const parameters = new URLSearchParams();
-  if (block) parameters.set('block', block);
+  blocks.forEach((block) => parameters.append('block', block));
   const payload = await apiRequest<unknown>(
     `/api/v1/issues/filter-options${parameters.size ? `?${parameters.toString()}` : ''}`,
     { ...(signal ? { signal } : {}) },

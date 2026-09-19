@@ -361,8 +361,8 @@ export function IssuesPage() {
   const status = issueStatus(parameters.get('status') ?? '');
   const period = issuePeriod(parameters.get('period') ?? '');
   const returnState = issueReturnState(parameters.get('returnState') ?? '');
-  const block = parameters.get('block') ?? parameters.get('destinationBlock') ?? '';
-  const location = parameters.get('location') ?? '';
+  const blocks = parameters.getAll('block').filter(Boolean);
+  const locations = parameters.getAll('location').filter(Boolean);
   const store = parameters.get('store') ?? '';
   const trackingMode =
     parameters.get('trackingMode') === 'SERIALIZED' || parameters.get('trackingMode') === 'QUANTITY'
@@ -373,8 +373,8 @@ export function IssuesPage() {
     assignmentType(parameters.get('assignmentType') ?? '') ??
     (returnState === 'PENDING' ? 'SHORT_TERM' : undefined);
   const issueFilterOptionsQuery = useQuery({
-    queryKey: ['issue-filter-options', block],
-    queryFn: ({ signal }) => getIssueFilterOptions(block || undefined, signal),
+    queryKey: ['issue-filter-options', blocks],
+    queryFn: ({ signal }) => getIssueFilterOptions(blocks, signal),
   });
   const catalogQuery = useQuery({
     queryKey: ['asset-details'],
@@ -412,7 +412,7 @@ export function IssuesPage() {
   );
   const locationOptions = useMemo(
     () =>
-      (block
+      (blocks.length
         ? [...(issueFilterOptionsQuery.data?.locations ?? [])]
         : [
             ...(catalogQuery.data ?? [])
@@ -423,7 +423,7 @@ export function IssuesPage() {
       )
         .filter((value, index, values) => values.indexOf(value) === index)
         .sort((left, right) => left.localeCompare(right)),
-    [block, catalogQuery.data, issueFilterOptionsQuery.data?.locations],
+    [blocks.length, catalogQuery.data, issueFilterOptionsQuery.data?.locations],
   );
   const query = useQuery({
     queryKey: [
@@ -435,8 +435,8 @@ export function IssuesPage() {
         period,
         returnState,
         assignmentType: issueAssignmentType,
-        block,
-        location,
+        blocks,
+        locations,
         store,
         trackingMode,
         category,
@@ -449,8 +449,8 @@ export function IssuesPage() {
         ...(period ? { period } : {}),
         ...(returnState ? { returnState } : {}),
         ...(issueAssignmentType ? { assignmentType: issueAssignmentType } : {}),
-        ...(block ? { block } : {}),
-        ...(location ? { destinationLocation: location } : {}),
+        ...(blocks.length ? { block: blocks } : {}),
+        ...(locations.length ? { destinationLocation: locations } : {}),
         ...(store ? { store } : {}),
         ...(trackingMode ? { trackingMode } : {}),
         ...(category && trackingMode ? { category } : {}),
@@ -489,14 +489,15 @@ export function IssuesPage() {
     }
   }, [visibleCategoryStats]);
 
-  function updateParameters(updates: Record<string, string>) {
+  function updateParameters(updates: Record<string, string | string[]>) {
     const next = new URLSearchParams(parameters);
     for (const [key, value] of Object.entries(updates)) {
-      if (value) next.set(key, value);
-      else next.delete(key);
+      next.delete(key);
+      if (Array.isArray(value)) value.filter(Boolean).forEach((item) => next.append(key, item));
+      else if (value) next.set(key, value);
     }
-    if (Object.hasOwn(updates, 'block') && updates.block !== block) next.delete('destinationBlock');
-    if (updates.block !== undefined && updates.block !== block) next.delete('location');
+    if (Object.hasOwn(updates, 'block')) next.delete('destinationBlock');
+    if (updates.block !== undefined) next.delete('location');
     if (updates.returnState === 'PENDING') next.set('assignmentType', 'SHORT_TERM');
     if (updates.returnState === '') next.delete('assignmentType');
     if (!Object.hasOwn(updates, 'page')) next.set('page', '1');
@@ -504,7 +505,7 @@ export function IssuesPage() {
   }
 
   const issues = useMemo(() => query.data?.data ?? [], [query.data?.data]);
-  const destinationFiltered = Boolean(block || location);
+  const destinationFiltered = blocks.length > 0 || locations.length > 0;
   const issueGroups = useMemo(() => {
     const groups = groupIssues(issues, {
       ...(trackingMode ? { trackingMode } : {}),
@@ -593,8 +594,8 @@ export function IssuesPage() {
     period ||
     returnState ||
     issueAssignmentType ||
-    block ||
-    location ||
+    blocks.length ||
+    locations.length ||
     store ||
     trackingMode ||
     category,
@@ -610,8 +611,8 @@ export function IssuesPage() {
         ...(period ? { period } : {}),
         ...(returnState ? { returnState } : {}),
         ...(issueAssignmentType ? { assignmentType: issueAssignmentType } : {}),
-        ...(block ? { block } : {}),
-        ...(location ? { destinationLocation: location } : {}),
+        ...(blocks.length ? { block: blocks } : {}),
+        ...(locations.length ? { destinationLocation: locations } : {}),
         ...(store ? { store } : {}),
         ...(trackingMode ? { trackingMode } : {}),
         ...(category && trackingMode ? { category } : {}),
@@ -764,8 +765,8 @@ export function IssuesPage() {
               panelClassName="issue-filter-popover w-[min(94vw,680px)]"
               activeCount={
                 [
-                  block,
-                  location,
+                  ...blocks,
+                  ...locations,
                   store,
                   trackingMode,
                   category,
@@ -777,8 +778,8 @@ export function IssuesPage() {
               }
               onClear={() =>
                 updateParameters({
-                  block: '',
-                  location: '',
+                  block: [],
+                  location: [],
                   store: '',
                   status: '',
                   period: '',
@@ -801,7 +802,7 @@ export function IssuesPage() {
                       Narrow issue data in order
                     </p>
                     <p className="mt-1 text-xs leading-5 text-[var(--color-primary-strong)]/75">
-                      Start with a block, then choose any Location added by an administrator. Using
+                      Select one or more blocks, then choose one or more matching locations. Using
                       both together keeps the results accurate.
                     </p>
                   </div>
@@ -809,37 +810,25 @@ export function IssuesPage() {
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <FilterField label="1. Block">
-                  <select
-                    className="field-input"
-                    onChange={(event) =>
-                      updateParameters({ block: event.target.value, location: '', category: '' })
-                    }
-                    value={block}
-                  >
-                    <option value="">All blocks</option>
-                    {blockOptions.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                  <MultiFilterSelect
+                    anyLabel="All blocks"
+                    id="issues-block-filter"
+                    label="Filter by blocks"
+                    onChange={(values) => updateParameters({ block: values })}
+                    options={blockOptions}
+                    values={blocks}
+                  />
                 </FilterField>
                 <FilterField label="2. Location">
-                  <select
-                    className="field-input"
-                    disabled={!block}
-                    onChange={(event) =>
-                      updateParameters({ location: event.target.value, category: '' })
-                    }
-                    value={block ? location : ''}
-                  >
-                    <option value="">{block ? 'All locations' : 'Select a block first'}</option>
-                    {locationOptions.map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                  <MultiFilterSelect
+                    anyLabel={blocks.length ? 'All locations' : 'Select a block first'}
+                    disabled={!blocks.length}
+                    id="issues-location-filter"
+                    label="Filter by locations"
+                    onChange={(values) => updateParameters({ location: values })}
+                    options={locationOptions}
+                    values={blocks.length ? locations : []}
+                  />
                 </FilterField>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -1110,12 +1099,88 @@ export function IssuesPage() {
   );
 }
 
+function MultiFilterSelect({
+  id,
+  label,
+  anyLabel,
+  options,
+  values,
+  disabled = false,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  anyLabel: string;
+  options: string[];
+  values: string[];
+  disabled?: boolean;
+  onChange: (values: string[]) => void;
+}) {
+  function toggle(option: string) {
+    onChange(
+      values.includes(option)
+        ? values.filter((value) => value !== option)
+        : [...values, option],
+    );
+  }
+
+  return (
+    <details className="group/multi-filter relative" id={id}>
+      <summary
+        aria-disabled={disabled}
+        aria-label={label}
+        className={`field-input flex list-none items-center justify-between gap-2 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+        onClick={(event) => {
+          if (disabled) event.preventDefault();
+        }}
+      >
+        <span className="truncate">{values.length ? `${values.length} selected` : anyLabel}</span>
+        <ChevronDown
+          aria-hidden="true"
+          className="shrink-0 transition-transform group-open/multi-filter:rotate-180"
+          size={17}
+        />
+      </summary>
+      <div className="absolute z-30 mt-1 max-h-64 w-full min-w-[220px] overflow-auto rounded-[8px] border border-[var(--color-border)] bg-white p-2 shadow-[var(--shadow-overlay)]">
+        <button
+          className="mb-1 flex w-full items-center gap-2 rounded-[6px] px-2 py-2 text-left text-sm font-bold hover:bg-[var(--color-surface-tint)]"
+          onClick={() => onChange([])}
+          type="button"
+        >
+          <span className="grid size-4 place-items-center rounded border border-[var(--color-border)]">
+            {values.length === 0 ? <Check aria-hidden="true" size={13} /> : null}
+          </span>
+          {anyLabel}
+        </button>
+        {options.length ? (
+          options.map((option) => (
+            <label
+              className="flex cursor-pointer items-center gap-2 rounded-[6px] px-2 py-2 text-sm font-semibold hover:bg-[var(--color-surface-tint)]"
+              key={option}
+            >
+              <input
+                checked={values.includes(option)}
+                className="size-4 accent-[var(--color-primary)]"
+                onChange={() => toggle(option)}
+                type="checkbox"
+              />
+              <span className="break-words">{option}</span>
+            </label>
+          ))
+        ) : (
+          <p className="px-2 py-3 text-sm text-[var(--color-text-muted)]">No options saved.</p>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function FilterField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="block space-y-1.5">
-      <span className="field-label">{label}</span>
+    <div className="space-y-1.5">
+      <p className="field-label">{label}</p>
       {children}
-    </label>
+    </div>
   );
 }
 
