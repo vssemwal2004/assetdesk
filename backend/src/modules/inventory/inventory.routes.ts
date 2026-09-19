@@ -277,11 +277,16 @@ function pageMeta(result: { page: number; pageSize: number; total: number; total
   };
 }
 
-function ensureInventoryListAccess(request: Request, issueable: boolean | undefined): void {
+function ensureInventoryListAccess(
+  request: Request,
+  issueable: boolean | undefined,
+  lowStockOnly: boolean | undefined,
+): void {
   const actor = authenticated(request);
   const allowed =
     hasServerPermission(actor, 'INVENTORY_VIEW') ||
-    (issueable === true && hasServerPermission(actor, 'ASSIGNMENTS_CREATE'));
+    (issueable === true && hasServerPermission(actor, 'ASSIGNMENTS_CREATE')) ||
+    (lowStockOnly === true && hasServerPermission(actor, 'DASHBOARD_LOW_STOCK'));
   if (!allowed) {
     throw new AppError(403, 'PERMISSION_DENIED', 'You do not have access to this feature.');
   }
@@ -326,7 +331,7 @@ export function createInventoryRouter(): Router {
   router.get('/', async (request, response, next) => {
     try {
       const input = MaterialListQuerySchema.parse(request.query);
-      ensureInventoryListAccess(request, input.issueable);
+      ensureInventoryListAccess(request, input.issueable, input.lowStockOnly);
       const actor = authenticated(request);
       const result = await listMaterials({
         page: input.page,

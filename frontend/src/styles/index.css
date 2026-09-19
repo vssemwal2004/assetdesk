@@ -1944,7 +1944,6 @@ dialog::backdrop {
   }
 
   .cartridge-gate-pass-sheet {
-    break-inside: avoid;
     padding: 4mm !important;
   }
 
@@ -1952,9 +1951,29 @@ dialog::backdrop {
     break-inside: auto;
   }
 
+  .cartridge-gate-pass-sheet thead {
+    display: table-header-group;
+  }
+
   .cartridge-gate-pass-sheet tr {
-    height: 6.5mm;
     break-inside: avoid;
+    break-after: auto;
+  }
+
+  .cartridge-gate-pass-items td {
+    height: auto;
+    min-height: 6.5mm;
+  }
+
+  .cartridge-gate-pass-stamps {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 30mm !important;
+    break-inside: avoid;
+  }
+
+  .cartridge-gate-pass-stamp {
+    min-height: 30mm !important;
+    border: 0.35mm dashed #000 !important;
   }
 }
 

@@ -289,7 +289,7 @@ export function App() {
                   }
                   path="/returns"
                 />
-                <Route element={<AdminRoute />}>
+                <Route element={<PermissionRoute permission="DASHBOARD_TOTAL_ACTIVITY" />}>
                   <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>
@@ -298,7 +298,11 @@ export function App() {
                     }
                     path="/activity"
                   />
+                </Route>
+                <Route element={<PermissionRoute permission="DASHBOARD_LOW_STOCK" />}>
                   <Route element={<LowStockPage />} path="/inventory/low-stock" />
+                </Route>
+                <Route element={<AdminRoute />}>
                   <Route
                     element={
                       <Suspense fallback={<FeatureRouteFallback />}>

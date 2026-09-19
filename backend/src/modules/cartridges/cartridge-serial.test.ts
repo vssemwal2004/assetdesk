@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { cartridgeSerialYear, formatCartridgeSerial } from './cartridge.service.js';
+import { formatGatePassNumber, gatePassNumberYear } from './cartridge.service.js';
 
-describe('cartridge serial numbers', () => {
-  it('uses a four-digit sequence', () => {
-    expect(formatCartridgeSerial(2026, 1)).toBe('2026-0001');
-    expect(formatCartridgeSerial(2026, 42)).toBe('2026-0042');
-    expect(formatCartridgeSerial(2026, 9999)).toBe('2026-9999');
+describe('gate-pass numbers', () => {
+  it('uses the GEU year and three-digit sequence format', () => {
+    expect(formatGatePassNumber(2026, 1)).toBe('GEU-2026-001');
+    expect(formatGatePassNumber(2026, 42)).toBe('GEU-2026-042');
+    expect(formatGatePassNumber(2026, 999)).toBe('GEU-2026-999');
   });
 
   it('derives the year in the application timezone', () => {
-    expect(cartridgeSerialYear(new Date('2026-12-31T18:29:59.000Z'))).toBe(2026);
-    expect(cartridgeSerialYear(new Date('2026-12-31T18:30:00.000Z'))).toBe(2027);
+    expect(gatePassNumberYear(new Date('2026-12-31T18:29:59.000Z'))).toBe(2026);
+    expect(gatePassNumberYear(new Date('2026-12-31T18:30:00.000Z'))).toBe(2027);
   });
 });

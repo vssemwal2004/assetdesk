@@ -31,6 +31,18 @@ export const permissionDefinitions: PermissionDefinition[] = [
     description: 'View assigned overview and operational summary.',
   },
   {
+    permission: 'DASHBOARD_LOW_STOCK',
+    group: 'Dashboard',
+    label: 'View low stock',
+    description: 'Open the Low Stock dashboard shortcut and low-stock inventory page.',
+  },
+  {
+    permission: 'DASHBOARD_TOTAL_ACTIVITY',
+    group: 'Dashboard',
+    label: 'View total activity',
+    description: 'Open the Total Activity dashboard shortcut and organization audit activity.',
+  },
+  {
     permission: 'ISSUES_VIEW',
     group: 'Issues',
     label: 'View issue records',

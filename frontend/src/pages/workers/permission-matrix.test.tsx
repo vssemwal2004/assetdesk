@@ -35,6 +35,8 @@ describe('AccessEditor', () => {
     render(<AccessEditorHarness initialPermissions={['DASHBOARD', 'INVENTORY_VIEW']} />);
 
     expect(screen.getByRole('checkbox', { name: /Open dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /View low stock/i })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /View total activity/i })).toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: /Add inventory material/i })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /Inventory/i }));

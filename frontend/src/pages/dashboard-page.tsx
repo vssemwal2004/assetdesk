@@ -282,6 +282,8 @@ function DashboardContent({
   const admin = user.role === 'ADMIN';
   const canSeeInventory = admin || hasPermission(user, 'INVENTORY_VIEW');
   const canSeeCartridges = admin || hasPermission(user, 'CARTRIDGES_VIEW');
+  const canSeeLowStock = admin || hasPermission(user, 'DASHBOARD_LOW_STOCK');
+  const canSeeTotalActivity = admin || hasPermission(user, 'DASHBOARD_TOTAL_ACTIVITY');
   const availability = data.inventory.totalQuantity
     ? Math.round((data.inventory.availableQuantity / data.inventory.totalQuantity) * 100)
     : 0;
@@ -343,16 +345,20 @@ function DashboardContent({
 
       <OperationalSummary admin={admin} stats={data.stats} />
 
-      {admin ? (
+      {canSeeLowStock || canSeeTotalActivity ? (
         <section className="grid gap-3 sm:grid-cols-2">
-          <Link className="group flex items-center gap-4 rounded-[8px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]" to="/inventory/low-stock">
-            <PackageOpen className="text-[var(--color-warning)]" size={20} />
-            <span className="flex-1"><strong className="block text-sm">Low stock</strong><span className="text-xs text-[var(--color-text-muted)]">Consumables and assets below stock level</span></span><ArrowRight size={16} />
-          </Link>
-          <Link className="group flex items-center gap-4 rounded-[8px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]" to="/activity">
-            <Activity className="text-[var(--color-info)]" size={20} />
-            <span className="flex-1"><strong className="block text-sm">Today activity</strong><span className="text-xs text-[var(--color-text-muted)]">All employee actions and audit evidence</span></span><ArrowRight size={16} />
-          </Link>
+          {canSeeLowStock ? (
+            <Link className="group flex items-center gap-4 rounded-[8px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]" to="/inventory/low-stock">
+              <PackageOpen className="text-[var(--color-warning)]" size={20} />
+              <span className="flex-1"><strong className="block text-sm">Low stock</strong><span className="text-xs text-[var(--color-text-muted)]">Consumables and assets below stock level</span></span><ArrowRight size={16} />
+            </Link>
+          ) : null}
+          {canSeeTotalActivity ? (
+            <Link className="group flex items-center gap-4 rounded-[8px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]" to="/activity">
+              <Activity className="text-[var(--color-info)]" size={20} />
+              <span className="flex-1"><strong className="block text-sm">Total activity</strong><span className="text-xs text-[var(--color-text-muted)]">All employee actions and audit evidence</span></span><ArrowRight size={16} />
+            </Link>
+          ) : null}
         </section>
       ) : null}
 

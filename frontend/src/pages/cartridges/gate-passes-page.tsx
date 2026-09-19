@@ -26,6 +26,7 @@ import {
   getGatePass,
   getGatePasses,
 } from '../../lib/cartridges-api';
+import { formatIstDate } from '../../lib/date-time';
 
 const gatePassEligibleStatuses = ['EMPTY', 'DEFECTIVE', 'REFILL_FAILED'] as const;
 
@@ -493,7 +494,7 @@ export function CreateGatePassPage() {
                   it as Empty, Defective, or Refill failed when it returns.
                 </p>
               ) : (
-                <div className="max-h-72 overflow-auto p-2">
+                <div className="grid gap-1 p-2 sm:grid-cols-2">
                   {eligibleCartridges.map((item) => (
                     <label
                       className="flex cursor-pointer items-start gap-3 rounded-[8px] px-3 py-2 hover:bg-[var(--color-surface-tint)]"
@@ -760,7 +761,7 @@ export function GatePassPrintPage() {
         <div className="mt-4 grid grid-cols-2 border border-black text-xs">
           <b className="border-b border-r border-black p-1.5">Gate Pass No: {p.gatePassNumber}</b>
           <b className="border-b border-black p-1.5">
-            Date: {new Date(p.createdAt).toLocaleDateString('en-IN')}
+            Date: {formatIstDate(p.gateOutAt ?? p.createdAt).replace(' IST', '')}
           </b>
           <b className="border-r border-black p-1.5">Vendor Name: {p.vendorName}</b>
           <b className="p-1.5">Person Taking Material: {p.personTakingMaterial}</b>
@@ -778,7 +779,7 @@ export function GatePassPrintPage() {
               <th className="border border-black p-1.5">Total Quantity</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="cartridge-gate-pass-items">
             {p.cartridgeSerialNumbers.map((x, i) => (
               <tr key={x}>
                 <td className="border border-black px-2 py-1 text-center">{i + 1}</td>
@@ -812,9 +813,13 @@ export function GatePassPrintPage() {
             <li>Security Department is to keep the record of Gate Pass.</li>
           </ol>
         </div>
-        <div className="mt-8 flex justify-between text-xs font-bold">
-          <span>Stamp (Gate IN)</span>
-          <span>Stamp (Gate OUT)</span>
+        <div className="cartridge-gate-pass-stamps mt-6 grid grid-cols-2 gap-6 text-xs font-bold">
+          <div className="cartridge-gate-pass-stamp flex min-h-[3cm] items-start justify-center rounded border border-dashed border-black p-2">
+            <span>Stamp (Gate IN)</span>
+          </div>
+          <div className="cartridge-gate-pass-stamp flex min-h-[3cm] items-start justify-center rounded border border-dashed border-black p-2">
+            <span>Stamp (Gate OUT)</span>
+          </div>
         </div>
       </div>
     </div>

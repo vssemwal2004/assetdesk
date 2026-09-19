@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { AuditResultSchema, UserRoleSchema } from '@assetdesk/contracts';
 
-import { requireAuth, requireFullAccess, requireRole } from '../auth/auth.middleware.js';
+import { requireAuth, requireFullAccess, requirePermission } from '../auth/auth.middleware.js';
 import { getAuditEvent, listAuditEvents } from './audit-read.service.js';
 
 const DateSchema = z.string().date();
@@ -59,7 +59,7 @@ export function createAuditRouter(): Router {
     response.setHeader('Pragma', 'no-cache');
     next();
   });
-  router.use(requireAuth, requireFullAccess, requireRole('ADMIN'));
+  router.use(requireAuth, requireFullAccess, requirePermission('DASHBOARD_TOTAL_ACTIVITY'));
 
   router.get('/', async (request, response, next) => {
     try {

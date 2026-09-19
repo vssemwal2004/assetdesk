@@ -25,6 +25,7 @@ import { CartridgeModel } from '../modules/cartridges/cartridge.model.js';
 import { CartridgeSerialCounterModel } from '../modules/cartridges/cartridge-serial-counter.model.js';
 import { CartridgeMovementModel } from '../modules/cartridges/cartridge-movement.model.js';
 import { GatePassModel } from '../modules/cartridges/gate-pass.model.js';
+import { GatePassCounterModel } from '../modules/cartridges/gate-pass-counter.model.js';
 import { InventoryGatePassModel } from '../modules/inventory-gate-passes/inventory-gate-pass.model.js';
 import { InventoryGatePassCounterModel } from '../modules/inventory-gate-passes/inventory-gate-pass-counter.model.js';
 
@@ -55,6 +56,7 @@ const indexedModels: Array<{
   CartridgeSerialCounterModel,
   CartridgeMovementModel,
   GatePassModel,
+  GatePassCounterModel,
   InventoryGatePassModel,
   InventoryGatePassCounterModel,
 ];

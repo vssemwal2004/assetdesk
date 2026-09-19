@@ -8,7 +8,7 @@ import {
 } from './cartridges.js';
 
 describe('cartridge contracts', () => {
-  it('accepts server-generated serial numbers', () => {
+  it('requires admin-entered serial numbers', () => {
     expect(
       CreateCartridgesRequestSchema.safeParse({
         model: 'HP 12A',
@@ -17,7 +17,7 @@ describe('cartridge contracts', () => {
         department: 'Computer Centre',
         quantity: 2,
       }).success,
-    ).toBe(true);
+    ).toBe(false);
   });
   it('accepts matching quantity and unique serial numbers', () => {
     expect(

@@ -30,14 +30,20 @@ export function AddCartridgesPage() {
     compatiblePrinter: '',
     vendorName: '',
     quantity: 1,
+    serials: '',
     status: 'FILLED_AVAILABLE',
   });
   const [result, setResult] = useState(0);
   const mutation = useMutation({
     mutationFn: () => {
+      const serialNumbers = form.serials
+        .split(/\r?\n|,/)
+        .map((value) => value.trim())
+        .filter(Boolean);
       return addCartridges({
         ...form,
         quantity: Number(form.quantity),
+        serialNumbers,
         status: form.status as 'FILLED_AVAILABLE' | 'EMPTY',
         colour: form.colour as 'BLACK',
       });
@@ -50,6 +56,10 @@ export function AddCartridgesPage() {
       ]);
     },
   });
+  const serialCount = form.serials
+    .split(/\r?\n|,/)
+    .map((value) => value.trim())
+    .filter(Boolean).length;
   if (result)
     return (
       <div className="space-y-6">
@@ -66,7 +76,7 @@ export function AddCartridgesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Add Cartridges"
-        description="Enter the common details once. Serial numbers are generated automatically."
+        description="Enter common details once, then add the unique serial number printed on each cartridge."
       />
       {dashboardQuery.data ? (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -147,18 +157,33 @@ export function AddCartridgesPage() {
               onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
             />
           </div>
-          <div className="rounded-[12px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-4">
-            <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
-              Automatic serial number format: {new Date().getFullYear()}-0001
-            </p>
-            <p className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">
-              The last four digits increase in order. The sequence automatically starts again at
-              0001 when the year changes.
-            </p>
-          </div>
+          <label className="block space-y-1.5">
+            <span className="field-label">Cartridge serial numbers</span>
+            <textarea
+              className="field-input min-h-40"
+              placeholder="Enter one serial number per line"
+              value={form.serials}
+              onChange={(event) => setForm({ ...form, serials: event.target.value })}
+            />
+            <span
+              className={
+                serialCount === form.quantity
+                  ? 'text-xs font-bold text-green-700'
+                  : 'text-xs font-bold text-[var(--color-text-muted)]'
+              }
+            >
+              {serialCount} of {form.quantity} serial numbers entered
+            </span>
+          </label>
           <div className="flex justify-end">
             <Button
-              disabled={!form.model || !form.location || !form.department || detailsQuery.isPending}
+              disabled={
+                serialCount !== form.quantity ||
+                !form.model ||
+                !form.location ||
+                !form.department ||
+                detailsQuery.isPending
+              }
               loading={mutation.isPending}
               type="submit"
             >

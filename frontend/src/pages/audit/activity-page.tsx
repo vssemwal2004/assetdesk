@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Activity, CalendarDays, CheckCircle2, Clock3, Filter, UsersRound } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useAuth } from '../../auth/auth-context';
 import { AppCard, Button, ErrorState, LoadingPanel, PageHeader } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
 import { getAuditEvents } from '../../lib/audit-api';
@@ -12,10 +13,15 @@ const startDate = indiaDate(new Date(Date.now() - 13 * 86400000));
 const formatDate = (value: string) => new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(value));
 
 export function ActivityPage() {
+  const { user } = useAuth();
   const [employee, setEmployee] = useState('');
   const [result, setResult] = useState('');
   const [hour, setHour] = useState<number | null>(null);
-  const workersQuery = useQuery({ queryKey: ['activity-workers'], queryFn: ({ signal }) => getWorkers({ page: 1, pageSize: 100, status: 'ACTIVE' }, signal) });
+  const workersQuery = useQuery({
+    queryKey: ['activity-workers'],
+    queryFn: ({ signal }) => getWorkers({ page: 1, pageSize: 100, status: 'ACTIVE' }, signal),
+    enabled: user?.role === 'ADMIN',
+  });
   const query = useQuery({
     queryKey: ['activity', employee, result],
     queryFn: async ({ signal }) => {
@@ -34,7 +40,11 @@ export function ActivityPage() {
   const counts = useMemo(() => Array.from({ length: 24 }, (_, h) => events.filter(e => hourOf(e.timestampUtc) === h).length), [events]);
   const selected = hour === null ? events : events.filter(e => hourOf(e.timestampUtc) === hour);
   const max = Math.max(1, ...counts);
-  const workers = workersQuery.data?.data ?? [];
+  const workers =
+    workersQuery.data?.data ??
+    [...new Set(events.flatMap((event) => (event.actorWorkerId ? [event.actorWorkerId] : [])))].map(
+      (workerId) => ({ workerId, name: workerId }),
+    );
   const filtered = Boolean(employee || result || hour !== null);
   const clear = () => { setEmployee(''); setResult(''); setHour(null); };
 

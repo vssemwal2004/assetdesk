@@ -60,20 +60,17 @@ export const CreateCartridgesRequestSchema = z
     vendorName: z.string().trim().max(120).optional(),
     status: z.enum(['FILLED_AVAILABLE', 'EMPTY']).default('FILLED_AVAILABLE'),
     quantity: z.number().int().min(1).max(500),
-    // Kept optional for compatibility with older clients. New cartridge serials are
-    // allocated by the server as YYYY-0001 so concurrent users cannot collide.
-    serialNumbers: z.array(Text).min(1).max(500).optional(),
+    serialNumbers: z.array(Text).min(1).max(500),
     notes: z.string().trim().max(500).optional(),
   })
   .superRefine((value, context) => {
-    if (value.serialNumbers && value.quantity !== value.serialNumbers.length)
+    if (value.quantity !== value.serialNumbers.length)
       context.addIssue({
         code: 'custom',
         path: ['serialNumbers'],
         message: 'Quantity must match the number of serial numbers.',
       });
     if (
-      value.serialNumbers &&
       new Set(value.serialNumbers.map((item) => item.toUpperCase())).size !==
         value.serialNumbers.length
     )

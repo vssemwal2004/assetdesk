@@ -6,7 +6,7 @@ import { CartridgeModel, type CartridgeDocument } from './cartridge.model.js';
 import { CartridgeMovementModel } from './cartridge-movement.model.js';
 import { GatePassModel } from './gate-pass.model.js';
 import { AssetDetailModel } from '../inventory/asset-detail.model.js';
-import { CartridgeSerialCounterModel } from './cartridge-serial-counter.model.js';
+import { GatePassCounterModel } from './gate-pass-counter.model.js';
 
 export interface CartridgeActor {
   userId: string;
@@ -20,7 +20,7 @@ function normalizeDetail(value: string) {
   return value.trim().replace(/\s+/g, '').toLocaleUpperCase('en-US');
 }
 
-export function cartridgeSerialYear(date = new Date()): number {
+export function gatePassNumberYear(date = new Date()): number {
   return Number(
     new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Kolkata',
@@ -29,40 +29,25 @@ export function cartridgeSerialYear(date = new Date()): number {
   );
 }
 
-export function formatCartridgeSerial(year: number, sequence: number): string {
-  return `${year}-${String(sequence).padStart(4, '0')}`;
+export function formatGatePassNumber(year: number, sequence: number): string {
+  return `GEU-${year}-${String(sequence).padStart(3, '0')}`;
 }
 
-async function allocateCartridgeSerials(quantity: number): Promise<string[]> {
-  const year = cartridgeSerialYear();
-  const prefix = `${year}-`;
-  const latest = await CartridgeModel.findOne({
-    serialNumberNormalized: new RegExp(`^${year}-\\d{4}$`),
-  })
-    .sort({ serialNumberNormalized: -1 })
-    .select('serialNumberNormalized')
-    .lean();
-  const highestExisting = latest ? Number(latest.serialNumberNormalized.slice(prefix.length)) : 0;
-
-  await CartridgeSerialCounterModel.updateOne(
+async function allocateGatePassNumber(): Promise<string> {
+  const year = gatePassNumberYear();
+  const counter = await GatePassCounterModel.findOneAndUpdate(
     { _id: String(year) },
-    { $max: { sequence: highestExisting } },
-    { upsert: true },
-  );
-  const counter = await CartridgeSerialCounterModel.findOneAndUpdate(
-    { _id: String(year) },
-    { $inc: { sequence: quantity } },
-    { new: true },
+    { $inc: { sequence: 1 } },
+    { new: true, upsert: true },
   ).orFail();
-  if (counter.sequence > 9999) {
+  if (counter.sequence > 999) {
     throw new AppError(
       409,
-      'CARTRIDGE_SERIAL_LIMIT_REACHED',
-      `${year} cartridge serial numbers have reached the 4-digit limit.`,
+      'GATE_PASS_NUMBER_LIMIT_REACHED',
+      `${year} gate-pass numbers have reached the 3-digit limit.`,
     );
   }
-  const first = counter.sequence - quantity + 1;
-  return Array.from({ length: quantity }, (_, index) => formatCartridgeSerial(year, first + index));
+  return formatGatePassNumber(year, counter.sequence);
 }
 function mapCartridge(item: CartridgeDocument) {
   return {
@@ -126,9 +111,18 @@ export async function createCartridges(input: CreateCartridgesRequest, actor: Ca
       'CARTRIDGE_DETAIL_NOT_SAVED',
       'Choose a Location and Department saved by the Admin.',
     );
-  const serialNumbers = await allocateCartridgeSerials(input.quantity);
+  const normalized = input.serialNumbers.map(normalize);
+  const duplicates = await CartridgeModel.find({ serialNumberNormalized: { $in: normalized } })
+    .select('serialNumber')
+    .lean();
+  if (duplicates.length)
+    throw new AppError(
+      409,
+      'CARTRIDGE_SERIAL_EXISTS',
+      `Already registered: ${duplicates.map((x) => x.serialNumber).join(', ')}`,
+    );
   const docs = await CartridgeModel.insertMany(
-    serialNumbers.map((serialNumber) => ({
+    input.serialNumbers.map((serialNumber) => ({
       serialNumber: serialNumber.trim(),
       serialNumberNormalized: normalize(serialNumber),
       cartridgeModel: input.model,
@@ -470,7 +464,7 @@ export async function createGatePass(
       'Only empty, defective, or refill-failed cartridges can be added.',
     );
   const name = await actorName(actor);
-  const gatePassNumber = `GP-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
+  const gatePassNumber = await allocateGatePassNumber();
   const gateOutAt = new Date();
   const pass = await GatePassModel.create({
     gatePassNumber,
