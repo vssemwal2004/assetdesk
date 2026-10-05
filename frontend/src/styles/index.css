@@ -1799,12 +1799,15 @@ dialog::backdrop {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm 8mm 8mm 38mm;
+    /* Reserve a full-height 3 cm filing strip on every printed/PDF page. */
+    margin: 8mm 8mm 8mm 30mm;
   }
 
   html,
   body {
     background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .app-sidebar,
