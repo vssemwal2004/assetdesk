@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import type { Material } from '@assetdesk/contracts';
 
 import {
+  MAX_ISSUE_ASSETS,
+  MAX_ISSUE_LINES,
   firstReceiverIssue,
   firstIssueApiMessage,
   firstStockIssue,
   isIssueableInventoryMaterial,
   matchesStoreSource,
+  summarizeCart,
 } from './create-issue-page';
 
 const storeNames = ['Param Centre Store', 'Aryabhatt Store / Aryabhatt Centre'];
@@ -207,6 +210,78 @@ describe('IT Asset issue selection', () => {
     );
     expect(firstIssueApiMessage({ 'lines.0.assetTags': 'Too small' })).toBe(
       'Choose inventory material and serial numbers for item 1.',
+    );
+    expect(firstIssueApiMessage({ 'lines.3.quantity': 'Too big' })).toBe(
+      'Choose inventory material and serial numbers for item 4.',
+    );
+  });
+});
+
+describe('Issue cart (add to quantity)', () => {
+  const consumable: Material = {
+    ...assetMaterial,
+    id: 'consumable-id',
+    materialCode: 'GEU-MAT-000002',
+    name: 'HDMI Cable',
+    category: 'Cables',
+    trackingMode: 'QUANTITY',
+    returnPolicy: 'CONSUMABLE',
+    unitLabel: 'pcs',
+    totalQuantity: 20,
+    availableQuantity: 20,
+  };
+  const materials = new Map([
+    [assetMaterial.materialCode, assetMaterial],
+    [consumable.materialCode, consumable],
+  ]);
+  const assetLine = {
+    id: 'line-asset',
+    materialCode: assetMaterial.materialCode,
+    quantity: '2',
+    assetTags: ['GEU-AST-000001', 'GEU-AST-000002'],
+  };
+  const consumableLine = {
+    id: 'line-consumable',
+    materialCode: consumable.materialCode,
+    quantity: '5',
+    assetTags: [],
+  };
+
+  it('accepts IT Assets and IT Consumables together in one issue', () => {
+    expect(firstStockIssue([assetLine, consumableLine], materials)).toBeNull();
+    expect(summarizeCart([assetLine, consumableLine], materials)).toEqual({
+      lines: 2,
+      units: 7,
+      assets: 1,
+      consumables: 1,
+    });
+  });
+
+  it('requires at least one material in the cart', () => {
+    expect(firstStockIssue([], materials)).toBe('Select at least one material to issue.');
+  });
+
+  it('rejects consumable quantities above available stock', () => {
+    expect(firstStockIssue([{ ...consumableLine, quantity: '21' }], materials)).toBe(
+      'HDMI Cable has only 20 pcs available. Reduce item 1.',
+    );
+  });
+
+  it('enforces the per-issue material and serial-number limits', () => {
+    const tooManyLines = Array.from({ length: MAX_ISSUE_LINES + 1 }, (_, index) => ({
+      ...consumableLine,
+      id: `line-${index}`,
+    }));
+    expect(firstStockIssue(tooManyLines, materials)).toBe(
+      `One issue can contain up to ${MAX_ISSUE_LINES} materials. Remove 1.`,
+    );
+    const tooManyAssets = {
+      ...assetLine,
+      quantity: String(MAX_ISSUE_ASSETS + 1),
+      assetTags: Array.from({ length: MAX_ISSUE_ASSETS + 1 }, (_, index) => `GEU-AST-${index}`),
+    };
+    expect(firstStockIssue([tooManyAssets], materials)).toBe(
+      `One issue can contain up to ${MAX_ISSUE_ASSETS} IT Asset serial numbers. Split this issue into two.`,
     );
   });
 });

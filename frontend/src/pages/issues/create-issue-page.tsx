@@ -1,16 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
-  ChevronDown,
+  ArrowRight,
   ClipboardCheck,
+  ListChecks,
   MapPin,
+  Minus,
   PackagePlus,
+  PencilLine,
   Plus,
   Printer,
   Search,
+  ShoppingBasket,
   Trash2,
+  WandSparkles,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 
 import {
@@ -24,17 +29,17 @@ import {
   type TrackingMode,
 } from '@assetdesk/contracts';
 
-import { CatalogBadge } from '../../components/catalog-ui';
 import {
   AppCard,
   Button,
+  EmptyState,
   ErrorSummary,
   LoadingPanel,
   PageHeader,
   SuccessMark,
   cn,
 } from '../../components/ui';
-import { StickyWorkflowActions } from '../../components/workflow-ui';
+import { StickyWorkflowActions, WorkflowSteps } from '../../components/workflow-ui';
 import { isApiError } from '../../lib/api-client';
 import { calculatePresetReturnInIst, formatIstDateTime } from '../../lib/date-time';
 import { createPendingSubmission } from '../../lib/idempotent-submission';
@@ -43,6 +48,8 @@ import { createIssue } from '../../lib/issues-api';
 
 type DuePreset = NonNullable<CreateIssueRequest['due']>['preset'];
 type StoreFilter = string;
+type TypeFilter = TrackingMode | '';
+type IssueStep = 1 | 2 | 3;
 
 interface LineDraft {
   id: string;
@@ -51,9 +58,15 @@ interface LineDraft {
   assetTags: string[];
 }
 
-const blankLine = (): LineDraft => ({
+// Mirrors CreateCatalogIssueRequestSchema limits so the cart fails early with a clear message.
+export const MAX_ISSUE_LINES = 50;
+export const MAX_ISSUE_ASSETS = 100;
+const PICK_LIST_PAGE_SIZE = 60;
+const issueSteps = ['Select materials', 'Add to quantity', 'Issue details'] as const;
+
+const cartLine = (materialCode: string): LineDraft => ({
   id: crypto.randomUUID(),
-  materialCode: '',
+  materialCode,
   quantity: '1',
   assetTags: [],
 });
@@ -68,9 +81,24 @@ const receiverTypes: ReceiverType[] = [
   'GEHU',
 ];
 
+const typeTabs: Array<{ value: TypeFilter; label: string }> = [
+  { value: '', label: 'All materials' },
+  { value: 'SERIALIZED', label: 'IT Assets' },
+  { value: 'QUANTITY', label: 'IT Consumables' },
+];
+
 export function CreateIssuePage() {
   const queryClient = useQueryClient();
-  const [materialType, setMaterialType] = useState<TrackingMode>('SERIALIZED');
+  const [step, setStep] = useState<IssueStep>(1);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [storeFilter, setStoreFilter] = useState<StoreFilter>('');
+  const [materialSearch, setMaterialSearch] = useState('');
+  const deferredSearch = useDeferredValue(materialSearch.trim());
+  const [visibleCount, setVisibleCount] = useState(PICK_LIST_PAGE_SIZE);
+  const [lines, setLines] = useState<LineDraft[]>([]);
+  // Snapshot of each selected material so cart rows survive filter and search changes.
+  const [cartMaterials, setCartMaterials] = useState<Record<string, Material>>({});
   const [assignmentType, setAssignmentType] = useState<AssignmentType>('LONG_TERM');
   const [issuedTo, setIssuedTo] = useState({
     fullName: '',
@@ -80,11 +108,8 @@ export function CreateIssuePage() {
     contact: '',
     email: '',
   });
-  const [materialSearch, setMaterialSearch] = useState('');
-  const [storeFilter, setStoreFilter] = useState<StoreFilter>('');
   const [issueBlock, setIssueBlock] = useState('');
   const [issueLocation, setIssueLocation] = useState('');
-  const [lines, setLines] = useState<LineDraft[]>([blankLine()]);
   const [duePreset, setDuePreset] = useState<DuePreset>('ONE_WEEK');
   const [customReturnAt, setCustomReturnAt] = useState('');
   const [purpose, setPurpose] = useState('');
@@ -103,16 +128,17 @@ export function CreateIssuePage() {
   const [created, setCreated] = useState<Issue | null>(null);
 
   const inventoryQuery = useQuery({
-    queryKey: ['inventory', { materialSearch, materialType, storeFilter, issueable: true }],
+    queryKey: [
+      'inventory',
+      { materialSearch: deferredSearch, issueable: true, scope: 'issue-cart' },
+    ],
     queryFn: ({ signal }) =>
       getInventory(
         {
           page: 1,
           pageSize: 500,
           issueable: true,
-          trackingMode: materialType,
-          ...(storeFilter ? { store: storeFilter } : {}),
-          ...(materialSearch ? { search: materialSearch } : {}),
+          ...(deferredSearch ? { search: deferredSearch } : {}),
         },
         signal,
       ),
@@ -146,69 +172,81 @@ export function CreateIssuePage() {
     () => (blockQuery.data ?? []).map((block) => block.name),
     [blockQuery.data],
   );
-  const allIssueableMaterials = useMemo(
+  const issueableMaterials = useMemo(
     () =>
-      (inventoryQuery.data?.data ?? []).filter((material) =>
-        isIssueableInventoryMaterial(material, '', storeNames),
-      ),
+      (inventoryQuery.data?.data ?? [])
+        .filter((material) => isIssueableInventoryMaterial(material, '', storeNames))
+        .sort(compareIssueableMaterials),
     [inventoryQuery.data?.data, storeNames],
-  );
-  const storeAvailability = useMemo(
-    () =>
-      new Map(
-        storeNames.map((store) => [
-          store,
-          allIssueableMaterials
-            .filter((material) => matchesStoreSource(store, material))
-            .reduce((total, material) => total + material.availableQuantity, 0),
-        ]),
-      ),
-    [allIssueableMaterials, storeNames],
   );
   const storeFilterOptions = useMemo(
     () =>
       storeNames.map((store) => ({
         value: store,
         label: store,
-        available: storeAvailability.get(store) ?? 0,
+        count: issueableMaterials.filter((material) => matchesStoreSource(store, material)).length,
       })),
-    [storeAvailability, storeNames],
+    [issueableMaterials, storeNames],
   );
-  useEffect(() => {
-    if (storeFilter || inventoryQuery.isPending || storeQuery.isPending) return;
-    const stockedStore = storeFilterOptions.find((store) => store.available > 0);
-    setStoreFilter(stockedStore?.value ?? storeFilterOptions[0]?.value ?? '');
-  }, [inventoryQuery.isPending, storeFilter, storeFilterOptions, storeQuery.isPending]);
-  const selectedStoreLabel =
-    storeFilterOptions.find((store) => store.value === storeFilter)?.label ?? 'Choose store';
-
-  const materials = useMemo(
+  const storeScopedMaterials = useMemo(
     () =>
-      (inventoryQuery.data?.data ?? [])
-        .filter((material) => isIssueableInventoryMaterial(material, storeFilter, storeNames))
-        .sort(compareIssueableMaterials),
-    [inventoryQuery.data?.data, storeFilter, storeNames],
-  );
-  const inventoryTotals = useMemo(
-    () =>
-      materials.reduce(
-        (total, material) => ({
-          variants: total.variants + 1,
-          available: total.available + material.availableQuantity,
-        }),
-        { variants: 0, available: 0 },
+      issueableMaterials.filter(
+        (material) => !storeFilter || matchesStoreSource(storeFilter, material),
       ),
-    [materials],
+    [issueableMaterials, storeFilter],
   );
-  const materialByCode = useMemo(
-    () => new Map(materials.map((material) => [material.materialCode, material])),
-    [materials],
+  const typeCounts = useMemo(
+    () => ({
+      '': storeScopedMaterials.length,
+      SERIALIZED: storeScopedMaterials.filter((material) => material.trackingMode === 'SERIALIZED')
+        .length,
+      QUANTITY: storeScopedMaterials.filter((material) => material.trackingMode === 'QUANTITY')
+        .length,
+    }),
+    [storeScopedMaterials],
   );
+  const categoryOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          storeScopedMaterials
+            .filter((material) => !typeFilter || material.trackingMode === typeFilter)
+            .map((material) => material.category),
+        ),
+      ).sort((first, second) => first.localeCompare(second)),
+    [storeScopedMaterials, typeFilter],
+  );
+  const pickableMaterials = useMemo(
+    () =>
+      storeScopedMaterials.filter(
+        (material) =>
+          (!typeFilter || material.trackingMode === typeFilter) &&
+          (!categoryFilter || material.category === categoryFilter),
+      ),
+    [categoryFilter, storeScopedMaterials, typeFilter],
+  );
+  const selectedCodes = useMemo(() => new Set(lines.map((line) => line.materialCode)), [lines]);
+  const materialByCode = useMemo(() => {
+    const fresh = new Map(
+      (inventoryQuery.data?.data ?? []).map((material) => [material.materialCode, material]),
+    );
+    const entries: Array<[string, Material]> = [];
+    for (const line of lines) {
+      const material = fresh.get(line.materialCode) ?? cartMaterials[line.materialCode];
+      if (material) entries.push([line.materialCode, material]);
+    }
+    return new Map(entries);
+  }, [cartMaterials, inventoryQuery.data?.data, lines]);
+  const cartTotals = useMemo(() => summarizeCart(lines, materialByCode), [lines, materialByCode]);
+  const inventoryTruncated =
+    (inventoryQuery.data?.meta.total ?? 0) > (inventoryQuery.data?.data.length ?? 0);
+
   const mutation = useMutation({
     mutationFn: ({ input, key }: { input: CreateIssueRequest; key: string }) =>
       createIssue(input, key),
     onSuccess: async (response) => {
       setCreated(response.data.issue);
+      window.scrollTo({ top: 0 });
       const materialCodes = new Set(
         response.data.issue.lines.map((line) => line.material.materialCode),
       );
@@ -222,13 +260,59 @@ export function CreateIssuePage() {
         ),
       ]);
     },
-    onError: (error) =>
+    onError: (error) => {
       setMessage(
         isApiError(error)
           ? (firstIssueApiMessage(error.fields) ?? error.message)
           : 'The assignment could not be created.',
-      ),
+      );
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Stock may have changed while the cart was open; refresh availability shown in the cart.
+      void queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      void queryClient.invalidateQueries({ queryKey: ['asset-units'] });
+    },
   });
+
+  function toggleMaterial(material: Material) {
+    setMessage(null);
+    if (selectedCodes.has(material.materialCode)) {
+      removeMaterial(material.materialCode);
+      return;
+    }
+    if (lines.length >= MAX_ISSUE_LINES) {
+      setMessage(`One issue can contain up to ${MAX_ISSUE_LINES} materials.`);
+      return;
+    }
+    setLines((current) => [...current, cartLine(material.materialCode)]);
+    setCartMaterials((current) => ({ ...current, [material.materialCode]: material }));
+  }
+
+  function removeMaterial(materialCode: string) {
+    setLines((current) => current.filter((line) => line.materialCode !== materialCode));
+  }
+
+  function updateLine(next: LineDraft) {
+    setLines((current) => current.map((line) => (line.id === next.id ? next : line)));
+  }
+
+  function resetPickList() {
+    setVisibleCount(PICK_LIST_PAGE_SIZE);
+  }
+
+  function goToStep(next: IssueStep) {
+    setMessage(null);
+    if (next > 1 && lines.length === 0) {
+      setMessage('Select at least one material to continue.');
+      setStep(1);
+    } else if (next === 3) {
+      const stockIssue = firstStockIssue(lines, materialByCode);
+      if (stockIssue) setMessage(stockIssue);
+      else setStep(3);
+    } else {
+      setStep(next);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   function expectedReturn(): Date | null {
     if (assignmentType === 'LONG_TERM') return null;
@@ -240,6 +324,12 @@ export function CreateIssuePage() {
 
   function buildInput(): CreateIssueRequest | null {
     const expected = expectedReturn();
+    const stockIssue = firstStockIssue(lines, materialByCode);
+    if (stockIssue) {
+      setMessage(stockIssue);
+      setStep(2);
+      return null;
+    }
     const receiverIssue = firstReceiverIssue(issuedTo);
     if (receiverIssue) {
       setMessage(receiverIssue);
@@ -247,11 +337,6 @@ export function CreateIssuePage() {
     }
     if (!issueLocation.trim()) {
       setMessage('Choose the issue location.');
-      return null;
-    }
-    const stockIssue = firstStockIssue(lines, materialByCode);
-    if (stockIssue) {
-      setMessage(stockIssue);
       return null;
     }
     const effectiveAssignmentType: AssignmentType = assignmentType;
@@ -331,21 +416,24 @@ export function CreateIssuePage() {
   function submit() {
     setMessage(null);
     const input = buildInput();
-    if (!input) return;
+    if (!input) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     const submission = createPendingSubmission(input);
     mutation.mutate({ input: submission.input, key: submission.key });
   }
 
   if (created) {
     return (
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto max-w-3xl">
         <AppCard>
           <SuccessMark label="Assignment saved" />
           <h1 className="mt-4 text-2xl font-extrabold text-[var(--color-primary-strong)]">
-            Asset assignment created
+            Material issued on one receipt
           </h1>
           <dl className="mt-5 divide-y divide-[var(--color-border)] rounded-[12px] border border-[var(--color-border)] px-4">
-            <Summary label="Assignment ID" value={created.issueId} />
+            <Summary label="Receipt / Issue No." value={created.issueId} />
             <Summary label="Issued To" value={created.receiver.fullName} />
             <Summary
               label="Type"
@@ -359,19 +447,43 @@ export function CreateIssuePage() {
                   : 'No fixed return date'
               }
             />
+            <Summary
+              label="Materials"
+              value={`${created.lines.length} material${created.lines.length === 1 ? '' : 's'} · ${created.totalIssuedQuantity} unit${created.totalIssuedQuantity === 1 ? '' : 's'}`}
+            />
           </dl>
+          <ul className="mt-4 space-y-2">
+            {created.lines.map((line) => (
+              <li
+                className="flex items-center justify-between gap-3 rounded-[10px] bg-[var(--color-surface-tint)] px-3 py-2 text-sm"
+                key={line.lineId}
+              >
+                <span className="min-w-0">
+                  <strong className="block truncate text-[var(--color-text-strong)]">
+                    {line.material.name}
+                  </strong>
+                  <span className="text-xs font-bold text-[var(--color-text-muted)]">
+                    {line.material.category} · {line.material.materialCode}
+                  </span>
+                </span>
+                <span className="shrink-0 font-extrabold text-[var(--color-primary-strong)]">
+                  {line.issuedQuantity} {unitName(line.material, line.issuedQuantity)}
+                </span>
+              </li>
+            ))}
+          </ul>
           <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-            <Link className="button-primary" to={`/issues/${created.issueId}`}>
+            <Link className="button-primary" to={`/bills/${created.issueId}`}>
+              <Printer aria-hidden="true" size={18} />
+              Print common receipt
+            </Link>
+            <Link className="button-secondary" to={`/issues/${created.issueId}`}>
               <ClipboardCheck aria-hidden="true" size={18} />
               View Assignment
             </Link>
-            <Link className="button-secondary" to={`/bills/${created.issueId}`}>
-              <Printer aria-hidden="true" size={18} />
-              Generate receipt
-            </Link>
             <Button onClick={() => window.location.reload()} variant="secondary">
               <PackagePlus aria-hidden="true" size={18} />
-              New assignment
+              New issue
             </Button>
           </div>
         </AppCard>
@@ -388,564 +500,709 @@ export function CreateIssuePage() {
             Back
           </Link>
         }
-        description="Create assignments only from tracked inventory."
-        title="Create Asset Assignment"
+        description="Select assets and consumables from any category or store, set quantities, and issue them together on one common receipt."
+        title="Issue Material"
       />
+      <AppCard className="issue-panel">
+        <WorkflowSteps current={step} labels={issueSteps} />
+      </AppCard>
       {message ? <ErrorSummary message={message} /> : null}
 
-      <AppCard className="issue-panel issue-control-panel">
-        <div>
-          <p className="text-xs font-extrabold uppercase text-[var(--color-primary)]">
-            Source inventory
-          </p>
-          <h2 className="mt-1 text-lg font-extrabold text-[var(--color-text-strong)]">
-            Choose store stock for this assignment
-          </h2>
-        </div>
-        <div className="grid gap-3 md:grid-cols-[220px_220px_minmax(180px,1fr)]">
-          <label className="space-y-1.5">
-            <span className="field-label">Material type</span>
-            <select
-              className="field-input field-input-compact"
-              onChange={(event) => {
-                setMaterialType(event.target.value as TrackingMode);
-                setStoreFilter('');
-                setLines([blankLine()]);
-                setMessage(null);
-              }}
-              value={materialType}
-            >
-              <option value="SERIALIZED">IT Assets</option>
-              <option value="QUANTITY">IT Consumables</option>
-            </select>
-          </label>
-          <label className="space-y-1.5">
-            <span className="field-label">Store</span>
-            <select
-              className="field-input field-input-compact"
-              onChange={(event) => {
-                setStoreFilter(event.target.value as StoreFilter);
-                setLines([blankLine()]);
-                setMessage(null);
-              }}
-              value={storeFilter}
-            >
-              {!storeFilter ? <option value="">Choose store</option> : null}
-              {storeFilterOptions.map((store) => (
-                <option key={store.value} value={store.value}>
-                  {store.label} ({store.available} available)
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="issue-stock-summary">
-            <span>{inventoryTotals.variants} variants</span>
-            <strong>{inventoryTotals.available} available</strong>
-          </div>
-        </div>
-      </AppCard>
-
-      <AppCard className="issue-panel">
-        <SectionTitle number="1" title="Issued To" />
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Field
-            label="Name / Department"
-            onChange={(value) => setIssuedTo((current) => ({ ...current, fullName: value }))}
-            value={issuedTo.fullName}
-          />
-          <label className="space-y-1.5">
-            <span className="field-label">Type</span>
-            <select
-              className="field-input field-input-compact"
-              onChange={(event) =>
-                setIssuedTo((current) => ({ ...current, type: event.target.value as ReceiverType }))
-              }
-              value={issuedTo.type}
-            >
-              {receiverTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type.toLowerCase().replaceAll('_', ' ')}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Field
-            label="University ID"
-            onChange={(value) => setIssuedTo((current) => ({ ...current, universityId: value }))}
-            value={issuedTo.universityId}
-          />
-          <label className="space-y-1.5">
-            <span className="field-label">Department</span>
-            <select
-              className="field-input field-input-compact"
-              onChange={(event) =>
-                setIssuedTo((current) => ({ ...current, department: event.target.value }))
-              }
-              value={issuedTo.department}
-            >
-              <option value="">Choose department</option>
-              {departments.map((department) => (
-                <option key={department.id} value={department.name}>
-                  {department.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Field
-            label="Contact (optional)"
-            onChange={(value) => setIssuedTo((current) => ({ ...current, contact: value }))}
-            type="tel"
-            value={issuedTo.contact}
-          />
-          <Field
-            label="Email (optional)"
-            onChange={(value) => setIssuedTo((current) => ({ ...current, email: value }))}
-            type="email"
-            value={issuedTo.email}
-          />
-        </div>
-      </AppCard>
-
-      <AppCard className="issue-panel">
-        <SectionTitle number="2" title="Issue Location" />
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="space-y-1.5">
-            <span className="field-label">Block (optional)</span>
-            <select
-              className="field-input field-input-compact"
-              onChange={(event) => {
-                setIssueBlock(event.target.value);
-                setMessage(null);
-              }}
-              value={issueBlock}
-            >
-              <option value="">Choose block</option>
-              {blockNames.map((block) => (
-                <option key={block} value={block}>
-                  {block}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1.5">
-            <span className="field-label">Location</span>
-            <select
-              className="field-input field-input-compact"
-              onChange={(event) => {
-                setIssueLocation(event.target.value);
-                setMessage(null);
-              }}
-              value={issueLocation}
-            >
-              <option value="">Choose location</option>
-              {locationNames.map((location) => (
-                <option key={location} value={location}>
-                  {location}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </AppCard>
-
-      <AppCard className="issue-panel">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <SectionTitle
-            number="3"
-            title={materialType === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'}
-          />
-          <Button
-            onClick={() => setLines((current) => [...current, blankLine()])}
-            variant="secondary"
-          >
-            <Plus aria-hidden="true" size={17} />
-            Add item
-          </Button>
-        </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-          <label className="space-y-1.5">
-            <span className="field-label">Search inventory</span>
-            <span className="search-shell">
-              <Search aria-hidden="true" className="search-shell-icon" size={17} />
-              <input
-                className="field-input field-input-compact field-input-search"
-                onChange={(event) => setMaterialSearch(event.target.value)}
-                placeholder="Search model, category, code"
-                value={materialSearch}
+      {step === 1 ? (
+        <>
+          <AppCard className="issue-panel issue-control-panel">
+            <div>
+              <SectionTitle
+                marker={<Search aria-hidden="true" size={16} />}
+                title="Find material"
               />
-            </span>
-          </label>
-          <div className="issue-store-chip">
-            <MapPin aria-hidden="true" size={17} />
-            <span>{selectedStoreLabel}</span>
-          </div>
-        </div>
-        {inventoryQuery.isPending ? <LoadingPanel label="Loading inventory" /> : null}
-        {inventoryQuery.isError ? (
-          <ErrorSummary
-            message={
-              isApiError(inventoryQuery.error)
-                ? inventoryQuery.error.message
-                : 'Issueable inventory could not be loaded.'
-            }
-          />
-        ) : null}
-        {!inventoryQuery.isPending && !inventoryQuery.isError && materials.length === 0 ? (
-          <p className="mt-4 rounded-[10px] bg-[var(--color-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-warning)]">
-            {storeFilter
-              ? `No issueable ${materialType === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'} are available in ${selectedStoreLabel}.`
-              : `No issueable ${materialType === 'SERIALIZED' ? 'IT Assets' : 'IT Consumables'} found.`}
-            {storeNames.length === 0
-              ? ' Add Store records from Asset details before issuing material.'
-              : storeFilterOptions.some((store) => store.available > 0)
-                ? ` Choose ${storeFilterOptions
-                    .filter((store) => store.available > 0)
-                    .map((store) => `${store.label} (${store.available})`)
-                    .join(', ')} instead.`
-                : ' Add available inventory to this material type in a configured store.'}
-          </p>
-        ) : null}
-        <div className="mt-4 space-y-3">
-          {lines.map((line, index) => (
-            <LineEditor
-              index={index}
-              key={line.id}
-              line={line}
-              material={materialByCode.get(line.materialCode) ?? null}
-              materials={materials}
-              onChange={(next) =>
-                setLines((current) =>
-                  current.map((candidate) => (candidate.id === line.id ? next : candidate)),
-                )
-              }
-              onRemove={() =>
-                setLines((current) => current.filter((candidate) => candidate.id !== line.id))
-              }
-              removable={lines.length > 1}
-            />
-          ))}
-        </div>
-      </AppCard>
-
-      <AppCard className="issue-panel">
-        <SectionTitle number="3" title="Issue duration" />
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <label className="space-y-1.5">
-            <span className="field-label">Issue type</span>
-            <select
-              className="field-input field-input-compact"
-              onChange={(event) => {
-                setAssignmentType(event.target.value as AssignmentType);
-                setMessage(null);
-              }}
-              value={assignmentType}
-            >
-              <option value="LONG_TERM">Permanent issue</option>
-              <option value="SHORT_TERM">Return by date</option>
-            </select>
-          </label>
-          {assignmentType === 'LONG_TERM' ? (
-            <div className="rounded-[12px] bg-[var(--color-surface-tint)] p-4">
-              <p className="text-xs font-bold text-[var(--color-text-muted)]">Expected return</p>
-              <p className="mt-1 text-sm font-extrabold text-[var(--color-primary-strong)]">
-                No fixed return date
+              <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                Tick every material this person needs. You can mix IT Assets and IT Consumables from
+                any category or store; your selection is kept while you change filters.
               </p>
             </div>
-          ) : null}
-        </div>
-        {assignmentType === 'SHORT_TERM' ? (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <label className="space-y-1.5">
-              <span className="field-label">Return period</span>
-              <select
-                className="field-input field-input-compact"
-                onChange={(event) => setDuePreset(event.target.value as DuePreset)}
-                value={duePreset}
-              >
-                <option value="ONE_DAY">1 day</option>
-                <option value="ONE_WEEK">1 week</option>
-                <option value="ONE_MONTH">1 month</option>
-                <option value="SIX_MONTHS">6 months</option>
-                <option value="ONE_YEAR">1 year</option>
-                <option value="CUSTOM">Custom</option>
-              </select>
-            </label>
-            {duePreset === 'CUSTOM' ? (
-              <Field
-                label="Expected return (IST)"
-                onChange={setCustomReturnAt}
-                type="datetime-local"
-                value={customReturnAt}
-              />
-            ) : (
-              <div className="rounded-[12px] bg-[var(--color-surface-tint)] p-4">
-                <p className="text-xs font-bold text-[var(--color-text-muted)]">Expected return</p>
-                <p className="mt-1 text-sm font-extrabold text-[var(--color-primary-strong)]">
-                  {formatIstDateTime(expectedReturn())}
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_240px]">
+              <label className="space-y-1.5">
+                <span className="field-label">Search inventory</span>
+                <span className="search-shell">
+                  <Search aria-hidden="true" className="search-shell-icon" size={17} />
+                  <input
+                    className="field-input field-input-compact field-input-search"
+                    onChange={(event) => {
+                      setMaterialSearch(event.target.value);
+                      resetPickList();
+                    }}
+                    placeholder="Search model, category, code"
+                    value={materialSearch}
+                  />
+                </span>
+              </label>
+              <label className="space-y-1.5">
+                <span className="field-label">Category</span>
+                <select
+                  className="field-input field-input-compact"
+                  onChange={(event) => {
+                    setCategoryFilter(event.target.value);
+                    resetPickList();
+                  }}
+                  value={categoryFilter}
+                >
+                  <option value="">All categories</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1.5">
+                <span className="field-label">Store</span>
+                <select
+                  className="field-input field-input-compact"
+                  onChange={(event) => {
+                    setStoreFilter(event.target.value);
+                    setCategoryFilter('');
+                    resetPickList();
+                  }}
+                  value={storeFilter}
+                >
+                  <option value="">All stores</option>
+                  {storeFilterOptions.map((store) => (
+                    <option key={store.value} value={store.value}>
+                      {store.label} ({store.count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div aria-label="Material type" className="issue-type-tabs" role="group">
+              {typeTabs.map((tab) => (
+                <button
+                  aria-pressed={typeFilter === tab.value}
+                  className="issue-type-tab"
+                  key={tab.value || 'ALL'}
+                  onClick={() => {
+                    setTypeFilter(tab.value);
+                    setCategoryFilter('');
+                    resetPickList();
+                  }}
+                  type="button"
+                >
+                  {tab.label}
+                  <em>{typeCounts[tab.value]}</em>
+                </button>
+              ))}
+            </div>
+          </AppCard>
+
+          <AppCard className="issue-panel">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-extrabold text-[var(--color-text-strong)]">
+                {pickableMaterials.length} material{pickableMaterials.length === 1 ? '' : 's'}{' '}
+                available to issue
+              </p>
+              {lines.length ? (
+                <p className="text-xs font-bold text-[var(--color-primary)]">
+                  {lines.length} of {MAX_ISSUE_LINES} selected
                 </p>
-              </div>
-            )}
-          </div>
-        ) : null}
-      </AppCard>
-
-      <AppCard className="issue-panel">
-        <SectionTitle number="4" title="Notes" />
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <TextArea label="Purpose" onChange={setPurpose} value={purpose} />
-          <TextArea label="Notes" onChange={setNotes} value={notes} />
-        </div>
-      </AppCard>
-
-      <AppCard className="issue-panel">
-        <div className="flex items-start gap-3">
-          <input
-            checked={outsideUniversity}
-            className="mt-1 size-5 accent-[var(--color-primary)]"
-            id="outside-university"
-            onChange={(event) => setOutsideUniversity(event.target.checked)}
-            type="checkbox"
-          />
-          <label htmlFor="outside-university">
-            <span className="block font-extrabold text-[var(--color-text-strong)]">
-              Material is leaving the university
-            </span>
-            <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
-              Create a linked Gate Pass automatically when this assignment is submitted.
-            </span>
-          </label>
-        </div>
-        {outsideUniversity ? (
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Field
-              label="Destination"
-              onChange={(value) => setGatePass((current) => ({ ...current, destination: value }))}
-              value={gatePass.destination}
-            />
-            <Field
-              label="Organization / vendor (optional)"
-              onChange={(value) => setGatePass((current) => ({ ...current, organization: value }))}
-              value={gatePass.organization}
-            />
-            <Field
-              label="Person carrying material"
-              onChange={(value) =>
-                setGatePass((current) => ({ ...current, personCarryingMaterial: value }))
-              }
-              value={gatePass.personCarryingMaterial}
-            />
-            <Field
-              label="Contact (optional)"
-              onChange={(value) => setGatePass((current) => ({ ...current, contact: value }))}
-              value={gatePass.contact}
-            />
-            <Field
-              label="Vehicle number (optional)"
-              onChange={(value) => setGatePass((current) => ({ ...current, vehicleNumber: value }))}
-              value={gatePass.vehicleNumber}
-            />
-            <Field
-              label="Expected Gate In (optional)"
-              onChange={(value) =>
-                setGatePass((current) => ({ ...current, expectedGateInAt: value }))
-              }
-              type="datetime-local"
-              value={gatePass.expectedGateInAt}
-            />
-            <div className="sm:col-span-2">
-              <TextArea
-                label="Gate Pass remarks (optional)"
-                onChange={(value) => setGatePass((current) => ({ ...current, remarks: value }))}
-                value={gatePass.remarks}
+              ) : null}
+            </div>
+            {inventoryQuery.isPending ? <LoadingPanel label="Loading inventory" /> : null}
+            {inventoryQuery.isError ? (
+              <ErrorSummary
+                message={
+                  isApiError(inventoryQuery.error)
+                    ? inventoryQuery.error.message
+                    : 'Issueable inventory could not be loaded.'
+                }
               />
+            ) : null}
+            {!inventoryQuery.isPending &&
+            !inventoryQuery.isError &&
+            pickableMaterials.length === 0 ? (
+              <p className="mt-4 rounded-[10px] bg-[var(--color-warning-soft)] px-3 py-2 text-sm font-bold text-[var(--color-warning)]">
+                {storeNames.length === 0
+                  ? 'No stores are configured. Add Store records from Asset details before issuing material.'
+                  : 'No issueable material matches these filters. Clear the search or choose another type, category, or store.'}
+              </p>
+            ) : null}
+            <ul className="issue-pick-list">
+              {pickableMaterials.slice(0, visibleCount).map((material) => {
+                const selected = selectedCodes.has(material.materialCode);
+                return (
+                  <PickRow
+                    disabled={!selected && lines.length >= MAX_ISSUE_LINES}
+                    key={material.materialCode}
+                    material={material}
+                    onToggle={() => toggleMaterial(material)}
+                    selected={selected}
+                  />
+                );
+              })}
+            </ul>
+            {pickableMaterials.length > visibleCount ? (
+              <div className="mt-3 flex justify-center">
+                <Button
+                  onClick={() => setVisibleCount((current) => current + PICK_LIST_PAGE_SIZE)}
+                  variant="secondary"
+                >
+                  Show more ({pickableMaterials.length - visibleCount} remaining)
+                </Button>
+              </div>
+            ) : null}
+            {inventoryTruncated ? (
+              <p className="mt-3 text-xs font-bold text-[var(--color-text-muted)]">
+                Showing the first {inventoryQuery.data?.data.length} inventory records. Use search
+                to find other materials.
+              </p>
+            ) : null}
+          </AppCard>
+
+          <div aria-live="polite" className="issue-cart-bar">
+            <div className="issue-cart-bar-summary">
+              <ShoppingBasket aria-hidden="true" size={22} />
+              <span>
+                <strong>
+                  {lines.length} material{lines.length === 1 ? '' : 's'} selected
+                </strong>
+                <small>
+                  {cartTotals.assets} IT Asset{cartTotals.assets === 1 ? '' : 's'} ·{' '}
+                  {cartTotals.consumables} IT Consumable{cartTotals.consumables === 1 ? '' : 's'}
+                </small>
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {lines.length ? (
+                <Button onClick={() => setLines([])} variant="quiet">
+                  Clear
+                </Button>
+              ) : null}
+              <Button disabled={!lines.length} onClick={() => goToStep(2)}>
+                Add to Quantity
+                <ArrowRight aria-hidden="true" size={18} />
+              </Button>
             </div>
           </div>
-        ) : null}
-      </AppCard>
+        </>
+      ) : null}
 
-      <StickyWorkflowActions>
-        <Link className="button-secondary" to="/issues">
-          Cancel
-        </Link>
-        <Button loading={mutation.isPending} onClick={submit}>
-          {mutation.isPending ? 'Saving...' : 'Create assignment'}
-        </Button>
-      </StickyWorkflowActions>
+      {step === 2 ? (
+        <>
+          <AppCard className="issue-panel">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <SectionTitle
+                marker={<ListChecks aria-hidden="true" size={16} />}
+                title="Add to quantity"
+              />
+              <Button onClick={() => goToStep(1)} variant="secondary">
+                <Plus aria-hidden="true" size={17} />
+                Add more materials
+              </Button>
+            </div>
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+              Set how many of each material to issue. For IT Assets, also pick the serial numbers
+              being handed over.
+            </p>
+            <CartTotals totals={cartTotals} />
+            {lines.length === 0 ? (
+              <div className="mt-4">
+                <EmptyState
+                  action={<Button onClick={() => goToStep(1)}>Select materials</Button>}
+                  message="All materials were removed. Go back and select what you want to issue."
+                  title="No materials selected"
+                />
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {lines.map((line, index) => (
+                  <CartLineEditor
+                    index={index}
+                    key={line.id}
+                    line={line}
+                    material={materialByCode.get(line.materialCode) ?? null}
+                    onChange={updateLine}
+                    onRemove={() => removeMaterial(line.materialCode)}
+                  />
+                ))}
+              </div>
+            )}
+          </AppCard>
+          <StickyWorkflowActions>
+            <Button onClick={() => goToStep(1)} variant="secondary">
+              <ArrowLeft aria-hidden="true" size={18} />
+              Back to selection
+            </Button>
+            <Button disabled={!lines.length} onClick={() => goToStep(3)}>
+              Continue to issue details
+              <ArrowRight aria-hidden="true" size={18} />
+            </Button>
+          </StickyWorkflowActions>
+        </>
+      ) : null}
+
+      {step === 3 ? (
+        <>
+          <AppCard className="issue-panel">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <SectionTitle
+                marker={<ShoppingBasket aria-hidden="true" size={16} />}
+                title="Materials in this issue"
+              />
+              <Button onClick={() => goToStep(2)} variant="quiet">
+                <PencilLine aria-hidden="true" size={17} />
+                Edit quantities
+              </Button>
+            </div>
+            <CartSummaryTable lines={lines} materialByCode={materialByCode} />
+          </AppCard>
+
+          <AppCard className="issue-panel">
+            <SectionTitle marker="1" title="Issued To" />
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field
+                label="Name / Department"
+                onChange={(value) => setIssuedTo((current) => ({ ...current, fullName: value }))}
+                value={issuedTo.fullName}
+              />
+              <label className="space-y-1.5">
+                <span className="field-label">Type</span>
+                <select
+                  className="field-input field-input-compact"
+                  onChange={(event) =>
+                    setIssuedTo((current) => ({
+                      ...current,
+                      type: event.target.value as ReceiverType,
+                    }))
+                  }
+                  value={issuedTo.type}
+                >
+                  {receiverTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type.toLowerCase().replaceAll('_', ' ')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Field
+                label="University ID"
+                onChange={(value) =>
+                  setIssuedTo((current) => ({ ...current, universityId: value }))
+                }
+                value={issuedTo.universityId}
+              />
+              <label className="space-y-1.5">
+                <span className="field-label">Department</span>
+                <select
+                  className="field-input field-input-compact"
+                  onChange={(event) =>
+                    setIssuedTo((current) => ({ ...current, department: event.target.value }))
+                  }
+                  value={issuedTo.department}
+                >
+                  <option value="">Choose department</option>
+                  {departments.map((department) => (
+                    <option key={department.id} value={department.name}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Field
+                label="Contact (optional)"
+                onChange={(value) => setIssuedTo((current) => ({ ...current, contact: value }))}
+                type="tel"
+                value={issuedTo.contact}
+              />
+              <Field
+                label="Email (optional)"
+                onChange={(value) => setIssuedTo((current) => ({ ...current, email: value }))}
+                type="email"
+                value={issuedTo.email}
+              />
+            </div>
+          </AppCard>
+
+          <AppCard className="issue-panel">
+            <SectionTitle marker="2" title="Issue Location" />
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className="field-label">Block (optional)</span>
+                <select
+                  className="field-input field-input-compact"
+                  onChange={(event) => {
+                    setIssueBlock(event.target.value);
+                    setMessage(null);
+                  }}
+                  value={issueBlock}
+                >
+                  <option value="">Choose block</option>
+                  {blockNames.map((block) => (
+                    <option key={block} value={block}>
+                      {block}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1.5">
+                <span className="field-label">Location</span>
+                <select
+                  className="field-input field-input-compact"
+                  onChange={(event) => {
+                    setIssueLocation(event.target.value);
+                    setMessage(null);
+                  }}
+                  value={issueLocation}
+                >
+                  <option value="">Choose location</option>
+                  {locationNames.map((location) => (
+                    <option key={location} value={location}>
+                      {location}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </AppCard>
+
+          <AppCard className="issue-panel">
+            <SectionTitle marker="3" title="Issue duration" />
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="space-y-1.5">
+                <span className="field-label">Issue type</span>
+                <select
+                  className="field-input field-input-compact"
+                  onChange={(event) => {
+                    setAssignmentType(event.target.value as AssignmentType);
+                    setMessage(null);
+                  }}
+                  value={assignmentType}
+                >
+                  <option value="LONG_TERM">Permanent issue</option>
+                  <option value="SHORT_TERM">Return by date</option>
+                </select>
+              </label>
+              {assignmentType === 'LONG_TERM' ? (
+                <div className="rounded-[12px] bg-[var(--color-surface-tint)] p-4">
+                  <p className="text-xs font-bold text-[var(--color-text-muted)]">
+                    Expected return
+                  </p>
+                  <p className="mt-1 text-sm font-extrabold text-[var(--color-primary-strong)]">
+                    No fixed return date
+                  </p>
+                </div>
+              ) : null}
+            </div>
+            {assignmentType === 'SHORT_TERM' ? (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="space-y-1.5">
+                  <span className="field-label">Return period</span>
+                  <select
+                    className="field-input field-input-compact"
+                    onChange={(event) => setDuePreset(event.target.value as DuePreset)}
+                    value={duePreset}
+                  >
+                    <option value="ONE_DAY">1 day</option>
+                    <option value="ONE_WEEK">1 week</option>
+                    <option value="ONE_MONTH">1 month</option>
+                    <option value="SIX_MONTHS">6 months</option>
+                    <option value="ONE_YEAR">1 year</option>
+                    <option value="CUSTOM">Custom</option>
+                  </select>
+                </label>
+                {duePreset === 'CUSTOM' ? (
+                  <Field
+                    label="Expected return (IST)"
+                    onChange={setCustomReturnAt}
+                    type="datetime-local"
+                    value={customReturnAt}
+                  />
+                ) : (
+                  <div className="rounded-[12px] bg-[var(--color-surface-tint)] p-4">
+                    <p className="text-xs font-bold text-[var(--color-text-muted)]">
+                      Expected return
+                    </p>
+                    <p className="mt-1 text-sm font-extrabold text-[var(--color-primary-strong)]">
+                      {formatIstDateTime(expectedReturn())}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : null}
+            {cartTotals.consumables > 0 ? (
+              <p className="mt-3 text-xs font-bold text-[var(--color-text-muted)]">
+                Consumable materials issued permanently are deducted from stock; with “Return by
+                date” they stay outstanding until returned.
+              </p>
+            ) : null}
+          </AppCard>
+
+          <AppCard className="issue-panel">
+            <SectionTitle marker="4" title="Notes" />
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <TextArea label="Purpose" onChange={setPurpose} value={purpose} />
+              <TextArea label="Notes" onChange={setNotes} value={notes} />
+            </div>
+          </AppCard>
+
+          <AppCard className="issue-panel">
+            <div className="flex items-start gap-3">
+              <input
+                checked={outsideUniversity}
+                className="mt-1 size-5 accent-[var(--color-primary)]"
+                id="outside-university"
+                onChange={(event) => setOutsideUniversity(event.target.checked)}
+                type="checkbox"
+              />
+              <label htmlFor="outside-university">
+                <span className="block font-extrabold text-[var(--color-text-strong)]">
+                  Material is leaving the university
+                </span>
+                <span className="mt-1 block text-sm text-[var(--color-text-muted)]">
+                  Create a linked Gate Pass automatically when this assignment is submitted.
+                </span>
+              </label>
+            </div>
+            {outsideUniversity ? (
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="Destination"
+                  onChange={(value) =>
+                    setGatePass((current) => ({ ...current, destination: value }))
+                  }
+                  value={gatePass.destination}
+                />
+                <Field
+                  label="Organization / vendor (optional)"
+                  onChange={(value) =>
+                    setGatePass((current) => ({ ...current, organization: value }))
+                  }
+                  value={gatePass.organization}
+                />
+                <Field
+                  label="Person carrying material"
+                  onChange={(value) =>
+                    setGatePass((current) => ({ ...current, personCarryingMaterial: value }))
+                  }
+                  value={gatePass.personCarryingMaterial}
+                />
+                <Field
+                  label="Contact (optional)"
+                  onChange={(value) => setGatePass((current) => ({ ...current, contact: value }))}
+                  value={gatePass.contact}
+                />
+                <Field
+                  label="Vehicle number (optional)"
+                  onChange={(value) =>
+                    setGatePass((current) => ({ ...current, vehicleNumber: value }))
+                  }
+                  value={gatePass.vehicleNumber}
+                />
+                <Field
+                  label="Expected Gate In (optional)"
+                  onChange={(value) =>
+                    setGatePass((current) => ({ ...current, expectedGateInAt: value }))
+                  }
+                  type="datetime-local"
+                  value={gatePass.expectedGateInAt}
+                />
+                <div className="sm:col-span-2">
+                  <TextArea
+                    label="Gate Pass remarks (optional)"
+                    onChange={(value) => setGatePass((current) => ({ ...current, remarks: value }))}
+                    value={gatePass.remarks}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </AppCard>
+
+          <StickyWorkflowActions>
+            <Button disabled={mutation.isPending} onClick={() => goToStep(2)} variant="secondary">
+              <ArrowLeft aria-hidden="true" size={18} />
+              Back to quantities
+            </Button>
+            <Button loading={mutation.isPending} onClick={submit}>
+              {mutation.isPending
+                ? 'Issuing...'
+                : `Issue ${lines.length} material${lines.length === 1 ? '' : 's'}`}
+            </Button>
+          </StickyWorkflowActions>
+        </>
+      ) : null}
     </div>
   );
 }
 
-function LineEditor({
+function PickRow({
+  material,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  material: Material;
+  selected: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <li>
+      <label
+        className={cn(
+          'issue-pick-row',
+          selected && 'issue-pick-row-selected',
+          disabled && 'issue-pick-row-disabled',
+        )}
+      >
+        <input
+          checked={selected}
+          className="size-5 accent-[var(--color-primary)]"
+          disabled={disabled}
+          onChange={onToggle}
+          type="checkbox"
+        />
+        <span className="min-w-0">
+          <strong className="issue-pick-name">{material.name}</strong>
+          <span className="issue-pick-meta">
+            {material.category} · {material.materialCode}
+          </span>
+          <span className="issue-pick-meta">
+            <MapPin aria-hidden="true" size={12} />
+            {materialStoreLabel(material)}
+          </span>
+        </span>
+        <span className="issue-pick-side">
+          <TrackingBadge mode={material.trackingMode} />
+          <em className="issue-pick-stock">
+            {material.availableQuantity} {unitName(material, material.availableQuantity)}
+          </em>
+        </span>
+      </label>
+    </li>
+  );
+}
+
+function CartLineEditor({
   line,
   index,
   material,
-  materials,
-  removable,
   onChange,
   onRemove,
 }: {
   line: LineDraft;
   index: number;
   material: Material | null;
-  materials: Material[];
-  removable: boolean;
   onChange: (line: LineDraft) => void;
   onRemove: () => void;
 }) {
+  if (!material) return null;
   const availability = stockMessage(line, material);
-  const selectedMaterialCode = line.materialCode;
-  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
-  const visibleMaterials = materials.slice(0, 50);
-  const hiddenMaterialCount = Math.max(materials.length - visibleMaterials.length, 0);
-
-  function selectMaterial(item: Material) {
-    onChange({
-      ...line,
-      materialCode: item.materialCode,
-      assetTags: [],
-      quantity: '1',
-    });
-    setMaterialPickerOpen(false);
-  }
+  const serialized = material.trackingMode === 'SERIALIZED';
 
   return (
     <div className="issue-line-card">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="text-xs font-bold text-[var(--color-text-muted)]">Item {index + 1}</p>
-          <h3 className="text-sm font-extrabold text-[var(--color-primary-strong)]">
-            {material?.name ?? 'Select inventory material'}
+      <div className="issue-cart-line-head">
+        <span className="issue-cart-line-index">{index + 1}</span>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-extrabold text-[var(--color-primary-strong)]">
+            {material.name}
           </h3>
+          <p className="mt-0.5 text-xs font-bold text-[var(--color-text-muted)]">
+            {material.category} · {material.materialCode} · {materialStoreLabel(material)}
+          </p>
         </div>
-        {removable ? (
-          <button
-            aria-label={`Remove item ${index + 1}`}
-            className="icon-button text-[var(--color-danger)]"
-            onClick={onRemove}
-            type="button"
-          >
-            <Trash2 aria-hidden="true" size={17} />
-          </button>
+        <TrackingBadge mode={material.trackingMode} />
+        <button
+          aria-label={`Remove ${material.name}`}
+          className="icon-button text-[var(--color-danger)]"
+          onClick={onRemove}
+          type="button"
+        >
+          <Trash2 aria-hidden="true" size={17} />
+        </button>
+      </div>
+      <div
+        className={cn(
+          'mt-3 grid gap-4',
+          serialized && 'lg:grid-cols-[minmax(200px,240px)_minmax(0,1fr)]',
+        )}
+      >
+        <QuantityStepper
+          available={material.availableQuantity}
+          label={serialized ? 'IT Asset quantity' : `Quantity (${material.unitLabel ?? 'units'})`}
+          onChange={(value) => {
+            if (!serialized) {
+              onChange({ ...line, quantity: value });
+              return;
+            }
+            const quantity = Number(value);
+            onChange({
+              ...line,
+              quantity: value,
+              assetTags:
+                Number.isInteger(quantity) && quantity >= 0
+                  ? line.assetTags.slice(0, quantity)
+                  : line.assetTags,
+            });
+          }}
+          value={line.quantity}
+        />
+        {serialized ? (
+          <SerializedPicker line={line} material={material} onChange={onChange} />
         ) : null}
       </div>
-      <div className="mt-3 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
-        <div className="issue-material-picker">
-          <button
-            aria-expanded={materialPickerOpen}
-            className="issue-material-trigger"
-            onClick={() => setMaterialPickerOpen((current) => !current)}
-            type="button"
-          >
-            <span className="min-w-0">
-              <strong>{material?.name ?? 'Choose inventory material'}</strong>
-              <span>
-                {material
-                  ? `${material.location ?? 'Store'} · ${material.materialCode}`
-                  : 'Click to view available store stock'}
-              </span>
-            </span>
-            <span className="issue-material-trigger-meta">
-              {material ? <em>{material.availableQuantity}</em> : null}
-              <ChevronDown aria-hidden="true" size={18} />
-            </span>
-          </button>
-          {materialPickerOpen ? (
-            <div className="issue-material-menu">
-              <div className="issue-material-menu-header">
-                <span>{materials.length} available options</span>
-                {hiddenMaterialCount > 0 ? <strong>Showing first 50</strong> : null}
-              </div>
-              {materials.length === 0 ? (
-                <p className="issue-material-empty">No available stock in the selected store.</p>
-              ) : (
-                visibleMaterials.map((item) => {
-                  const active = item.materialCode === selectedMaterialCode;
-                  return (
-                    <button
-                      className={cn(
-                        'issue-material-option',
-                        active && 'issue-material-option-active',
-                      )}
-                      key={item.materialCode}
-                      onClick={() => selectMaterial(item)}
-                      type="button"
-                    >
-                      <span className="min-w-0">
-                        <strong>{item.name}</strong>
-                        <span>
-                          {item.location ?? 'Store'} · {item.materialCode}
-                        </span>
-                      </span>
-                      <em>{item.availableQuantity}</em>
-                    </button>
-                  );
-                })
-              )}
-              {hiddenMaterialCount > 0 ? (
-                <p className="issue-material-more">
-                  {hiddenMaterialCount} more hidden. Use search to narrow by model, category, or
-                  code.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-        {material?.trackingMode === 'QUANTITY' ? (
-          <Field
-            label="Quantity"
-            max={String(material.availableQuantity)}
-            min="1"
-            onChange={(value) => onChange({ ...line, quantity: value })}
-            type="number"
-            value={line.quantity}
-          />
-        ) : material?.trackingMode === 'SERIALIZED' ? (
-          <div className="space-y-3">
-            <Field
-              label="IT Asset quantity"
-              max={String(material.availableQuantity)}
-              min="1"
-              onChange={(value) => {
-                const quantity = Number(value);
-                onChange({
-                  ...line,
-                  quantity: value,
-                  assetTags:
-                    Number.isInteger(quantity) && quantity >= 0
-                      ? line.assetTags.slice(0, quantity)
-                      : line.assetTags,
-                });
-              }}
-              type="number"
-              value={line.quantity}
-            />
-            <SerializedPicker line={line} material={material} onChange={onChange} />
-          </div>
-        ) : null}
-      </div>
-      {material ? (
-        <div className="mt-3 space-y-2">
-          <div className="flex flex-wrap gap-2 text-xs">
-            <CatalogBadge value={material.trackingMode} />
-            <CatalogBadge value={material.status} />
-            <span className="rounded-full bg-[var(--color-surface-tint)] px-2.5 py-1 font-bold text-[var(--color-text-muted)]">
-              {material.availableQuantity} of {material.totalQuantity} available
-            </span>
-          </div>
-          {availability ? (
-            <p
-              className={`rounded-[10px] px-3 py-2 text-xs font-bold ${
-                availability.tone === 'ok'
-                  ? 'bg-[var(--color-success-soft)] text-[var(--color-success)]'
-                  : 'bg-[var(--color-danger-soft)] text-[var(--color-danger)]'
-              }`}
-              role={availability.tone === 'warn' ? 'alert' : 'status'}
-            >
-              {availability.text}
-            </p>
-          ) : null}
-        </div>
+      {availability?.tone === 'warn' ? (
+        <p
+          className="mt-3 rounded-[10px] bg-[var(--color-danger-soft)] px-3 py-2 text-xs font-bold text-[var(--color-danger)]"
+          role="alert"
+        >
+          {availability.text}
+        </p>
       ) : null}
+    </div>
+  );
+}
+
+function QuantityStepper({
+  label,
+  value,
+  available,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  available: number;
+  onChange: (value: string) => void;
+}) {
+  const parsed = Number(value);
+  const current = Number.isInteger(parsed) ? parsed : 0;
+  return (
+    <div className="space-y-1.5">
+      <span className="field-label block">{label}</span>
+      <div className="issue-stepper">
+        <button
+          aria-label={`Decrease ${label}`}
+          disabled={current <= 1}
+          onClick={() => onChange(String(Math.max(1, current - 1)))}
+          type="button"
+        >
+          <Minus aria-hidden="true" size={16} />
+        </button>
+        <input
+          aria-label={label}
+          inputMode="numeric"
+          onChange={(event) => onChange(event.target.value.replace(/\D/g, ''))}
+          value={value}
+        />
+        <button
+          aria-label={`Increase ${label}`}
+          disabled={current >= available}
+          onClick={() => onChange(String(Math.min(available, current + 1)))}
+          type="button"
+        >
+          <Plus aria-hidden="true" size={16} />
+        </button>
+      </div>
+      <p className="text-xs font-bold text-[var(--color-text-muted)]">{available} available</p>
     </div>
   );
 }
@@ -965,18 +1222,59 @@ function SerializedPicker({
   });
   const units = query.data?.data ?? [];
   const quantity = Number(line.quantity);
+  const required = Number.isInteger(quantity) && quantity > 0 ? quantity : 0;
+  const complete = required > 0 && line.assetTags.length === required;
+
+  function autoSelect() {
+    const picked = [...line.assetTags];
+    for (const unit of units) {
+      if (picked.length >= required) break;
+      if (!picked.includes(unit.assetTag)) picked.push(unit.assetTag);
+    }
+    onChange({ ...line, assetTags: picked });
+  }
+
   return (
     <fieldset className="space-y-2">
-      <legend className="field-label">Select serial numbers</legend>
-      <p className="text-xs text-[var(--color-text-muted)]">
-        Select {Number.isInteger(quantity) && quantity > 0 ? quantity : 0}. Currently selected:{' '}
-        {line.assetTags.length}.
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <legend className="field-label">Serial numbers</legend>
+        <Button
+          disabled={complete || required === 0 || units.length === 0}
+          onClick={autoSelect}
+          variant="quiet"
+        >
+          <WandSparkles aria-hidden="true" size={14} />
+          Auto-select {required || ''}
+        </Button>
+      </div>
+      <p
+        className={cn(
+          'text-xs font-bold',
+          complete ? 'text-[var(--color-success)]' : 'text-[var(--color-warning)]',
+        )}
+        role="status"
+      >
+        Selected {line.assetTags.length} of {required}
       </p>
       <div className="max-h-52 space-y-1 overflow-y-auto rounded-[8px] border border-[var(--color-border)] p-2">
+        {query.isPending ? (
+          <p className="px-2 py-1 text-xs text-[var(--color-text-muted)]">
+            Loading serial numbers...
+          </p>
+        ) : null}
+        {query.isError ? (
+          <p className="px-2 py-1 text-xs font-bold text-[var(--color-danger)]">
+            Serial numbers could not be loaded.
+          </p>
+        ) : null}
+        {!query.isPending && !query.isError && units.length === 0 ? (
+          <p className="px-2 py-1 text-xs text-[var(--color-text-muted)]">
+            No available serial numbers for this material.
+          </p>
+        ) : null}
         {units.map((unit: AssetUnit) => {
           const checked = line.assetTags.includes(unit.assetTag);
-          const selectionFull =
-            Number.isInteger(quantity) && quantity > 0 && line.assetTags.length >= quantity;
+          const selectionFull = required > 0 && line.assetTags.length >= required;
           return (
             <label
               className="flex min-h-10 items-center gap-3 rounded-[6px] px-2 text-sm hover:bg-[var(--color-surface-tint)]"
@@ -1005,10 +1303,140 @@ function SerializedPicker({
   );
 }
 
+function CartTotals({ totals }: { totals: CartSummary }) {
+  return (
+    <dl className="issue-cart-summary mt-4">
+      <div>
+        <dt>Materials</dt>
+        <dd>{totals.lines}</dd>
+      </div>
+      <div>
+        <dt>Total units</dt>
+        <dd>{totals.units}</dd>
+      </div>
+      <div>
+        <dt>IT Assets</dt>
+        <dd>{totals.assets}</dd>
+      </div>
+      <div>
+        <dt>IT Consumables</dt>
+        <dd>{totals.consumables}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function CartSummaryTable({
+  lines,
+  materialByCode,
+}: {
+  lines: LineDraft[];
+  materialByCode: Map<string, Material>;
+}) {
+  const totals = summarizeCart(lines, materialByCode);
+  return (
+    <div className="mt-4 overflow-x-auto rounded-[10px] border border-[var(--color-border)]">
+      <table className="issue-cart-table">
+        <thead>
+          <tr>
+            <th scope="col">S.No.</th>
+            <th scope="col">Material</th>
+            <th scope="col">Type</th>
+            <th scope="col">Store</th>
+            <th scope="col">Serial numbers</th>
+            <th scope="col">Qty</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line, index) => {
+            const material = materialByCode.get(line.materialCode);
+            if (!material) return null;
+            const quantity = Number(line.quantity);
+            return (
+              <tr key={line.id}>
+                <td>{index + 1}</td>
+                <td>
+                  <strong className="block text-[var(--color-text-strong)]">{material.name}</strong>
+                  <span className="text-xs text-[var(--color-text-muted)]">
+                    {material.category} · {material.materialCode}
+                  </span>
+                </td>
+                <td>
+                  <TrackingBadge mode={material.trackingMode} />
+                </td>
+                <td>{materialStoreLabel(material)}</td>
+                <td className="text-xs">
+                  {material.trackingMode === 'SERIALIZED' ? line.assetTags.join(', ') : '—'}
+                </td>
+                <td className="whitespace-nowrap font-extrabold">
+                  {line.quantity} {unitName(material, quantity)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colSpan={5}>Total</td>
+            <td>{totals.units}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
+function TrackingBadge({ mode }: { mode: TrackingMode }) {
+  return (
+    <span
+      className={cn(
+        'issue-type-badge',
+        mode === 'SERIALIZED' ? 'issue-type-badge-asset' : 'issue-type-badge-consumable',
+      )}
+    >
+      {mode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable'}
+    </span>
+  );
+}
+
+interface CartSummary {
+  lines: number;
+  units: number;
+  assets: number;
+  consumables: number;
+}
+
+export function summarizeCart(
+  lines: LineDraft[],
+  materialByCode: Map<string, Material>,
+): CartSummary {
+  return lines.reduce<CartSummary>(
+    (total, line) => {
+      const material = materialByCode.get(line.materialCode);
+      const quantity = Number(line.quantity);
+      return {
+        lines: total.lines + 1,
+        units: total.units + (Number.isInteger(quantity) && quantity > 0 ? quantity : 0),
+        assets: total.assets + (material?.trackingMode === 'SERIALIZED' ? 1 : 0),
+        consumables: total.consumables + (material?.trackingMode === 'QUANTITY' ? 1 : 0),
+      };
+    },
+    { lines: 0, units: 0, assets: 0, consumables: 0 },
+  );
+}
+
 export function firstStockIssue(
   lines: LineDraft[],
   materialByCode: Map<string, Material>,
 ): string | null {
+  if (lines.length === 0) return 'Select at least one material to issue.';
+  if (lines.length > MAX_ISSUE_LINES) {
+    return `One issue can contain up to ${MAX_ISSUE_LINES} materials. Remove ${lines.length - MAX_ISSUE_LINES}.`;
+  }
+  const totalAssets = lines.reduce((total, line) => total + line.assetTags.length, 0);
+  if (totalAssets > MAX_ISSUE_ASSETS) {
+    return `One issue can contain up to ${MAX_ISSUE_ASSETS} IT Asset serial numbers. Split this issue into two.`;
+  }
   const seenMaterials = new Set<string>();
   const seenAssetTags = new Set<string>();
   for (const [index, line] of lines.entries()) {
@@ -1019,7 +1447,7 @@ export function firstStockIssue(
     }
     seenMaterials.add(material.materialCode);
     if (material.availableQuantity <= 0) {
-      return `${material.name} is out of stock. Select another material.`;
+      return `${material.name} is out of stock. Remove it from this issue.`;
     }
     if (material.trackingMode === 'QUANTITY') {
       const requested = Number(line.quantity);
@@ -1086,8 +1514,12 @@ export function firstIssueSchemaMessage(
   if (path === 'receiver.contact')
     return 'Enter a valid receiver contact number with at least 5 digits.';
   if (path === 'receiver.email') return 'Enter a valid receiver email address.';
-  if (path === 'lines' || path.startsWith('lines.'))
-    return 'Choose inventory material and serial numbers for item 1.';
+  if (path === 'lines') return 'Check the materials added to this issue.';
+  if (path.startsWith('lines.')) {
+    const lineIndex = Number(first.path[1]);
+    const item = Number.isInteger(lineIndex) ? lineIndex + 1 : 1;
+    return `Choose inventory material and serial numbers for item ${item}.`;
+  }
   if (path === 'due' || path.startsWith('due.')) return 'Choose a valid expected return date.';
   return first.message;
 }
@@ -1133,11 +1565,23 @@ function normalizeStoreSource(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+function materialStoreLabel(material: Material): string {
+  return material.store || inventoryStoreSourceLabel(material);
+}
+
+function unitName(
+  material: Pick<Material, 'trackingMode' | 'unitLabel'>,
+  quantity: number,
+): string {
+  if (material.trackingMode === 'QUANTITY') return material.unitLabel ?? 'units';
+  return quantity === 1 ? 'unit' : 'units';
+}
+
 function compareIssueableMaterials(first: Material, second: Material): number {
   return (
-    (first.location ?? '').localeCompare(second.location ?? '') ||
     first.category.localeCompare(second.category) ||
     first.name.localeCompare(second.name) ||
+    (first.location ?? '').localeCompare(second.location ?? '') ||
     first.materialCode.localeCompare(second.materialCode)
   );
 }
@@ -1163,17 +1607,24 @@ function stockMessage(
       text: `${material.availableQuantity} ${material.unitLabel ?? 'units'} available for issue.`,
     };
   }
+  const requested = Number(line.quantity);
+  if (Number.isFinite(requested) && requested > material.availableQuantity) {
+    return {
+      tone: 'warn',
+      text: `Only ${material.availableQuantity} IT ${material.availableQuantity === 1 ? 'Asset' : 'Assets'} available. Reduce quantity.`,
+    };
+  }
   return {
     tone: 'ok',
     text: `${material.availableQuantity} IT ${material.availableQuantity === 1 ? 'Asset' : 'Assets'} available. Select the required serial numbers.`,
   };
 }
 
-function SectionTitle({ number, title }: { number: string; title: string }) {
+function SectionTitle({ marker, title }: { marker: ReactNode; title: string }) {
   return (
     <div className="flex items-center gap-3">
       <span className="grid size-8 place-items-center rounded-[9px] bg-[var(--color-primary)] text-sm font-extrabold text-white">
-        {number}
+        {marker}
       </span>
       <h2 className="text-base font-extrabold text-[var(--color-primary-strong)]">{title}</h2>
     </div>
