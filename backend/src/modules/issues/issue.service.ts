@@ -11,6 +11,7 @@ import {
   type Issue,
   type IssuePeriod,
   type IssueReturnState,
+  type IssueTarget,
   type IssueStatus,
   type IssueSummary,
   type ReturnableIssue,
@@ -63,6 +64,7 @@ export interface IssueListInput {
   period?: IssuePeriod;
   returnState?: IssueReturnState;
   assignmentType?: AssignmentType;
+  issueTarget?: IssueTarget;
   store?: string;
   location?: string[];
   block?: string[];
@@ -399,6 +401,24 @@ export async function createIssue(
       return { issue: toIssue(existing), idempotentReplay: true };
     }
 
+    // Check the Receiver kind against the Issue target before claiming anything.
+    const issueTarget = input.issueTarget ?? 'PERSON';
+    if (input.receiverCode) {
+      const chosen = await ReceiverModel.findOne({ receiverCode: input.receiverCode })
+        .select('type')
+        .lean();
+      if (chosen && issueTarget === 'LAB' && chosen.type !== 'LAB') {
+        throw new AppError(422, 'ISSUE_LAB_REQUIRED', 'Choose a registered lab for a lab Issue.');
+      }
+      if (chosen && issueTarget === 'PERSON' && chosen.type === 'LAB') {
+        throw new AppError(
+          422,
+          'ISSUE_USE_LAB_TARGET',
+          'This is a lab. Switch to "Issue to lab" to issue material to it.',
+        );
+      }
+    }
+
     const issuedBy = await claimActor(actor);
     const receiver = await claimReceiver(input, actor);
     const issuedAt = new Date();
@@ -447,13 +467,23 @@ export async function createIssue(
         ...(receiver.universityId ? { universityId: receiver.universityId } : {}),
         type: receiver.type,
         ...(receiver.department ? { department: receiver.department } : {}),
-        ...(receiver.contact ? { contact: receiver.contact } : {}),
-        ...(receiver.email ? { email: receiver.email } : {}),
+        // For a lab, contact and email reach the in-charge, who answers for the material.
+        ...(receiver.type === 'LAB'
+          ? {
+              ...(receiver.inChargeContact ? { contact: receiver.inChargeContact } : {}),
+              ...(receiver.inChargeEmail ? { email: receiver.inChargeEmail } : {}),
+              ...(receiver.inChargeName ? { inChargeName: receiver.inChargeName } : {}),
+            }
+          : {
+              ...(receiver.contact ? { contact: receiver.contact } : {}),
+              ...(receiver.email ? { email: receiver.email } : {}),
+            }),
       },
       issuedBy,
       issuedAt,
       ...(expectedReturnAt && input.due ? { expectedReturnAt, duePreset: input.due.preset } : {}),
       assignmentType: input.assignmentType,
+      issueTarget,
       status: 'ISSUED',
       ...(input.purpose ? { purpose: input.purpose } : {}),
       ...(input.notes ? { notes: input.notes } : {}),
@@ -485,6 +515,8 @@ export async function createIssue(
         status: 'ISSUED',
         duePreset: input.due?.preset ?? null,
         assignmentType: input.assignmentType,
+        issueTarget,
+        ...(issueTarget === 'LAB' ? { labReceiverCode: receiver.receiverCode } : {}),
         destinationLocation: locationDetail.name,
         destinationBlock: input.destinationBlock ?? null,
       },
@@ -538,11 +570,82 @@ export async function createIssue(
   return result;
 }
 
-export function buildIssueSearchFilter(search: string): QueryFilter<unknown> {
+// Every snapshot field an operator may type into an Issue search, including serial numbers.
+export const ISSUE_SEARCH_FIELDS = [
+  'issueId',
+  'receiver.fullName',
+  'receiver.receiverCode',
+  'receiver.universityId',
+  'receiver.department',
+  'receiver.contact',
+  'receiver.email',
+  'receiver.inChargeName',
+  'lines.material.materialCode',
+  'lines.material.name',
+  'lines.material.category',
+  'lines.material.description',
+  'lines.material.store',
+  'lines.assets.assetTag',
+  'lines.assets.serialNumber',
+  'destinationLocation',
+  'destinationBlock',
+  'purpose',
+  'issuedBy.name',
+  'issuedBy.workerId',
+] as const;
+
+const MAX_SEARCH_TOKENS = 6;
+
+export function searchTokens(search: string): string[] {
+  return [...new Set(search.trim().split(/\s+/).filter(Boolean))].slice(0, MAX_SEARCH_TOKENS);
+}
+
+/**
+ * Each word must appear in at least one Issue field, so "Sharma Anita" and
+ * "Anita Sharma" behave the same. Material IDs found through inventory details
+ * that Issues do not snapshot (configuration, model, vendor) widen the match.
+ */
+export function buildIssueSearchFilter(
+  search: string,
+  matchingMaterialIds: Types.ObjectId[] = [],
+): QueryFilter<unknown> {
   const normalized = search.trim().toUpperCase();
   if (IssueIdSchema.safeParse(normalized).success) return { issueId: normalized };
-  if (AssetTagSchema.safeParse(normalized).success) return { 'lines.assets.assetTag': normalized };
-  return { $text: { $search: search.trim() } };
+  if (AssetTagSchema.safeParse(normalized).success) {
+    // Asset tags and newer material codes share the GEU-YYYY-NNNNNN format.
+    return {
+      $or: [{ 'lines.assets.assetTag': normalized }, { 'lines.material.materialCode': normalized }],
+    };
+  }
+  const tokenClauses = searchTokens(search).map((token) => {
+    const pattern = new RegExp(escapeSearchRegex(token), 'i');
+    return { $or: ISSUE_SEARCH_FIELDS.map((field) => ({ [field]: pattern })) };
+  });
+  if (!tokenClauses.length) return {};
+  const textMatch = tokenClauses.length === 1 ? tokenClauses[0]! : { $and: tokenClauses };
+  if (!matchingMaterialIds.length) return textMatch;
+  return { $or: [textMatch, { 'lines.material.materialId': { $in: matchingMaterialIds } }] };
+}
+
+const MAX_DETAIL_MATERIAL_MATCHES = 500;
+
+export async function materialIdsMatchingDetails(search: string): Promise<Types.ObjectId[]> {
+  const pattern = new RegExp(escapeSearchRegex(search.trim()), 'i');
+  const records = await MaterialModel.find({
+    $or: [{ configuration: pattern }, { typeModelName: pattern }, { vendorName: pattern }],
+  })
+    .select('_id')
+    .limit(MAX_DETAIL_MATERIAL_MATCHES)
+    .lean();
+  return records.map((record) => record._id);
+}
+
+export async function resolveIssueSearchFilter(search: string): Promise<QueryFilter<unknown>> {
+  const normalized = search.trim().toUpperCase();
+  if (IssueIdSchema.safeParse(normalized).success || AssetTagSchema.safeParse(normalized).success) {
+    return buildIssueSearchFilter(search);
+  }
+  return buildIssueSearchFilter(search, await materialIdsMatchingDetails(search));
 }
 
 export function buildReturnSearchFilter(search: string, actorRole: UserRole): QueryFilter<unknown> {
@@ -623,6 +726,9 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
   }
   if (input.status) filter.status = input.status;
   if (input.assignmentType) filter.assignmentType = input.assignmentType;
+  if (input.issueTarget === 'LAB') filter.issueTarget = 'LAB';
+  // Issues made before lab Issues existed have no stored target, so "people" means "not a lab".
+  if (input.issueTarget === 'PERSON') filter.issueTarget = { $ne: 'LAB' };
   const lineMaterialFilter: Record<string, unknown> = {};
   if (input.store) {
     lineMaterialFilter['material.store'] = new RegExp(`^${escapeSearchRegex(input.store)}$`, 'i');
@@ -671,7 +777,7 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
       filter.expectedReturnAt = { $gte: today.start, $lt: today.end };
     }
   }
-  if (input.search) accessClauses.push(buildIssueSearchFilter(input.search));
+  if (input.search) accessClauses.push(await resolveIssueSearchFilter(input.search));
   if (accessClauses.length > 0) filter.$and = accessClauses;
 
   const skip = (input.page - 1) * input.pageSize;
@@ -688,6 +794,7 @@ export async function listIssues(input: IssueListInput): Promise<IssueListResult
           'expectedReturnAt',
           'duePreset',
           'assignmentType',
+          'issueTarget',
           'status',
           'purpose',
           'notes',

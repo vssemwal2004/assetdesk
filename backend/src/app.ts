@@ -8,6 +8,7 @@ import { isAllowedOrigin } from './config/origins.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { notFoundHandler } from './middleware/not-found.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
+import { createAlertRouter } from './modules/alerts/alert.routes.js';
 import { createAuthRouter } from './modules/auth/auth.routes.js';
 import { createAuditRouter } from './modules/audit/audit.routes.js';
 import { createDashboardRouter } from './modules/dashboard/dashboard.routes.js';
@@ -20,6 +21,7 @@ import { createReceiversRouter } from './modules/receivers/receiver.routes.js';
 import { createReminderRouter } from './modules/reminders/reminder.routes.js';
 import { createReportRouter } from './modules/reports/report.routes.js';
 import { createIssueReturnsRouter, createReturnsRouter } from './modules/returns/return.routes.js';
+import { createSearchRouter } from './modules/search/search.routes.js';
 import { createWorkerImportsRouter, createWorkersRouter } from './modules/workers/worker.routes.js';
 import { createHealthRouter } from './routes/health.routes.js';
 
@@ -52,6 +54,8 @@ export function createApp(): Express {
 
   app.use('/api/v1/health', createHealthRouter());
   app.use('/api/v1/auth', createAuthRouter());
+  app.use('/api/v1/alerts', createAlertRouter());
+  app.use('/api/v1/search', createSearchRouter());
   app.use('/api/v1/audit-events', createAuditRouter());
   app.use('/api/v1/dashboard', createDashboardRouter());
   app.use('/api/v1/cartridges', createCartridgeRouter());

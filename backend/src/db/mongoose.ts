@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
+import { AlertReadModel } from '../modules/alerts/alert-read.model.js';
 import { AuditEventModel } from '../modules/audit/audit-event.model.js';
 import { AuthSessionModel } from '../modules/auth/auth-session.model.js';
 import { AssetUnitModel } from '../modules/inventory/asset-unit.model.js';
@@ -59,6 +60,7 @@ const indexedModels: Array<{
   GatePassCounterModel,
   InventoryGatePassModel,
   InventoryGatePassCounterModel,
+  AlertReadModel,
 ];
 
 export async function ensureDatabaseIndexes(): Promise<void> {

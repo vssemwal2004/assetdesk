@@ -612,7 +612,26 @@ export async function buildMaterialListFilterAsync(
       { $or: stores },
     ];
   }
+  if (input.search) {
+    // Serial numbers live on asset units, so a serial search must reveal its parent stock record.
+    const pattern = new RegExp(escapeSearchRegex(input.search.trim()), 'i');
+    const unitMaterialIds = await AssetUnitModel.distinct('materialId', {
+      $or: [{ serialNumber: pattern }, { assetTag: pattern }],
+    });
+    if (unitMaterialIds.length) {
+      filter.$or = [
+        ...((filter.$or as Record<string, unknown>[] | undefined) ?? []),
+        { _id: { $in: unitMaterialIds } },
+      ];
+    }
+  }
   return filter;
+}
+
+/** Match clauses for stock held in configured stores; empty when no store is configured. */
+export async function storeStockMatches(): Promise<Array<Record<string, unknown>>> {
+  const names = await issueableStoreNames();
+  return names.length ? storeMatches(names) : [];
 }
 
 export function buildAssetUnitListFilter(input: {

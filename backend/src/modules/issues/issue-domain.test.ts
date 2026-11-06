@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import { describe, expect, it } from 'vitest';
 
 import { IssueAssetSchema } from '@assetdesk/contracts';
@@ -85,13 +86,45 @@ describe('Issue dates and identifiers', () => {
 });
 
 describe('Issue list search', () => {
-  it('uses exact indexed identifiers and text search for names or materials', () => {
+  it('uses exact indexed identifiers for Issue IDs and asset tags', () => {
     expect(buildIssueSearchFilter('geu-iss-2026-000001')).toEqual({
       issueId: 'GEU-ISS-2026-000001',
     });
-    expect(buildIssueSearchFilter('Anita Sharma')).toEqual({
-      $text: { $search: 'Anita Sharma' },
+    expect(buildIssueSearchFilter('geu-2026-000001')).toEqual({
+      $or: [
+        { 'lines.assets.assetTag': 'GEU-2026-000001' },
+        { 'lines.material.materialCode': 'GEU-2026-000001' },
+      ],
     });
+  });
+
+  it('requires every word to match some field, including serial numbers', () => {
+    const filter = buildIssueSearchFilter('Sharma  Anita') as {
+      $and: Array<{ $or: Array<Record<string, RegExp>> }>;
+    };
+    expect(filter.$and).toHaveLength(2);
+    const serialClause = filter.$and[0]?.$or.find(
+      (clause) => 'lines.assets.serialNumber' in clause,
+    );
+    expect(serialClause?.['lines.assets.serialNumber']?.test('XSHARMA9')).toBe(true);
+  });
+
+  it('escapes regular expression characters in serial numbers', () => {
+    const filter = buildIssueSearchFilter('SN(12)+') as { $or: Array<Record<string, RegExp>> };
+    const serial = filter.$or.find((clause) => 'lines.assets.serialNumber' in clause);
+    expect(serial?.['lines.assets.serialNumber']?.test('ab-SN(12)+-cd')).toBe(true);
+    expect(serial?.['lines.assets.serialNumber']?.test('SN12')).toBe(false);
+  });
+
+  it('widens a text match with inventory materials found by configuration', () => {
+    const materialId = new Types.ObjectId();
+    expect(buildIssueSearchFilter('i5 8GB', [materialId])).toMatchObject({
+      $or: [{ $and: expect.any(Array) }, { 'lines.material.materialId': { $in: [materialId] } }],
+    });
+  });
+
+  it('returns no extra condition for a blank search', () => {
+    expect(buildIssueSearchFilter('   ')).toEqual({});
   });
 });
 
