@@ -10,6 +10,7 @@ export const WorkerPermissionSchema = z.enum([
   'ISSUES_VIEW',
   'ISSUE_DATA_EXPORT',
   'ASSIGNMENTS_CREATE',
+  'LAB_ISSUE_CREATE',
   'ISSUES_EDIT',
   'ISSUES_DELETE',
   'ISSUE_SLIPS_VIEW',
@@ -75,8 +76,13 @@ const LEGACY_BROAD_PERMISSIONS = [
   'CARTRIDGES_DELETE',
 ] satisfies string[];
 
+// Granted only by an Admin; never part of the default Worker permission set.
+const ADMIN_GRANTED_PERMISSIONS = ['LAB_ISSUE_CREATE'] satisfies string[];
+
 export const DEFAULT_WORKER_PERMISSIONS = WorkerPermissionSchema.options.filter(
-  (permission) => !LEGACY_BROAD_PERMISSIONS.includes(permission),
+  (permission) =>
+    !LEGACY_BROAD_PERMISSIONS.includes(permission) &&
+    !ADMIN_GRANTED_PERMISSIONS.includes(permission),
 );
 
 export const WorkerDataScopeSchema = z.enum(['OWN', 'ALL']);

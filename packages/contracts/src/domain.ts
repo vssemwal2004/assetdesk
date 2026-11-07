@@ -14,8 +14,13 @@ export const ReceiverTypeSchema = z.enum([
   'AUTHORIZED_EXTERNAL',
   'MANAGEMENT',
   'GEHU',
+  'LAB',
 ]);
 export type ReceiverType = z.infer<typeof ReceiverTypeSchema>;
+
+/** Who an Issue is made to: a person/department, or a lab with an accountable in-charge. */
+export const IssueTargetSchema = z.enum(['PERSON', 'LAB']);
+export type IssueTarget = z.infer<typeof IssueTargetSchema>;
 
 export const TrackingModeSchema = z.enum(['SERIALIZED', 'QUANTITY']);
 export type TrackingMode = z.infer<typeof TrackingModeSchema>;

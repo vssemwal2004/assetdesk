@@ -38,6 +38,7 @@ export interface IssueFilters {
   period?: IssuePeriod;
   returnState?: IssueReturnState;
   assignmentType?: AssignmentType;
+  issueTarget?: 'PERSON' | 'LAB';
   store?: string;
   block?: string[];
   destinationLocation?: string[];
@@ -58,6 +59,7 @@ export async function getIssues(
   if (filters.period) parameters.set('period', filters.period);
   if (filters.returnState) parameters.set('returnState', filters.returnState);
   if (filters.assignmentType) parameters.set('assignmentType', filters.assignmentType);
+  if (filters.issueTarget) parameters.set('issueTarget', filters.issueTarget);
   if (filters.store) parameters.set('store', filters.store);
   filters.block?.forEach((value) => parameters.append('block', value));
   filters.destinationLocation?.forEach((value) => parameters.append('location', value));

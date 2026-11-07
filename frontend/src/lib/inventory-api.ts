@@ -493,7 +493,7 @@ export async function getInventoryQuantityEntries(
 export async function getAssetUnits(
   materialCode: string,
   page: number,
-  filters: { status?: string; pageSize?: number } = {},
+  filters: { status?: string; pageSize?: number; search?: string } = {},
   signal?: AbortSignal,
 ): Promise<AssetUnitsListResponse> {
   const parameters = new URLSearchParams({
@@ -501,6 +501,7 @@ export async function getAssetUnits(
     pageSize: String(filters.pageSize ?? 20),
   });
   if (filters.status) parameters.set('status', filters.status);
+  if (filters.search) parameters.set('search', filters.search);
   const payload = await apiRequest<unknown>(
     `/api/v1/inventory/${encodeURIComponent(materialCode)}/units?${parameters.toString()}`,
     { ...(signal ? { signal } : {}) },

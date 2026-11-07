@@ -29,6 +29,8 @@ import type { WorkerPermission } from '@assetdesk/contracts';
 import { useAuth } from '../auth/auth-context';
 import { hasPermission } from '../auth/permissions';
 import { DismissibleActionMenus } from './dismissible-action-menus';
+import { GlobalSearch } from './global-search';
+import { NotificationCenter } from './notification-center';
 import { Brand, cn } from './ui';
 
 interface NavigationItem {
@@ -121,6 +123,12 @@ const issueNavigation: NavigationItem[] = [
     permission: 'ASSIGNMENTS_CREATE',
   },
   { label: 'Issues data', to: '/issues', icon: ListChecks, end: true, permission: 'ISSUES_VIEW' },
+  {
+    label: 'Lab issues',
+    to: '/issues?issueTarget=LAB',
+    icon: Boxes,
+    permission: 'ISSUES_VIEW',
+  },
   { label: 'Overdue assets', to: '/overdue', icon: FileClock, adminOnly: true },
 ];
 const cartridgeNavigation: NavigationItem[] = [
@@ -252,6 +260,7 @@ const adminMobileNavigation: NavigationItem[] = [
 ];
 
 function pageTitle(pathname: string): string {
+  if (pathname === '/search') return 'Search';
   if (pathname === '/cartridges/dashboard') return 'Cartridge Dashboard';
   if (pathname === '/cartridges/activity') return 'Cartridge Activity Log';
   if (pathname === '/cartridges/new') return 'Add Cartridges';
@@ -791,7 +800,7 @@ export function AppShell() {
 
       <header className="app-topbar fixed inset-x-0 top-0 z-30 h-16 border-b border-[var(--color-border)] bg-white/95 backdrop-blur-md min-[600px]:left-[72px]">
         <div className="flex h-full items-center justify-between gap-3 px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2 md:w-48 md:shrink-0 lg:w-56">
             <button
               aria-label="Open menu"
               className="icon-button min-[600px]:hidden"
@@ -804,7 +813,13 @@ export function AppShell() {
               {pageTitle(location.pathname)}
             </h2>
           </div>
-          <ProfileMenu />
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5 sm:gap-2 md:justify-between">
+            <GlobalSearch />
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <NotificationCenter />
+              <ProfileMenu />
+            </div>
+          </div>
         </div>
       </header>
 

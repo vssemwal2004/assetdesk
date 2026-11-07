@@ -16,6 +16,11 @@ export interface ReceiverRecord {
   contactNormalized?: string;
   email?: string;
   emailNormalized?: string;
+  // Labs only: the accountable person. Kept off the unique email/ID indexes so one in-charge
+  // can look after several labs.
+  inChargeName?: string;
+  inChargeContact?: string;
+  inChargeEmail?: string;
   status: ReceiverStatus;
   operationalUseCount: number;
   createdBy: Types.ObjectId;
@@ -44,7 +49,16 @@ const ReceiverSchema = new Schema<ReceiverRecord>(
     universityIdNormalized: { type: String, trim: true, maxlength: 64 },
     type: {
       type: String,
-      enum: ['FACULTY', 'STAFF', 'STUDENT', 'DEPARTMENT', 'AUTHORIZED_EXTERNAL', 'MANAGEMENT', 'GEHU'],
+      enum: [
+        'FACULTY',
+        'STAFF',
+        'STUDENT',
+        'DEPARTMENT',
+        'AUTHORIZED_EXTERNAL',
+        'MANAGEMENT',
+        'GEHU',
+        'LAB',
+      ],
       required: true,
     },
     department: { type: String, trim: true, maxlength: 120 },
@@ -58,6 +72,9 @@ const ReceiverSchema = new Schema<ReceiverRecord>(
       trim: true,
       maxlength: 254,
     },
+    inChargeName: { type: String, trim: true, maxlength: 120 },
+    inChargeContact: { type: String, trim: true, maxlength: 40 },
+    inChargeEmail: { type: String, trim: true, lowercase: true, maxlength: 254 },
     status: { type: String, enum: ['ACTIVE', 'INACTIVE'], required: true, default: 'ACTIVE' },
     operationalUseCount: {
       type: Number,

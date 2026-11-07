@@ -4,6 +4,7 @@ import type {
   IssueStatus,
   DuePreset,
   AssignmentType,
+  IssueTarget,
   ReceiverType,
   ReturnDisposition,
   ReturnPolicy,
@@ -20,6 +21,7 @@ export interface IssueReceiverSnapshotRecord {
   department?: string;
   contact?: string;
   email?: string;
+  inChargeName?: string;
 }
 
 export interface IssueActorSnapshotRecord {
@@ -106,6 +108,7 @@ export interface IssueRecord {
   expectedReturnAt?: Date;
   duePreset?: DuePreset;
   assignmentType: AssignmentType;
+  issueTarget: IssueTarget;
   status: IssueStatus;
   purpose?: string;
   notes?: string;
@@ -146,12 +149,22 @@ const ReceiverSnapshotSchema = new Schema<IssueReceiverSnapshotRecord>(
     universityId: { type: String, maxlength: 64 },
     type: {
       type: String,
-      enum: ['FACULTY', 'STAFF', 'STUDENT', 'DEPARTMENT', 'AUTHORIZED_EXTERNAL', 'MANAGEMENT', 'GEHU'],
+      enum: [
+        'FACULTY',
+        'STAFF',
+        'STUDENT',
+        'DEPARTMENT',
+        'AUTHORIZED_EXTERNAL',
+        'MANAGEMENT',
+        'GEHU',
+        'LAB',
+      ],
       required: true,
     },
     department: { type: String, maxlength: 120 },
     contact: { type: String, maxlength: 40 },
     email: { type: String, maxlength: 254 },
+    inChargeName: { type: String, maxlength: 120 },
   },
   { _id: false },
 );
@@ -362,6 +375,13 @@ const IssueSchema = new Schema<IssueRecord>(
       immutable: true,
       default: 'SHORT_TERM',
     },
+    issueTarget: {
+      type: String,
+      enum: ['PERSON', 'LAB'],
+      required: true,
+      immutable: true,
+      default: 'PERSON',
+    },
     status: {
       type: String,
       enum: ['ISSUED', 'PARTIALLY_RETURNED', 'RETURNED', 'DAMAGED', 'LOST', 'CANCELLED'],
@@ -460,6 +480,7 @@ IssueSchema.index({ status: 1, totalOutstandingQuantity: 1, issuedAt: -1 });
 IssueSchema.index({ issuedAt: -1, _id: -1 });
 IssueSchema.index({ status: 1, totalOutstandingQuantity: 1 });
 IssueSchema.index({ destinationLocation: 1, destinationBlock: 1, issuedAt: -1 });
+IssueSchema.index({ issueTarget: 1, 'receiver.receiverCode': 1, issuedAt: -1 });
 IssueSchema.index({ 'receiver.receiverCode': 1 });
 IssueSchema.index({ 'receiver.fullName': 1 });
 IssueSchema.index({ 'lines.material.materialCode': 1 });

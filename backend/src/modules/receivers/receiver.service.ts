@@ -107,25 +107,53 @@ export function createRecordInput(
   actorUserId: Types.ObjectId,
 ) {
   const fullName = normalizeDisplayText(input.fullName);
-  const universityId = input.universityId ? normalizeDisplayText(input.universityId) : undefined;
   const department = input.department ? normalizeDisplayText(input.department) : undefined;
-  const contact = input.contact ? normalizeDisplayText(input.contact) : undefined;
-  const email = input.email ? normalizeEmail(input.email) : undefined;
-
-  return {
+  const common = {
     fullName,
     fullNameNormalized: normalizeSearchText(fullName),
-    ...(universityId
-      ? { universityId, universityIdNormalized: normalizeUniversityId(universityId) }
-      : {}),
-    type: input.type,
     ...(department ? { department, departmentNormalized: normalizeSearchText(department) } : {}),
-    ...(contact ? { contact, contactNormalized: normalizeContactSearch(contact) } : {}),
-    ...(email ? { email, emailNormalized: email } : {}),
     status: 'ACTIVE' as const,
     createdBy: actorUserId,
     updatedBy: actorUserId,
   };
+
+  if (input.type === 'LAB') {
+    // A lab is identified by its name; the in-charge's email and contact stay off the unique
+    // identity indexes so one person can be responsible for several labs.
+    return {
+      ...common,
+      type: 'LAB' as const,
+      inChargeName: normalizeDisplayText(input.inChargeName),
+      inChargeContact: normalizeDisplayText(input.inChargeContact),
+      inChargeEmail: normalizeEmail(input.inChargeEmail),
+    };
+  }
+
+  const universityId = input.universityId ? normalizeDisplayText(input.universityId) : undefined;
+  const contact = input.contact ? normalizeDisplayText(input.contact) : undefined;
+  const email = input.email ? normalizeEmail(input.email) : undefined;
+  return {
+    ...common,
+    ...(universityId
+      ? { universityId, universityIdNormalized: normalizeUniversityId(universityId) }
+      : {}),
+    type: input.type,
+    ...(contact ? { contact, contactNormalized: normalizeContactSearch(contact) } : {}),
+    ...(email ? { email, emailNormalized: email } : {}),
+  };
+}
+
+async function assertUniqueLabName(fullNameNormalized: string, excludeId?: Types.ObjectId) {
+  const exists = await ReceiverModel.exists({
+    type: 'LAB',
+    fullNameNormalized,
+    ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+  });
+  if (exists) {
+    throw new AppError(409, 'RECEIVER_LAB_EXISTS', 'A lab with this name already exists.', {
+      fullName: 'Use a different lab name.',
+    });
+  }
 }
 
 export function buildReceiverListFilter(
@@ -168,7 +196,8 @@ export async function createReceiver(
   createdByUserId: string,
 ): Promise<Receiver> {
   const values = createRecordInput(input, objectId(createdByUserId));
-  await assertUniqueIdentity(values.emailNormalized, values.universityIdNormalized);
+  if (values.type === 'LAB') await assertUniqueLabName(values.fullNameNormalized);
+  else await assertUniqueIdentity(values.emailNormalized, values.universityIdNormalized);
 
   for (let attempt = 0; attempt < MAX_CODE_ALLOCATION_ATTEMPTS; attempt += 1) {
     const receiverCode = await allocateReceiverCode();
@@ -195,6 +224,9 @@ export async function findOrCreateReceiverForIssue(
   session?: ClientSession,
 ): Promise<ReceiverRecord> {
   const values = createRecordInput(input, objectId(actorUserId));
+  if (values.type === 'LAB') {
+    throw new AppError(422, 'ISSUE_LAB_NOT_REGISTERED', 'Choose a registered lab.');
+  }
   const identityAlternatives: QueryFilter<ReceiverRecord>[] = [
     ...(values.emailNormalized ? [{ emailNormalized: values.emailNormalized }] : []),
     ...(values.universityIdNormalized
@@ -307,10 +339,35 @@ export async function updateReceiver(
 ): Promise<Receiver> {
   const receiver = await findReceiverRecord(receiverCode);
 
+  const isLab = receiver.type === 'LAB';
+  if (input.type !== undefined && (input.type === 'LAB') !== isLab) {
+    throw new AppError(
+      409,
+      'RECEIVER_TYPE_LOCKED',
+      'A lab cannot be converted to a person or department, or the other way round. Register a new Receiver instead.',
+    );
+  }
+  if (isLab && (input.contact !== undefined || input.email !== undefined)) {
+    throw new AppError(
+      422,
+      'LAB_CONTACT_IS_IN_CHARGE',
+      "A lab's contact details are its in-charge's. Update the in-charge fields instead.",
+    );
+  }
+  if (!isLab && (input.inChargeName || input.inChargeContact || input.inChargeEmail)) {
+    throw new AppError(422, 'IN_CHARGE_ONLY_FOR_LABS', 'In-charge details apply to labs only.');
+  }
+
   if (input.fullName !== undefined) {
     receiver.fullName = normalizeDisplayText(input.fullName);
     receiver.fullNameNormalized = normalizeSearchText(receiver.fullName);
+    if (isLab) await assertUniqueLabName(receiver.fullNameNormalized, receiver._id);
   }
+  if (input.inChargeName !== undefined) receiver.inChargeName = normalizeDisplayText(input.inChargeName);
+  if (input.inChargeContact !== undefined) {
+    receiver.inChargeContact = normalizeDisplayText(input.inChargeContact);
+  }
+  if (input.inChargeEmail !== undefined) receiver.inChargeEmail = normalizeEmail(input.inChargeEmail);
   if (Object.hasOwn(input, 'universityId')) {
     if (input.universityId) {
       receiver.universityId = normalizeDisplayText(input.universityId);

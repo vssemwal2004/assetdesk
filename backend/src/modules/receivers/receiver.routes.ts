@@ -13,6 +13,7 @@ import {
 import { AppError } from '../../middleware/error-handler.js';
 import { appendAuditEvent } from '../audit/audit.service.js';
 import {
+  hasServerPermission,
   requireAuth,
   requireCsrf,
   requireFullAccess,
@@ -53,6 +54,17 @@ const ReceiverListQuerySchema = z
 
 function receiverCode(request: Request): string {
   return ReceiverCodeSchema.parse(request.params.receiverCode);
+}
+
+/** Registering or changing a lab's in-charge is the same right as issuing to labs. */
+function requireLabPermission(request: Request): void {
+  if (!request.auth || !hasServerPermission(request.auth, 'LAB_ISSUE_CREATE')) {
+    throw new AppError(
+      403,
+      'LAB_ISSUE_PERMISSION_REQUIRED',
+      'You do not have permission to manage labs. Ask an Admin to grant it.',
+    );
+  }
 }
 
 function authenticatedUser(request: Request) {
@@ -125,6 +137,7 @@ export function createReceiversRouter(): Router {
     async (request, response, next) => {
       try {
         const input = CreateReceiverRequestSchema.parse(request.body);
+        if (input.type === 'LAB') requireLabPermission(request);
         const receiver = await createReceiver(input, authenticatedUser(request).userId);
         await audit(request, 'RECEIVER_CREATED', receiver.receiverCode);
         response.status(201).json({ data: { receiver } });
@@ -154,6 +167,9 @@ export function createReceiversRouter(): Router {
       try {
         const code = receiverCode(request);
         const input = UpdateReceiverRequestSchema.parse(request.body);
+        if (input.inChargeName || input.inChargeContact || input.inChargeEmail) {
+          requireLabPermission(request);
+        }
         const receiver = await updateReceiver(code, input, authenticatedUser(request).userId);
         await audit(request, 'RECEIVER_UPDATED', code, { fields: Object.keys(input) });
         response.json({ data: { receiver } });

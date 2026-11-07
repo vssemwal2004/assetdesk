@@ -24,6 +24,7 @@ import {
   type AssignmentType,
   type CreateIssueRequest,
   type Issue,
+  type IssueTarget,
   type Material,
   type ReceiverType,
   type TrackingMode,
@@ -45,6 +46,9 @@ import { calculatePresetReturnInIst, formatIstDateTime } from '../../lib/date-ti
 import { createPendingSubmission } from '../../lib/idempotent-submission';
 import { getAssetDetails, getAvailableAssetUnits, getInventory } from '../../lib/inventory-api';
 import { createIssue } from '../../lib/issues-api';
+import { getReceivers } from '../../lib/receivers-api';
+import { useAuth } from '../../auth/auth-context';
+import { hasPermission } from '../../auth/permissions';
 
 type DuePreset = NonNullable<CreateIssueRequest['due']>['preset'];
 type StoreFilter = string;
@@ -89,6 +93,10 @@ const typeTabs: Array<{ value: TypeFilter; label: string }> = [
 
 export function CreateIssuePage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const canIssueToLab = hasPermission(user, 'LAB_ISSUE_CREATE');
+  const [issueTarget, setIssueTarget] = useState<IssueTarget>('PERSON');
+  const [labCode, setLabCode] = useState('');
   const [step, setStep] = useState<IssueStep>(1);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -159,6 +167,14 @@ export function CreateIssuePage() {
     queryKey: ['asset-details', 'LOCATION'],
     queryFn: ({ signal }) => getAssetDetails('LOCATION', signal),
   });
+  const labQuery = useQuery({
+    queryKey: ['receivers', 'labs'],
+    queryFn: ({ signal }) =>
+      getReceivers({ page: 1, pageSize: 100, type: 'LAB', status: 'ACTIVE' }, signal),
+    enabled: canIssueToLab,
+  });
+  const labs = labQuery.data?.data ?? [];
+  const selectedLab = labs.find((lab) => lab.receiverCode === labCode) ?? null;
   const departments = departmentQuery.data ?? [];
   const storeNames = useMemo(
     () => (storeQuery.data ?? []).map((store) => store.name),
@@ -330,7 +346,12 @@ export function CreateIssuePage() {
       setStep(2);
       return null;
     }
-    const receiverIssue = firstReceiverIssue(issuedTo);
+    const toLab = issueTarget === 'LAB';
+    const receiverIssue = toLab
+      ? selectedLab
+        ? null
+        : 'Choose the lab that will receive this material.'
+      : firstReceiverIssue(issuedTo);
     if (receiverIssue) {
       setMessage(receiverIssue);
       return null;
@@ -343,14 +364,18 @@ export function CreateIssuePage() {
     const candidate = {
       mode: 'CATALOG' as const,
       assignmentType: effectiveAssignmentType,
-      receiver: {
-        fullName: issuedTo.fullName,
-        ...(issuedTo.universityId.trim() ? { universityId: issuedTo.universityId } : {}),
-        type: issuedTo.type,
-        ...(issuedTo.department.trim() ? { department: issuedTo.department } : {}),
-        ...(issuedTo.contact.trim() ? { contact: issuedTo.contact } : {}),
-        ...(issuedTo.email.trim() ? { email: issuedTo.email } : {}),
-      },
+      ...(toLab
+        ? { issueTarget: 'LAB' as const, receiverCode: labCode }
+        : {
+            receiver: {
+              fullName: issuedTo.fullName,
+              ...(issuedTo.universityId.trim() ? { universityId: issuedTo.universityId } : {}),
+              type: issuedTo.type,
+              ...(issuedTo.department.trim() ? { department: issuedTo.department } : {}),
+              ...(issuedTo.contact.trim() ? { contact: issuedTo.contact } : {}),
+              ...(issuedTo.email.trim() ? { email: issuedTo.email } : {}),
+            },
+          }),
       destinationLocation: issueLocation,
       ...(issueBlock ? { destinationBlock: issueBlock } : {}),
       lines: lines.map((line) => {
@@ -758,7 +783,93 @@ export function CreateIssuePage() {
 
           <AppCard className="issue-panel">
             <SectionTitle marker="1" title="Issued To" />
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            {canIssueToLab ? (
+              <div
+                aria-label="Issue to"
+                className="mt-3 grid grid-cols-2 gap-1.5 rounded-[12px] bg-[var(--color-surface-tint)] p-1"
+                role="group"
+              >
+                {(
+                  [
+                    { value: 'PERSON', label: 'Person / department' },
+                    { value: 'LAB', label: 'Lab' },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    aria-pressed={issueTarget === option.value}
+                    className={cn(
+                      'search-segment',
+                      issueTarget === option.value && 'search-segment-active',
+                    )}
+                    key={option.value}
+                    onClick={() => {
+                      setIssueTarget(option.value);
+                      setMessage(null);
+                    }}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {issueTarget === 'LAB' ? (
+              <div className="mt-3 space-y-3">
+                <label className="block space-y-1.5">
+                  <span className="field-label">Lab</span>
+                  <select
+                    className="field-input field-input-compact"
+                    onChange={(event) => {
+                      const code = event.target.value;
+                      setLabCode(code);
+                      setMessage(null);
+                      const lab = labs.find((item) => item.receiverCode === code);
+                      // Labs are usually also a saved location, so pre-select it when names match.
+                      const sameName = locationNames.find(
+                        (name) => name.trim().toLowerCase() === lab?.fullName.trim().toLowerCase(),
+                      );
+                      if (sameName) setIssueLocation(sameName);
+                    }}
+                    value={labCode}
+                  >
+                    <option value="">
+                      {labQuery.isPending ? 'Loading labs…' : 'Choose lab'}
+                    </option>
+                    {labs.map((lab) => (
+                      <option key={lab.receiverCode} value={lab.receiverCode}>
+                        {lab.fullName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {labQuery.isSuccess && labs.length === 0 ? (
+                  <p className="text-sm font-semibold text-[var(--color-text-muted)]">
+                    No labs are registered yet.{' '}
+                    <Link className="font-extrabold text-[var(--color-primary)]" to="/receivers/new">
+                      Register a lab
+                    </Link>{' '}
+                    with its in-charge first.
+                  </p>
+                ) : null}
+                {selectedLab ? (
+                  <dl className="grid gap-3 rounded-[12px] bg-[var(--color-surface-tint)] p-4 sm:grid-cols-3">
+                    {[
+                      ['Lab in-charge', selectedLab.inChargeName],
+                      ['In-charge contact', selectedLab.inChargeContact],
+                      ['In-charge email', selectedLab.inChargeEmail],
+                    ].map(([label, value]) => (
+                      <div className="min-w-0" key={label}>
+                        <dt className="text-xs font-bold text-[var(--color-text-muted)]">{label}</dt>
+                        <dd className="mt-1 break-words text-sm font-extrabold text-[var(--color-text-strong)]">
+                          {value ?? '—'}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : null}
+              </div>
+            ) : null}
+            <div className={cn('mt-3 grid gap-3 sm:grid-cols-2', issueTarget === 'LAB' && 'hidden')}>
               <Field
                 label="Name / Department"
                 onChange={(value) => setIssuedTo((current) => ({ ...current, fullName: value }))}

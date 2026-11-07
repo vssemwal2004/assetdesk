@@ -96,6 +96,7 @@ function receiver(issue: IssueDocument) {
     department: issue.receiver.department ?? null,
     contact: issue.receiver.contact ?? null,
     email: issue.receiver.email ?? null,
+    inChargeName: issue.receiver.inChargeName ?? null,
   };
 }
 
@@ -115,6 +116,7 @@ export function toIssue(issue: IssueDocument): Issue {
     expectedReturnAt: issue.expectedReturnAt?.toISOString() ?? null,
     duePreset: issue.duePreset ?? null,
     assignmentType: issue.assignmentType ?? 'SHORT_TERM',
+    issueTarget: issue.issueTarget ?? 'PERSON',
     status: issue.status,
     purpose: issue.purpose ?? null,
     notes: issue.notes ?? null,
@@ -152,6 +154,7 @@ export function toIssueSummary(issue: IssueDocument): IssueSummary {
     expectedReturnAt: issue.expectedReturnAt?.toISOString() ?? null,
     duePreset: issue.duePreset ?? null,
     assignmentType: issue.assignmentType ?? 'SHORT_TERM',
+    issueTarget: issue.issueTarget ?? 'PERSON',
     status: issue.status,
     purpose: issue.purpose ?? null,
     notes: issue.notes ?? null,

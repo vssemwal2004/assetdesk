@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import writeExcelFile, { type Cell, type SheetData } from 'write-excel-file/browser';
 
 import type {
   AssignmentType,
@@ -38,6 +37,8 @@ import type {
 import { useAuth } from '../../auth/auth-context';
 import { hasPermission } from '../../auth/permissions';
 import { CatalogBadge, PageCount } from '../../components/catalog-ui';
+import { ExportSheetDialog, type ActiveFilterChip } from '../../components/export-sheet-dialog';
+import { SearchHitsPanel } from '../../components/search-hits-panel';
 import {
   Button,
   EmptyState,
@@ -50,6 +51,8 @@ import {
 } from '../../components/ui';
 import { formatIstDateTime, toIstDateTimeInput } from '../../lib/date-time';
 import { isApiError } from '../../lib/api-client';
+import { saveWorkbook } from '../../lib/excel-export';
+import { HighlightText, revealElement, textMatches } from '../../lib/search-highlight';
 import {
   deleteIssue,
   getIssuesForExport,
@@ -66,6 +69,7 @@ import {
   type IssueCategoryGroup,
   type IssueMaterialScope,
 } from './issue-grouping';
+import { domSafe, issueGroupKey, issueSearchHits, type IssueSearchHit } from './issue-search-hits';
 
 const statuses: IssueStatus[] = [
   'ISSUED',
@@ -146,8 +150,55 @@ const issueColumnWidths: Record<IssueColumnKey, number> = {
   purpose: 36,
 };
 
+type IssueExportColumnKey =
+  | IssueColumnKey
+  | 'assetTag'
+  | 'receiverUniversityId'
+  | 'receiverDepartment'
+  | 'receiverContact'
+  | 'issuedToType'
+  | 'labInCharge';
+
+const issueExportColumns: Array<{ key: IssueExportColumnKey; label: string; group: string }> = [
+  { key: 'issue', label: 'Issue ID', group: 'Issue' },
+  { key: 'issuedAt', label: 'Issued on', group: 'Issue' },
+  { key: 'status', label: 'Status', group: 'Issue' },
+  { key: 'assignment', label: 'Assignment', group: 'Issue' },
+  { key: 'expectedReturn', label: 'Expected return', group: 'Issue' },
+  { key: 'issuedBy', label: 'Issued by', group: 'Issue' },
+  { key: 'purpose', label: 'Purpose', group: 'Issue' },
+  { key: 'material', label: 'Material', group: 'Material' },
+  { key: 'category', label: 'Category', group: 'Material' },
+  { key: 'model', label: 'Model', group: 'Material' },
+  { key: 'serialNumber', label: 'Serial Number', group: 'Material' },
+  { key: 'assetTag', label: 'Asset tag', group: 'Material' },
+  { key: 'quantity', label: 'Issue quantity', group: 'Material' },
+  { key: 'outstanding', label: 'Outstanding', group: 'Material' },
+  { key: 'issuedToType', label: 'Issued to (type)', group: 'Receiver & place' },
+  { key: 'receiver', label: 'Receiver / lab', group: 'Receiver & place' },
+  { key: 'labInCharge', label: 'Lab in-charge', group: 'Receiver & place' },
+  { key: 'receiverUniversityId', label: 'University ID', group: 'Receiver & place' },
+  { key: 'receiverDepartment', label: 'Department', group: 'Receiver & place' },
+  { key: 'receiverContact', label: 'Contact', group: 'Receiver & place' },
+  { key: 'block', label: 'Block', group: 'Receiver & place' },
+  { key: 'location', label: 'Location', group: 'Receiver & place' },
+];
+
+const issueExportWidths: Record<IssueExportColumnKey, number> = {
+  ...issueColumnWidths,
+  assetTag: 20,
+  receiverUniversityId: 18,
+  receiverDepartment: 24,
+  receiverContact: 18,
+  issuedToType: 18,
+  labInCharge: 24,
+};
+
+type IssueExportLayout = 'SERIAL' | 'LINE';
+
 type IssueExportItem = IssueSummary['materialDetails'][number] & {
   serialNumber: string;
+  assetTag: string;
   rowQuantity: number;
   rowOutstanding: number;
 };
@@ -155,10 +206,16 @@ type IssueExportItem = IssueSummary['materialDetails'][number] & {
 function issueExportValue(
   issue: IssueSummary,
   item: IssueExportItem,
-  column: IssueColumnKey,
+  column: IssueExportColumnKey,
 ): string | number | Date {
   if (column === 'issue') return issue.issueId;
   if (column === 'receiver') return issue.receiver.fullName;
+  if (column === 'receiverUniversityId') return issue.receiver.universityId ?? '';
+  if (column === 'receiverDepartment') return issue.receiver.department ?? '';
+  if (column === 'receiverContact') return issue.receiver.contact ?? '';
+  if (column === 'assetTag') return item.assetTag;
+  if (column === 'issuedToType') return issue.issueTarget === 'LAB' ? 'Lab' : 'Person / department';
+  if (column === 'labInCharge') return issue.receiver.inChargeName ?? '';
   if (column === 'material') return item.name;
   if (column === 'category') return item.category;
   if (column === 'model') return item.model ?? '';
@@ -176,25 +233,16 @@ function issueExportValue(
   return issue.purpose ?? '';
 }
 
-async function saveIssueWorkbook(issues: IssueSummary[], columns: IssueColumnKey[]) {
-  const selected = columns.length ? columns : defaultIssueColumns;
-  const header = selected.map((column): Cell => ({
-    value: issueColumns.find((definition) => definition.key === column)?.label ?? column,
-    fontWeight: 'bold',
-    textColor: '#FFFFFF',
-    backgroundColor: '#1F4E78',
-    align: 'center',
-    wrap: true,
-    height: 30,
-  }));
-  const rows = issues.flatMap((issue) =>
+function issueExportRows(issues: IssueSummary[], layout: IssueExportLayout) {
+  return issues.flatMap((issue) =>
     issue.materialDetails.flatMap((material) => {
-      if (material.trackingMode === 'SERIALIZED') {
+      if (material.trackingMode === 'SERIALIZED' && layout === 'SERIAL' && material.assets.length) {
         return material.assets.map((asset) => ({
           issue,
           item: {
             ...material,
             serialNumber: asset.serialNumber ?? asset.assetTag,
+            assetTag: asset.assetTag,
             rowQuantity: 1,
             rowOutstanding: asset.outstanding ? 1 : 0,
           },
@@ -205,7 +253,10 @@ async function saveIssueWorkbook(issues: IssueSummary[], columns: IssueColumnKey
           issue,
           item: {
             ...material,
-            serialNumber: '',
+            serialNumber: material.assets
+              .map((asset) => asset.serialNumber ?? asset.assetTag)
+              .join(', '),
+            assetTag: material.assets.map((asset) => asset.assetTag).join(', '),
             rowQuantity: material.issuedQuantity,
             rowOutstanding: material.outstandingQuantity,
           },
@@ -213,32 +264,28 @@ async function saveIssueWorkbook(issues: IssueSummary[], columns: IssueColumnKey
       ];
     }),
   );
-  const data: SheetData = [
-    header,
-    ...rows.map(({ issue, item }, rowIndex) =>
-      selected.map((column): Cell => {
-        const value = issueExportValue(issue, item, column);
-        return {
-          value,
-          ...(value instanceof Date ? { type: Date, format: 'dd mmm yyyy, hh:mm' } : {}),
-          ...(typeof value === 'number' ? { type: Number, align: 'right' } : {}),
-          backgroundColor: rowIndex % 2 === 0 ? '#F4F8FC' : '#FFFFFF',
-          textColor: '#172033',
-          wrap: true,
-          alignVertical: 'center',
-          borderColor: '#D9E2F0',
-          height: 24,
-        };
-      }),
+}
+
+async function saveIssueWorkbook(input: {
+  issues: IssueSummary[];
+  columns: IssueExportColumnKey[];
+  layout: IssueExportLayout;
+  fileName: string;
+  filterSummary: Array<{ label: string; value: string }>;
+}) {
+  const columns = input.columns.length ? input.columns : defaultIssueColumns;
+  await saveWorkbook({
+    fileName: input.fileName,
+    sheetName: 'Issue Data',
+    columns: columns.map((column) => ({
+      label: issueExportColumns.find((definition) => definition.key === column)?.label ?? column,
+      width: issueExportWidths[column],
+    })),
+    rows: issueExportRows(input.issues, input.layout).map(({ issue, item }) =>
+      columns.map((column) => issueExportValue(issue, item, column)),
     ),
-  ];
-  await writeExcelFile(data, {
-    sheet: 'Issue Data',
-    columns: selected.map((column) => ({ width: issueColumnWidths[column] })),
-    stickyRowsCount: 1,
-    stickyColumnsCount: selected.includes('issue') ? 1 : 0,
-    showGridLines: false,
-  }).toFile(`assetdesk-issue-data-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    filterSummary: input.filterSummary,
+  });
 }
 
 type IssueCategoryStatKey =
@@ -353,6 +400,7 @@ export function IssuesPage() {
   const [deleteTarget, setDeleteTarget] = useState<IssueSummary | null>(null);
   const [extendTarget, setExtendTarget] = useState<IssueSummary | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<IssueColumnKey[]>(storedIssueColumns);
   const [visibleCategoryStats, setVisibleCategoryStats] =
     useState<IssueCategoryStatKey[]>(storedIssueCategoryStats);
@@ -372,6 +420,10 @@ export function IssuesPage() {
   const issueAssignmentType =
     assignmentType(parameters.get('assignmentType') ?? '') ??
     (returnState === 'PENDING' ? 'SHORT_TERM' : undefined);
+  const issueTarget =
+    parameters.get('issueTarget') === 'LAB' || parameters.get('issueTarget') === 'PERSON'
+      ? (parameters.get('issueTarget') as 'LAB' | 'PERSON')
+      : undefined;
   const issueFilterOptionsQuery = useQuery({
     queryKey: ['issue-filter-options', blocks],
     queryFn: ({ signal }) => getIssueFilterOptions(blocks, signal),
@@ -435,6 +487,7 @@ export function IssuesPage() {
         period,
         returnState,
         assignmentType: issueAssignmentType,
+        issueTarget,
         blocks,
         locations,
         store,
@@ -449,6 +502,7 @@ export function IssuesPage() {
         ...(period ? { period } : {}),
         ...(returnState ? { returnState } : {}),
         ...(issueAssignmentType ? { assignmentType: issueAssignmentType } : {}),
+        ...(issueTarget ? { issueTarget } : {}),
         ...(blocks.length ? { block: blocks } : {}),
         ...(locations.length ? { destinationLocation: locations } : {}),
         ...(store ? { store } : {}),
@@ -511,7 +565,8 @@ export function IssuesPage() {
       ...(trackingMode ? { trackingMode } : {}),
       ...(category ? { category } : {}),
     });
-    if (destinationFiltered) return groups;
+    // Searching shows only folders that contain matches, not every empty catalog folder.
+    if (destinationFiltered || search) return groups;
 
     const byKey = new Map(
       groups.map((group) => [
@@ -570,7 +625,33 @@ export function IssuesPage() {
         left.trackingMode.localeCompare(right.trackingMode) ||
         left.category.localeCompare(right.category),
     );
-  }, [category, catalogQuery.data, destinationFiltered, inventoryQuery.data, issues, trackingMode]);
+  }, [
+    category,
+    catalogQuery.data,
+    destinationFiltered,
+    inventoryQuery.data,
+    issues,
+    search,
+    trackingMode,
+  ]);
+  const searchHits = issueSearchHits(issues, search, {
+    ...(trackingMode ? { trackingMode } : {}),
+    ...(category ? { category } : {}),
+  });
+  const hitsByIssue = new Map(searchHits.map((hit) => [hit.issue.issueId, hit]));
+
+  function revealHit(hit: IssueSearchHit) {
+    const groupId = `issue-group-${domSafe(hit.groupKey)}`;
+    const folder = document.getElementById(groupId);
+    if (folder instanceof HTMLDetailsElement) folder.open = true;
+    window.requestAnimationFrame(() =>
+      revealElement([
+        `issue-row-${domSafe(hit.groupKey)}-${hit.issue.issueId}`,
+        `issue-card-${domSafe(hit.groupKey)}-${hit.issue.issueId}`,
+        groupId,
+      ]),
+    );
+  }
   const materialCategoryOptions = useMemo(() => {
     if (!trackingMode) return [];
     if (category) return [category];
@@ -594,6 +675,7 @@ export function IssuesPage() {
     period ||
     returnState ||
     issueAssignmentType ||
+    issueTarget ||
     blocks.length ||
     locations.length ||
     store ||
@@ -603,29 +685,139 @@ export function IssuesPage() {
   const admin = user?.role === 'ADMIN';
   const canDownloadIssueData = hasPermission(user, 'ISSUE_DATA_EXPORT');
   const canCreateIssue = hasPermission(user, 'ASSIGNMENTS_CREATE');
-  const downloadMutation = useMutation({
-    mutationFn: async (scope: 'FILTERED' | 'ALL') => {
-      const exportIssues = await getIssuesForExport(scope, {
+  const exportFilterChips: ActiveFilterChip[] = [
+    ...(search
+      ? [{ key: 'search', label: 'Search', value: search, onRemove: () => updateParameters({ search: '' }) }]
+      : []),
+    ...(trackingMode
+      ? [
+          {
+            key: 'trackingMode',
+            label: 'Material type',
+            value: trackingMode === 'SERIALIZED' ? 'IT Asset' : 'IT Consumable',
+            onRemove: () => updateParameters({ trackingMode: '', category: '' }),
+          },
+        ]
+      : []),
+    ...(category && trackingMode
+      ? [{ key: 'category', label: 'Category', value: category, onRemove: () => updateParameters({ category: '' }) }]
+      : []),
+    ...(blocks.length
+      ? [{ key: 'block', label: 'Block', value: blocks.join(', '), onRemove: () => updateParameters({ block: [] }) }]
+      : []),
+    ...(locations.length
+      ? [
+          {
+            key: 'location',
+            label: 'Location',
+            value: locations.join(', '),
+            onRemove: () => updateParameters({ location: [] }),
+          },
+        ]
+      : []),
+    ...(store
+      ? [{ key: 'store', label: 'Source store', value: store, onRemove: () => updateParameters({ store: '' }) }]
+      : []),
+    ...(status
+      ? [
+          {
+            key: 'status',
+            label: 'Status',
+            value: humanizeCatalogValue(status),
+            onRemove: () => updateParameters({ status: '' }),
+          },
+        ]
+      : []),
+    ...(period
+      ? [{ key: 'period', label: 'Issue date', value: 'Issued today', onRemove: () => updateParameters({ period: '' }) }]
+      : []),
+    ...(returnState
+      ? [
+          {
+            key: 'returnState',
+            label: 'Return state',
+            value: returnState === 'DUE_TODAY' ? 'Due today' : 'Pending return',
+            onRemove: () => updateParameters({ returnState: '' }),
+          },
+        ]
+      : []),
+    ...(issueAssignmentType
+      ? [
+          {
+            key: 'assignmentType',
+            label: 'Assignment',
+            value: issueAssignmentType === 'LONG_TERM' ? 'Permanent' : 'Return by date',
+            onRemove: () => updateParameters({ assignmentType: '' }),
+          },
+        ]
+      : []),
+    ...(issueTarget
+      ? [
+          {
+            key: 'issueTarget',
+            label: 'Issued to',
+            value: issueTarget === 'LAB' ? 'Labs' : 'People & departments',
+            onRemove: () => updateParameters({ issueTarget: '' }),
+          },
+        ]
+      : []),
+  ];
+
+  function clearIssueFilters() {
+    updateParameters({
+      search: '',
+      block: [],
+      location: [],
+      store: '',
+      status: '',
+      period: '',
+      returnState: '',
+      assignmentType: '',
+      issueTarget: '',
+      trackingMode: '',
+      category: '',
+    });
+  }
+
+  async function downloadIssueSheet(request: {
+    scope: 'FILTERED' | 'ALL';
+    columns: string[];
+    layout: string;
+    fileName: string;
+  }) {
+    try {
+      const exportIssues = await getIssuesForExport(request.scope, {
         ...(search ? { search } : {}),
         ...(status ? { status } : {}),
         ...(period ? { period } : {}),
         ...(returnState ? { returnState } : {}),
         ...(issueAssignmentType ? { assignmentType: issueAssignmentType } : {}),
+        ...(issueTarget ? { issueTarget } : {}),
         ...(blocks.length ? { block: blocks } : {}),
         ...(locations.length ? { destinationLocation: locations } : {}),
         ...(store ? { store } : {}),
         ...(trackingMode ? { trackingMode } : {}),
         ...(category && trackingMode ? { category } : {}),
       });
-      await saveIssueWorkbook(exportIssues, visibleColumns);
-    },
-    onSuccess: () => {
-      setActionError(null);
-    },
-    onError: (error) => {
-      setActionError(isApiError(error) ? error.message : 'Issue data could not be downloaded.');
-    },
-  });
+      if (!exportIssues.length) throw new Error('No Issue Records match these filters.');
+      await saveIssueWorkbook({
+        issues: exportIssues,
+        columns: request.columns as IssueExportColumnKey[],
+        layout: request.layout === 'LINE' ? 'LINE' : 'SERIAL',
+        fileName: request.fileName,
+        filterSummary:
+          request.scope === 'ALL'
+            ? []
+            : exportFilterChips.map((chip) => ({ label: chip.label, value: chip.value })),
+      });
+    } catch (error) {
+      throw new Error(
+        isApiError(error) || error instanceof Error
+          ? error.message
+          : 'Issue data could not be downloaded.',
+      );
+    }
+  }
   const deleteMutation = useMutation({
     mutationFn: (issue: IssueSummary) => deleteIssue(issue.issueId),
     onSuccess: async () => {
@@ -659,31 +851,181 @@ export function IssuesPage() {
     },
   });
 
+  function renderIssueFilterFields(idPrefix: string) {
+    return (
+      <>
+        <div className="rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3">
+          <div className="flex items-start gap-2">
+            <Filter
+              aria-hidden="true"
+              className="mt-0.5 shrink-0 text-[var(--color-primary)]"
+              size={17}
+            />
+            <div>
+              <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
+                Narrow issue data in order
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[var(--color-primary-strong)]/75">
+                Select one or more blocks, then choose one or more matching locations. Using
+                both together keeps the results accurate.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FilterField label="1. Block">
+            <MultiFilterSelect
+              anyLabel="All blocks"
+              id={`${idPrefix}-block-filter`}
+              label="Filter by blocks"
+              onChange={(values) => updateParameters({ block: values })}
+              options={blockOptions}
+              values={blocks}
+            />
+          </FilterField>
+          <FilterField label="2. Location">
+            <MultiFilterSelect
+              anyLabel={blocks.length ? 'All locations' : 'Select a block first'}
+              disabled={!blocks.length}
+              id={`${idPrefix}-location-filter`}
+              label="Filter by locations"
+              onChange={(values) => updateParameters({ location: values })}
+              options={locationOptions}
+              values={blocks.length ? locations : []}
+            />
+          </FilterField>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FilterField label="3. Material type">
+            <select
+              className="field-input"
+              onChange={(event) =>
+                updateParameters({ trackingMode: event.target.value, category: '' })
+              }
+              value={trackingMode}
+            >
+              <option value="">All material types</option>
+              <option value="SERIALIZED">Asset</option>
+              <option value="QUANTITY">Consumable</option>
+            </select>
+          </FilterField>
+          <FilterField label="4. Issue status">
+            <select
+              className="field-input"
+              onChange={(event) => updateParameters({ status: event.target.value })}
+              value={status ?? ''}
+            >
+              <option value="">All statuses</option>
+              {statuses.map((value) => (
+                <option key={value} value={value}>
+                  {humanizeCatalogValue(value)}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+        </div>
+        <div className="border-t border-[var(--color-border)] pt-4">
+          <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
+            More filters
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <FilterField label="Material category">
+              <select
+                className="field-input"
+                disabled={!trackingMode}
+                onChange={(event) => updateParameters({ category: event.target.value })}
+                value={trackingMode ? category : ''}
+              >
+                <option value="">
+                  {trackingMode ? 'All categories' : 'Select material type first'}
+                </option>
+                {materialCategoryOptions.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </FilterField>
+            <FilterField label="Source store">
+              <select
+                className="field-input"
+                onChange={(event) => updateParameters({ store: event.target.value })}
+                value={store}
+              >
+                <option value="">All source stores</option>
+                {(catalogQuery.data ?? [])
+                  .filter((detail) => detail.kind === 'STORE')
+                  .map((detail) => (
+                    <option key={detail.id} value={detail.name}>
+                      {detail.name}
+                    </option>
+                  ))}
+              </select>
+            </FilterField>
+            <FilterField label="Issue date">
+              <select
+                className="field-input"
+                onChange={(event) => updateParameters({ period: event.target.value })}
+                value={period ?? ''}
+              >
+                <option value="">Any date</option>
+                <option value="TODAY">Issued today</option>
+              </select>
+            </FilterField>
+            <FilterField label="Return state">
+              <select
+                className="field-input"
+                onChange={(event) => updateParameters({ returnState: event.target.value })}
+                value={returnState ?? ''}
+              >
+                <option value="">Any return state</option>
+                <option value="PENDING">Pending return</option>
+                <option value="DUE_TODAY">Due today</option>
+              </select>
+            </FilterField>
+            <FilterField label="Assignment type">
+              <select
+                className="field-input"
+                onChange={(event) => updateParameters({ assignmentType: event.target.value })}
+                value={issueAssignmentType ?? ''}
+              >
+                <option value="">All assignment types</option>
+                <option value="SHORT_TERM">Return by date</option>
+                <option value="LONG_TERM">Permanent</option>
+              </select>
+            </FilterField>
+            <FilterField label="Issued to">
+              <select
+                className="field-input"
+                onChange={(event) => updateParameters({ issueTarget: event.target.value })}
+                value={issueTarget ?? ''}
+              >
+                <option value="">People, departments and labs</option>
+                <option value="LAB">Labs only</option>
+                <option value="PERSON">People & departments only</option>
+              </select>
+            </FilterField>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
         actions={
           <div className="flex flex-wrap gap-2">
             {canDownloadIssueData ? (
-              <>
-                <Button
-                  loading={downloadMutation.isPending}
-                  onClick={() => downloadMutation.mutate('FILTERED')}
-                  variant="secondary"
-                >
-                  <Download aria-hidden="true" size={18} />
-                  {filtered ? 'Download filtered Excel' : 'Download Excel'}
-                </Button>
+              <Button onClick={() => setExportOpen(true)} variant="secondary">
+                <Download aria-hidden="true" size={18} />
+                Download sheet
                 {filtered ? (
-                  <Button
-                    disabled={downloadMutation.isPending}
-                    onClick={() => downloadMutation.mutate('ALL')}
-                    variant="quiet"
-                  >
-                    Download all Excel
-                  </Button>
+                  <span className="rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-xs font-extrabold text-[var(--color-primary-strong)]">
+                    {exportFilterChips.length} filter{exportFilterChips.length === 1 ? '' : 's'}
+                  </span>
                 ) : null}
-              </>
+              </Button>
             ) : null}
             {canCreateIssue ? (
               <Link className="button-primary" to="/issues/new">
@@ -746,7 +1088,7 @@ export function IssuesPage() {
             key={search}
             label="Search Issue Records"
             onSearch={(value) => updateParameters({ search: value })}
-            placeholder="Issue ID, Receiver or material"
+            placeholder="Serial no., Issue ID, receiver, model, configuration, location"
             value={search}
           />
           <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -774,6 +1116,7 @@ export function IssuesPage() {
                   period,
                   returnState,
                   issueAssignmentType,
+                  issueTarget,
                 ].filter(Boolean).length
               }
               onClear={() =>
@@ -785,153 +1128,13 @@ export function IssuesPage() {
                   period: '',
                   returnState: '',
                   assignmentType: '',
+                  issueTarget: '',
                   trackingMode: '',
                   category: '',
                 })
               }
             >
-              <div className="rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3">
-                <div className="flex items-start gap-2">
-                  <Filter
-                    aria-hidden="true"
-                    className="mt-0.5 shrink-0 text-[var(--color-primary)]"
-                    size={17}
-                  />
-                  <div>
-                    <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
-                      Narrow issue data in order
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-[var(--color-primary-strong)]/75">
-                      Select one or more blocks, then choose one or more matching locations. Using
-                      both together keeps the results accurate.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <FilterField label="1. Block">
-                  <MultiFilterSelect
-                    anyLabel="All blocks"
-                    id="issues-block-filter"
-                    label="Filter by blocks"
-                    onChange={(values) => updateParameters({ block: values })}
-                    options={blockOptions}
-                    values={blocks}
-                  />
-                </FilterField>
-                <FilterField label="2. Location">
-                  <MultiFilterSelect
-                    anyLabel={blocks.length ? 'All locations' : 'Select a block first'}
-                    disabled={!blocks.length}
-                    id="issues-location-filter"
-                    label="Filter by locations"
-                    onChange={(values) => updateParameters({ location: values })}
-                    options={locationOptions}
-                    values={blocks.length ? locations : []}
-                  />
-                </FilterField>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <FilterField label="3. Material type">
-                  <select
-                    className="field-input"
-                    onChange={(event) =>
-                      updateParameters({ trackingMode: event.target.value, category: '' })
-                    }
-                    value={trackingMode}
-                  >
-                    <option value="">All material types</option>
-                    <option value="SERIALIZED">Asset</option>
-                    <option value="QUANTITY">Consumable</option>
-                  </select>
-                </FilterField>
-                <FilterField label="4. Issue status">
-                  <select
-                    className="field-input"
-                    onChange={(event) => updateParameters({ status: event.target.value })}
-                    value={status ?? ''}
-                  >
-                    <option value="">All statuses</option>
-                    {statuses.map((value) => (
-                      <option key={value} value={value}>
-                        {humanizeCatalogValue(value)}
-                      </option>
-                    ))}
-                  </select>
-                </FilterField>
-              </div>
-              <div className="border-t border-[var(--color-border)] pt-4">
-                <p className="text-xs font-extrabold uppercase tracking-[0.08em] text-[var(--color-text-muted)]">
-                  More filters
-                </p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <FilterField label="Material category">
-                    <select
-                      className="field-input"
-                      disabled={!trackingMode}
-                      onChange={(event) => updateParameters({ category: event.target.value })}
-                      value={trackingMode ? category : ''}
-                    >
-                      <option value="">
-                        {trackingMode ? 'All categories' : 'Select material type first'}
-                      </option>
-                      {materialCategoryOptions.map((value) => (
-                        <option key={value} value={value}>
-                          {value}
-                        </option>
-                      ))}
-                    </select>
-                  </FilterField>
-                  <FilterField label="Source store">
-                    <select
-                      className="field-input"
-                      onChange={(event) => updateParameters({ store: event.target.value })}
-                      value={store}
-                    >
-                      <option value="">All source stores</option>
-                      {(catalogQuery.data ?? [])
-                        .filter((detail) => detail.kind === 'STORE')
-                        .map((detail) => (
-                          <option key={detail.id} value={detail.name}>
-                            {detail.name}
-                          </option>
-                        ))}
-                    </select>
-                  </FilterField>
-                  <FilterField label="Issue date">
-                    <select
-                      className="field-input"
-                      onChange={(event) => updateParameters({ period: event.target.value })}
-                      value={period ?? ''}
-                    >
-                      <option value="">Any date</option>
-                      <option value="TODAY">Issued today</option>
-                    </select>
-                  </FilterField>
-                  <FilterField label="Return state">
-                    <select
-                      className="field-input"
-                      onChange={(event) => updateParameters({ returnState: event.target.value })}
-                      value={returnState ?? ''}
-                    >
-                      <option value="">Any return state</option>
-                      <option value="PENDING">Pending return</option>
-                      <option value="DUE_TODAY">Due today</option>
-                    </select>
-                  </FilterField>
-                  <FilterField label="Assignment type">
-                    <select
-                      className="field-input"
-                      onChange={(event) => updateParameters({ assignmentType: event.target.value })}
-                      value={issueAssignmentType ?? ''}
-                    >
-                      <option value="">All assignment types</option>
-                      <option value="SHORT_TERM">Return by date</option>
-                      <option value="LONG_TERM">Permanent</option>
-                    </select>
-                  </FilterField>
-                </div>
-              </div>
+              {renderIssueFilterFields('issues')}
             </FilterPopover>
           </div>
         </div>
@@ -942,6 +1145,15 @@ export function IssuesPage() {
           </p>
         </div>
       </section>
+
+      {search && searchHits.length ? (
+        <SearchHitsPanel
+          hits={searchHits}
+          noun="Issue Record"
+          onReveal={revealHit}
+          search={search}
+        />
+      ) : null}
 
       {query.isPending ? (
         <LoadingPanel label="Loading Issue Records" />
@@ -977,7 +1189,10 @@ export function IssuesPage() {
             {issueGroups.map((group) => (
               <details
                 className="group overflow-hidden rounded-[14px] border border-[var(--color-border)] bg-white shadow-[var(--shadow-card)]"
-                key={`${group.trackingMode}:${group.category}`}
+                id={`issue-group-${domSafe(issueGroupKey(group.trackingMode, group.category))}`}
+                // Re-mount on a new search so folders holding matches start open.
+                key={`${group.trackingMode}:${group.category}:${search}`}
+                open={Boolean(search) && group.issues.length > 0}
               >
                 <summary className="cursor-pointer list-none bg-[var(--color-primary-soft)] p-4 marker:hidden">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1039,6 +1254,8 @@ export function IssuesPage() {
                           onDelete={setDeleteTarget}
                           onExtend={setExtendTarget}
                           onView={setViewIssue}
+                          search={search}
+                          searchHit={hitsByIssue.get(issue.issueId)}
                         />
                       ))}
                     </div>
@@ -1050,6 +1267,8 @@ export function IssuesPage() {
                       onDelete={setDeleteTarget}
                       onExtend={setExtendTarget}
                       onView={setViewIssue}
+                      search={search}
+                      searchHits={hitsByIssue}
                       visibleColumns={visibleColumns}
                     />
                   </>
@@ -1095,9 +1314,40 @@ export function IssuesPage() {
           onConfirm={() => deleteMutation.mutate(deleteTarget)}
         />
       ) : null}
+      {exportOpen ? (
+        <ExportSheetDialog
+          activeFilters={exportFilterChips}
+          columns={issueExportColumns}
+          defaultColumns={visibleColumns}
+          defaultFileName={`assetdesk-issue-data-${new Date().toISOString().slice(0, 10)}`}
+          description="Pick the filters and columns you need. IT assets can be listed one serial number per row."
+          filters={renderIssueFilterFields('issues-export')}
+          layoutOptions={[
+            {
+              value: 'SERIAL',
+              label: 'One row per serial number',
+              description: 'Every issued IT asset gets its own row — best for serial audits.',
+            },
+            {
+              value: 'LINE',
+              label: 'One row per material line',
+              description: 'Serial numbers of the same line are listed together in one cell.',
+            },
+          ]}
+          onClearFilters={clearIssueFilters}
+          onClose={() => setExportOpen(false)}
+          onDownload={downloadIssueSheet}
+          recordCount={query.isFetching ? null : (query.data?.meta.total ?? null)}
+          recordLabel="Issue Records"
+          requiredColumns={['issue']}
+          storageKey="assetdesk:issue-export-columns"
+          title="Download Issue data sheet"
+        />
+      ) : null}
     </div>
   );
 }
+
 
 function MultiFilterSelect({
   id,
@@ -1406,6 +1656,8 @@ function IssueCard({
   onDelete,
   onExtend,
   onView,
+  search,
+  searchHit,
 }: {
   admin: boolean;
   user: AuthUser | null;
@@ -1414,13 +1666,19 @@ function IssueCard({
   onDelete: (issue: IssueSummary) => void;
   onExtend: (issue: IssueSummary) => void;
   onView: (issue: IssueSummary) => void;
+  search: string;
+  searchHit: IssueSearchHit | undefined;
 }) {
   const scopedQuantity = scopedMaterialDetails(issue, materialScope).reduce(
     (total, material) => total + material.issuedQuantity,
     0,
   );
+  const groupKey = issueGroupKey(materialScope.trackingMode, materialScope.category);
   return (
-    <article className="rounded-[14px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]">
+    <article
+      className={`rounded-[14px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)] ${search && searchHit ? 'search-hit-highlight' : ''}`}
+      id={`issue-card-${domSafe(groupKey)}-${issue.issueId}`}
+    >
       <div className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
           <ClipboardList aria-hidden="true" size={20} />
@@ -1428,19 +1686,30 @@ function IssueCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <h2 className="text-sm font-extrabold text-[var(--color-primary-strong)]">
-              {issue.issueId}
+              <HighlightText search={search} text={issue.issueId} />
             </h2>
             <CatalogBadge value={displayIssueStatus(issue)} />
           </div>
           <p className="mt-2 font-bold text-[var(--color-text-strong)]">
-            {materialSummary(issue, materialScope)}
+            <HighlightText search={search} text={materialSummary(issue, materialScope)} />
           </p>
           <p className="mt-1 text-sm font-extrabold text-[var(--color-primary)]">
             Quantity: {scopedQuantity} {scopedQuantity === 1 ? 'unit' : 'units'}
           </p>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            Receiver: {issue.receiver.fullName}
+            Receiver: <HighlightText search={search} text={issue.receiver.fullName} />
           </p>
+          {search && searchHit ? (
+            <span className="search-match-chip">
+              {searchHit.value ? (
+                <>
+                  {searchHit.field}: <HighlightText search={search} text={searchHit.value} />
+                </>
+              ) : (
+                `Matched by ${searchHit.field.toLowerCase()}`
+              )}
+            </span>
+          ) : null}
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">
             Issued {formatIstDateTime(issue.issuedAt)}
             {issue.expectedReturnAt
@@ -1556,6 +1825,8 @@ function IssueTable({
   onDelete,
   onExtend,
   onView,
+  search,
+  searchHits,
   visibleColumns,
 }: {
   admin: boolean;
@@ -1565,8 +1836,11 @@ function IssueTable({
   onDelete: (issue: IssueSummary) => void;
   onExtend: (issue: IssueSummary) => void;
   onView: (issue: IssueSummary) => void;
+  search: string;
+  searchHits: Map<string, IssueSearchHit>;
   visibleColumns: IssueColumnKey[];
 }) {
+  const groupKey = domSafe(issueGroupKey(materialScope.trackingMode, materialScope.category));
   const tableWidth =
     visibleColumns.reduce((total, column) => total + issueColumnWidths[column] * 8, 0) + 80;
   return (
@@ -1598,7 +1872,8 @@ function IssueTable({
           <tbody className="divide-y divide-[var(--color-border)]">
             {issues.map((issue) => (
               <tr
-                className="h-[68px] cursor-pointer hover:bg-[var(--color-surface-tint)] focus-within:bg-[var(--color-surface-tint)]"
+                className={`h-[68px] cursor-pointer hover:bg-[var(--color-surface-tint)] focus-within:bg-[var(--color-surface-tint)] ${search && searchHits.has(issue.issueId) ? 'search-hit-highlight' : ''}`}
+                id={`issue-row-${groupKey}-${issue.issueId}`}
                 key={issue.issueId}
                 onClick={() => onView(issue)}
                 onKeyDown={(event) => {
@@ -1615,6 +1890,7 @@ function IssueTable({
                     key={key}
                     column={key}
                     materialScope={materialScope}
+                    search={search}
                   />
                 ))}
                 <td className="px-4 text-right">
@@ -1641,17 +1917,21 @@ function IssueTableCell({
   column,
   issue,
   materialScope,
+  search,
 }: {
   column: IssueColumnKey;
   issue: IssueSummary;
   materialScope: IssueMaterialScope;
+  search: string;
 }) {
   const materials = scopedMaterialDetails(issue, materialScope);
   switch (column) {
     case 'issue':
       return (
         <td className="px-4">
-          <p className="text-sm font-bold text-[var(--color-primary-strong)]">{issue.issueId}</p>
+          <p className="text-sm font-bold text-[var(--color-primary-strong)]">
+            <HighlightText search={search} text={issue.issueId} />
+          </p>
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">
             {formatIstDateTime(issue.issuedAt)}
           </p>
@@ -1660,7 +1940,7 @@ function IssueTableCell({
     case 'receiver':
       return (
         <td className="px-4 text-sm font-semibold text-[var(--color-text-strong)]">
-          {issue.receiver.fullName}
+          <HighlightText search={search} text={issue.receiver.fullName} />
         </td>
       );
     case 'material':
@@ -1668,6 +1948,7 @@ function IssueTableCell({
         <td className="px-4 text-sm text-[var(--color-text-muted)]">
           <ExpandableTableValue
             label="Materials"
+            search={search}
             values={[...new Set(materials.map((item) => item.name))]}
           />
         </td>
@@ -1682,6 +1963,7 @@ function IssueTableCell({
           <ExpandableTableValue
             empty="Not set"
             label="Models"
+            search={search}
             values={[...new Set(materials.map((item) => item.model).filter(Boolean))] as string[]}
           />
         </td>
@@ -1692,20 +1974,25 @@ function IssueTableCell({
       );
       return (
         <td className="px-4 text-sm text-[var(--color-text-muted)]">
-          <ExpandableTableValue empty="Not applicable" label="Serial numbers" values={serials} />
+          <ExpandableTableValue
+            empty="Not applicable"
+            label="Serial numbers"
+            search={search}
+            values={serials}
+          />
         </td>
       );
     }
     case 'block':
       return (
         <td className="px-4 text-sm font-semibold text-[var(--color-text-strong)]">
-          {issue.destinationBlock ?? 'Not set'}
+          <HighlightText search={search} text={issue.destinationBlock ?? 'Not set'} />
         </td>
       );
     case 'location':
       return (
         <td className="px-4 text-sm font-semibold text-[var(--color-text-strong)]">
-          {issue.destinationLocation ?? 'Not set'}
+          <HighlightText search={search} text={issue.destinationLocation ?? 'Not set'} />
         </td>
       );
     case 'issuedAt':
@@ -1759,25 +2046,37 @@ function ExpandableTableValue({
   values,
   label,
   empty = 'Not set',
+  search = '',
 }: {
   values: string[];
   label: string;
   empty?: string;
+  search?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const uniqueValues = [...new Set(values.filter(Boolean))];
+  const distinct = [...new Set(values.filter(Boolean))];
+  // A searched serial or model is moved to the front so it is visible without expanding.
+  const uniqueValues = search
+    ? [
+        ...distinct.filter((value) => textMatches(value, search)),
+        ...distinct.filter((value) => !textMatches(value, search)),
+      ]
+    : distinct;
   if (uniqueValues.length === 0) return <span>{empty}</span>;
   if (uniqueValues.length === 1) {
     return (
       <span className="block truncate" title={uniqueValues[0]}>
-        {uniqueValues[0]}
+        <HighlightText search={search} text={uniqueValues[0] ?? ''} />
       </span>
     );
   }
   return (
     <div className="min-w-0 leading-5">
       <span className={expanded ? 'whitespace-normal break-words' : 'block truncate'}>
-        {expanded ? uniqueValues.join(', ') : uniqueValues[0]}
+        <HighlightText
+          search={search}
+          text={expanded ? uniqueValues.join(', ') : (uniqueValues[0] ?? '')}
+        />
       </span>
       <button
         aria-expanded={expanded}

@@ -9,6 +9,8 @@ import {
   type ReceiverType,
 } from '@assetdesk/contracts';
 
+import { useAuth } from '../../auth/auth-context';
+import { hasPermission } from '../../auth/permissions';
 import { SelectField } from '../../components/catalog-ui';
 import { AppCard, Button, ErrorSummary, PageHeader, TextField } from '../../components/ui';
 import { isApiError } from '../../lib/api-client';
@@ -22,6 +24,9 @@ interface ReceiverForm {
   department: string;
   contact: string;
   email: string;
+  inChargeName: string;
+  inChargeContact: string;
+  inChargeEmail: string;
 }
 
 const initialForm: ReceiverForm = {
@@ -31,6 +36,9 @@ const initialForm: ReceiverForm = {
   department: '',
   contact: '',
   email: '',
+  inChargeName: '',
+  inChargeContact: '',
+  inChargeEmail: '',
 };
 
 const receiverTypes: ReceiverType[] = [
@@ -46,8 +54,14 @@ const receiverTypes: ReceiverType[] = [
 export function CreateReceiverPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const canManageLabs = hasPermission(user, 'LAB_ISSUE_CREATE');
+  const [kind, setKind] = useState<'PERSON' | 'LAB'>('PERSON');
   const [form, setForm] = useState(initialForm);
   const [message, setMessage] = useState<string | null>(null);
+  const isLab = kind === 'LAB';
+  const setField = (key: keyof ReceiverForm) => (event: { target: { value: string } }) =>
+    setForm((value) => ({ ...value, [key]: event.target.value }));
 
   const mutation = useMutation({
     mutationFn: (input: CreateReceiverRequest) => createReceiver(input),
@@ -66,14 +80,25 @@ export function CreateReceiverPage() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
-    const result = CreateReceiverRequestSchema.safeParse({
-      fullName: form.fullName,
-      ...(form.universityId.trim() ? { universityId: form.universityId } : {}),
-      type: form.type,
-      ...(form.department.trim() ? { department: form.department } : {}),
-      contact: form.contact,
-      email: form.email,
-    });
+    const result = CreateReceiverRequestSchema.safeParse(
+      isLab
+        ? {
+            type: 'LAB',
+            fullName: form.fullName,
+            ...(form.department.trim() ? { department: form.department } : {}),
+            inChargeName: form.inChargeName,
+            inChargeContact: form.inChargeContact,
+            inChargeEmail: form.inChargeEmail,
+          }
+        : {
+            fullName: form.fullName,
+            ...(form.universityId.trim() ? { universityId: form.universityId } : {}),
+            type: form.type,
+            ...(form.department.trim() ? { department: form.department } : {}),
+            contact: form.contact,
+            email: form.email,
+          },
+    );
     if (!result.success) {
       setMessage(result.error.issues[0]?.message ?? 'Check the Receiver details.');
       return;
@@ -109,7 +134,75 @@ export function CreateReceiverPage() {
         {message ? <ErrorSummary message={message} /> : null}
 
         <form className="mt-5 space-y-5" noValidate onSubmit={submit}>
-          <div className="grid gap-5 sm:grid-cols-2">
+          {canManageLabs ? (
+            <div
+              aria-label="Register a"
+              className="grid grid-cols-2 gap-1.5 rounded-[12px] bg-[var(--color-surface-tint)] p-1"
+              role="group"
+            >
+              {(
+                [
+                  { value: 'PERSON', label: 'Person / department' },
+                  { value: 'LAB', label: 'Lab (with in-charge)' },
+                ] as const
+              ).map((option) => (
+                <button
+                  aria-pressed={kind === option.value}
+                  className={`search-segment ${kind === option.value ? 'search-segment-active' : ''}`}
+                  key={option.value}
+                  onClick={() => {
+                    setKind(option.value);
+                    setMessage(null);
+                  }}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {isLab ? (
+            <div className="grid gap-5 sm:grid-cols-2">
+              <TextField
+                label="Lab name"
+                onChange={setField('fullName')}
+                placeholder="e.g. CSIT Lab 3"
+                required
+                value={form.fullName}
+              />
+              <TextField
+                label="Department"
+                onChange={setField('department')}
+                optional
+                value={form.department}
+              />
+              <TextField
+                label="Lab in-charge"
+                hint="The person accountable for material issued to this lab."
+                onChange={setField('inChargeName')}
+                required
+                value={form.inChargeName}
+              />
+              <TextField
+                label="In-charge contact number"
+                onChange={setField('inChargeContact')}
+                required
+                type="tel"
+                value={form.inChargeContact}
+              />
+              <TextField
+                autoCapitalize="none"
+                label="In-charge email"
+                hint="Issue and return notifications for the lab are sent here."
+                onChange={setField('inChargeEmail')}
+                required
+                spellCheck={false}
+                type="email"
+                value={form.inChargeEmail}
+              />
+            </div>
+          ) : null}
+          <div className={isLab ? 'hidden' : 'grid gap-5 sm:grid-cols-2'}>
             <TextField
               autoComplete="name"
               label="Full name"
@@ -126,7 +219,7 @@ export function CreateReceiverPage() {
               value={form.universityId}
             />
           </div>
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className={isLab ? 'hidden' : 'grid gap-5 sm:grid-cols-2'}>
             <SelectField
               id="receiver-type"
               label="Receiver type"
@@ -150,7 +243,7 @@ export function CreateReceiverPage() {
               value={form.department}
             />
           </div>
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className={isLab ? 'hidden' : 'grid gap-5 sm:grid-cols-2'}>
             <TextField
               autoComplete="tel"
               label="Contact number"

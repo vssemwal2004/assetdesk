@@ -73,6 +73,7 @@ const UserSchema = new Schema<UserRecord>(
         'ISSUES_VIEW',
         'ISSUE_DATA_EXPORT',
         'ASSIGNMENTS_CREATE',
+        'LAB_ISSUE_CREATE',
         'ISSUES_EDIT',
         'ISSUES_DELETE',
         'ISSUE_SLIPS_VIEW',

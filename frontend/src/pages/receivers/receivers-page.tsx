@@ -21,6 +21,7 @@ const receiverTypes: ReceiverType[] = [
   'AUTHORIZED_EXTERNAL',
   'MANAGEMENT',
   'GEHU',
+  'LAB',
 ];
 
 function receiverStatus(value: string): ReceiverStatus | undefined {
@@ -328,7 +329,7 @@ function ReceiverCard({
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
             {humanizeCatalogValue(receiver.type)} · {receiver.department ?? 'No department'}
           </p>
-          <p className="mt-1 break-all text-sm text-[var(--color-text-muted)]">{receiver.email}</p>
+          <p className="mt-1 break-all text-sm text-[var(--color-text-muted)]">{receiver.email ?? receiver.inChargeEmail}</p>
         </div>
       </div>
       <div className="mt-4 flex gap-2">
@@ -388,7 +389,7 @@ function ReceiverTable({
                   {receiver.fullName}
                 </p>
                 <p className="text-xs text-[var(--color-text-muted)]">
-                  {receiver.receiverCode} · {receiver.email}
+                  {receiver.receiverCode} · {receiver.email ?? receiver.inChargeEmail}
                 </p>
               </td>
               <td className="px-4 text-sm text-[var(--color-text-muted)]">

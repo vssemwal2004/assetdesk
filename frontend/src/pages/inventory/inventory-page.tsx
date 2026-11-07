@@ -24,6 +24,7 @@ import { Link, useSearchParams } from 'react-router';
 import type {
   AssetDetail,
   AssetDetailKind,
+  AssetUnit,
   Material,
   MaterialStatus,
   ReturnPolicy,
@@ -34,6 +35,8 @@ import { AdjustQuantityRequestSchema } from '@assetdesk/contracts';
 import { useAuth } from '../../auth/auth-context';
 import { hasPermission } from '../../auth/permissions';
 import { CatalogBadge, PageCount } from '../../components/catalog-ui';
+import { ExportSheetDialog, type ActiveFilterChip } from '../../components/export-sheet-dialog';
+import { SearchHitsPanel } from '../../components/search-hits-panel';
 import {
   Button,
   EmptyState,
@@ -50,7 +53,6 @@ import {
 import {
   adjustMaterialQuantity,
   deleteMaterial,
-  downloadInventoryCsv,
   getAssetDetails,
   getInventory,
   getAssetUnits,
@@ -63,12 +65,33 @@ import { isApiError } from '../../lib/api-client';
 import { humanizeCatalogValue } from '../../lib/catalog-format';
 import { toIstDateTimeInput } from '../../lib/date-time';
 import { inventoryStatusLabel, normalizeInventoryStatus } from '../../lib/inventory-status';
+import { HighlightText, revealElement, textMatches } from '../../lib/search-highlight';
+import {
+  defaultInventoryExportColumns,
+  downloadInventorySheet,
+  inventoryExportColumns,
+  type InventoryExportColumnKey,
+} from './inventory-export';
 import {
   materialGroupKey,
   quantityAdjustmentMaximum,
   signedQuantityDelta,
   type QuantityAdjustmentDirection,
 } from './inventory-form-utils';
+import { inventorySearchHits, type InventorySearchHit } from './inventory-search-hits';
+
+/** Search state passed down so folders open around matches and matched serials stand out. */
+interface InventorySearchView {
+  search: string;
+  /** Material codes matched only through serial numbers, with the matching units. */
+  serialUnits: Map<string, AssetUnit[]>;
+  /** A "Show" request from the path panel; the nonce re-triggers the same code. */
+  focus: { code: string; nonce: number } | null;
+  /** Open every folder level when the result set is small enough to read. */
+  expandAll: boolean;
+}
+
+const EXPAND_ALL_LIMIT = 60;
 
 function materialStatus(value: string): MaterialStatus | undefined {
   return normalizeInventoryStatus(value);
@@ -394,7 +417,8 @@ export function InventoryPage() {
     action: 'EDIT' | 'DELETE';
   } | null>(null);
   const [editedModelName, setEditedModelName] = useState('');
-  const [downloading, setDownloading] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [focus, setFocus] = useState<InventorySearchView['focus']>(null);
   const [visibleColumns, setVisibleColumns] =
     useState<InventoryColumnKey[]>(storedInventoryColumns);
   const search = parameters.get('search') ?? '';
@@ -563,6 +587,22 @@ export function InventoryPage() {
   }
 
   const materials = query.data?.data ?? [];
+  const searchHitsQuery = useQuery({
+    queryKey: ['inventory-search-hits', search, materials.map((material) => material.materialCode)],
+    queryFn: ({ signal }) => inventorySearchHits(materials, search, signal),
+    enabled: Boolean(search) && materials.length > 0,
+  });
+  const searchHits = search ? (searchHitsQuery.data ?? []) : [];
+  const searchView: InventorySearchView = {
+    search,
+    serialUnits: new Map(
+      searchHits
+        .filter((hit) => hit.units.length)
+        .map((hit) => [hit.material.materialCode, hit.units]),
+    ),
+    focus,
+    expandAll: Boolean(search) && materials.length <= EXPAND_ALL_LIMIT,
+  };
   const assetDetails = detailQuery.data ?? [];
   const categoryOptions = assetDetailOptions(
     assetDetails,
@@ -617,36 +657,103 @@ export function InventoryPage() {
     setDeleteTarget(material);
   }
 
-  async function downloadData() {
-    setActionError(null);
-    setDownloading(true);
-    try {
-      const blob = await downloadInventoryCsv({
-        ...(search ? { search } : {}),
-        ...(categories.length ? { category: categories } : {}),
-        ...(stores.length ? { store: stores } : {}),
-        ...(locations.length ? { location: locations } : {}),
-        ...(blocks.length ? { block: blocks } : {}),
-        ...(departments.length ? { department: departments } : {}),
-        ...(vendorName ? { vendorName } : {}),
-        ...(createdFrom ? { createdFrom } : {}),
-        ...(createdTo ? { createdTo } : {}),
-        ...(status ? { status } : {}),
-        ...(mode ? { trackingMode: mode } : {}),
-        ...(policy ? { returnPolicy: policy } : {}),
-        ...(stock ? { stockState: stock } : {}),
-      });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = 'assetdesk-inventory.csv';
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      setActionError('Inventory data could not be downloaded.');
-    } finally {
-      setDownloading(false);
-    }
+  const stockStateLabels: Record<InventoryStockState, string> = {
+    AVAILABLE: 'Available stock',
+    LOW_STOCK: 'Low stock',
+    OUT_OF_STOCK: 'Out of stock',
+    ISSUED: 'Issued stock',
+    FULLY_ISSUED: 'Fully issued',
+  };
+  const listChip = (key: string, label: string, values: string[]): ActiveFilterChip[] =>
+    values.length
+      ? [{ key, label, value: values.join(', '), onRemove: () => updateParameters({ [key]: [] }) }]
+      : [];
+  const textChip = (key: string, label: string, value: string, shown = value) =>
+    value ? [{ key, label, value: shown, onRemove: () => updateParameters({ [key]: '' }) }] : [];
+  const exportFilterChips: ActiveFilterChip[] = [
+    ...(mode
+      ? [
+          {
+            key: 'trackingMode',
+            label: 'Inventory type',
+            value: selectedInventoryLabel,
+            onRemove: () => updateParameters({ trackingMode: '', category: [], returnPolicy: '' }),
+          },
+        ]
+      : []),
+    ...textChip('search', 'Search', search),
+    ...listChip('category', selectedInventoryLabel, categories),
+    ...listChip('store', 'Store', stores),
+    ...listChip('location', 'Location', locations),
+    ...listChip('block', 'Block', blocks),
+    ...listChip('department', 'Department', departments),
+    ...textChip('vendorName', 'Vendor', vendorName),
+    ...textChip('createdFrom', 'Added from', createdFrom),
+    ...textChip('createdTo', 'Added to', createdTo),
+    ...textChip('status', 'Status', status ?? '', status ? inventoryStatusLabel(status) : ''),
+    ...textChip('stockState', 'Stats', stock ?? '', stock ? stockStateLabels[stock] : ''),
+    ...textChip('returnPolicy', 'Return policy', policy ?? '', policy ? humanizeCatalogValue(policy) : ''),
+  ];
+
+  function clearInventoryFilters() {
+    updateParameters({
+      search: '',
+      category: [],
+      store: [],
+      location: [],
+      block: [],
+      department: [],
+      vendorName: '',
+      createdFrom: '',
+      createdTo: '',
+      status: '',
+      returnPolicy: '',
+      stockState: '',
+    });
+  }
+
+  async function downloadSheet(request: {
+    scope: 'FILTERED' | 'ALL';
+    columns: string[];
+    layout: string;
+    fileName: string;
+  }) {
+    const filters =
+      request.scope === 'ALL'
+        ? {}
+        : {
+            ...(search ? { search } : {}),
+            ...(categories.length ? { category: categories } : {}),
+            ...(stores.length ? { store: stores } : {}),
+            ...(locations.length ? { location: locations } : {}),
+            ...(blocks.length ? { block: blocks } : {}),
+            ...(departments.length ? { department: departments } : {}),
+            ...(vendorName ? { vendorName } : {}),
+            ...(createdFrom ? { createdFrom } : {}),
+            ...(createdTo ? { createdTo } : {}),
+            ...(status ? { status } : {}),
+            ...(mode ? { trackingMode: mode } : {}),
+            ...(policy ? { returnPolicy: policy } : {}),
+            ...(stock ? { stockState: stock } : {}),
+          };
+    await downloadInventorySheet({
+      filters,
+      columns: request.columns as InventoryExportColumnKey[],
+      layout: request.layout === 'SERIAL' ? 'SERIAL' : 'STOCK',
+      fileName: request.fileName,
+      filterSummary:
+        request.scope === 'ALL'
+          ? []
+          : exportFilterChips.map((chip) => ({ label: chip.label, value: chip.value })),
+    });
+  }
+
+  function revealMaterial(hit: InventorySearchHit) {
+    const code = hit.material.materialCode;
+    setFocus((current) => ({ code, nonce: (current?.nonce ?? 0) + 1 }));
+    window.requestAnimationFrame(() =>
+      revealElement([`inventory-row-${code}`, `inventory-card-${code}`]),
+    );
   }
 
   function chooseInventoryType(value: TrackingMode) {
@@ -657,20 +764,158 @@ export function InventoryPage() {
     });
   }
 
+  function renderInventoryFilterFields(idPrefix: string) {
+    return (
+      <>
+        <div className="rounded-[8px] bg-[var(--color-surface-tint)] p-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <FilterField label={selectedInventoryLabel}>
+              <MultiFilterSelect
+                anyLabel={`Any ${selectedInventoryLabel}`}
+                id={`${idPrefix}-category-filter`}
+                label={`Filter by ${selectedInventoryLabel}`}
+                onChange={(value) => updateParameters({ category: value })}
+                options={categoryOptions}
+                values={categories}
+              />
+            </FilterField>
+            <FilterField label="Store">
+              <MultiFilterSelect
+                anyLabel="Any store"
+                id={`${idPrefix}-store-filter`}
+                label="Filter by store"
+                onChange={(value) => updateParameters({ store: value })}
+                options={storeOptions}
+                values={stores}
+              />
+            </FilterField>
+            <FilterField label="Location">
+              <MultiFilterSelect
+                anyLabel="Any location"
+                id={`${idPrefix}-location-filter`}
+                label="Filter by location"
+                onChange={(value) => updateParameters({ location: value })}
+                options={locationOptions}
+                values={locations}
+              />
+            </FilterField>
+            <FilterField label="Block">
+              <MultiFilterSelect
+                anyLabel="Any block"
+                id={`${idPrefix}-block-filter`}
+                label="Filter by block"
+                onChange={(value) => updateParameters({ block: value })}
+                options={blockOptions}
+                values={blocks}
+              />
+            </FilterField>
+            <FilterField label="Department">
+              <MultiFilterSelect
+                anyLabel="Any department"
+                id={`${idPrefix}-department-filter`}
+                label="Filter by department"
+                onChange={(value) => updateParameters({ department: value })}
+                options={departmentOptions}
+                values={departments}
+              />
+            </FilterField>
+            <FilterField label="Vendor">
+              <SearchForm
+                id={`${idPrefix}-vendor-filter`}
+                label="Filter by vendor"
+                onSearch={(value) => updateParameters({ vendorName: value })}
+                placeholder="Any vendor"
+                value={vendorName}
+              />
+            </FilterField>
+            <FilterField label="Added date">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  aria-label="Created from date"
+                  className="field-input"
+                  onChange={(event) =>
+                    updateParameters({ createdFrom: event.target.value })
+                  }
+                  type="date"
+                  value={createdFrom}
+                />
+                <input
+                  aria-label="Created to date"
+                  className="field-input"
+                  onChange={(event) => updateParameters({ createdTo: event.target.value })}
+                  type="date"
+                  value={createdTo}
+                />
+              </div>
+            </FilterField>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {user?.role === 'ADMIN' ? (
+            <FilterField label="Status">
+              <FilterSelect
+                id={`${idPrefix}-status-filter`}
+                label="Filter by status"
+                onChange={(value) => updateParameters({ status: value })}
+                value={status ?? ''}
+              >
+                <option value="">Any status</option>
+                <option value="ACTIVE">{inventoryStatusLabel('ACTIVE')}</option>
+                <option value="UNDER_MAINTENANCE">
+                  {inventoryStatusLabel('UNDER_MAINTENANCE')}
+                </option>
+                <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
+                <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
+                <option value="ARCHIVED">Archived</option>
+              </FilterSelect>
+            </FilterField>
+          ) : null}
+          <FilterField label="Stats">
+            <FilterSelect
+              id={`${idPrefix}-stock-filter`}
+              label="Filter by stats"
+              onChange={(value) => updateParameters({ stockState: value })}
+              value={stock ?? ''}
+            >
+              <option value="">Any stats</option>
+              <option value="AVAILABLE">Available stock</option>
+              <option value="LOW_STOCK">Low stock</option>
+              <option value="OUT_OF_STOCK">Out of stock</option>
+              <option value="ISSUED">Issued stock</option>
+              <option value="FULLY_ISSUED">Fully issued</option>
+            </FilterSelect>
+          </FilterField>
+          <FilterField label="Return policy">
+            <FilterSelect
+              id={`${idPrefix}-policy-filter`}
+              label="Filter by return policy"
+              onChange={(value) => updateParameters({ returnPolicy: value })}
+              value={policy ?? ''}
+            >
+              <option value="">Any return policy</option>
+              <option value="REUSABLE">Reusable</option>
+              <option value="CONSUMABLE">Consumable</option>
+            </FilterSelect>
+          </FilterField>
+        </div>
+      </>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <PageHeader
         actions={
           <div className="flex flex-wrap gap-2">
             {canExportInventory ? (
-              <Button
-                loading={downloading}
-                onClick={() => void downloadData()}
-                type="button"
-                variant="secondary"
-              >
+              <Button onClick={() => setExportOpen(true)} type="button" variant="secondary">
                 <Download aria-hidden="true" size={18} />
-                {downloading ? 'Downloading...' : 'Download data'}
+                Download sheet
+                {exportFilterChips.length ? (
+                  <span className="rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-xs font-extrabold text-[var(--color-primary-strong)]">
+                    {exportFilterChips.length} filter{exportFilterChips.length === 1 ? '' : 's'}
+                  </span>
+                ) : null}
               </Button>
             ) : null}
             {canAddInventory ? (
@@ -730,7 +975,11 @@ export function InventoryPage() {
                 key={search}
                 label="Search Inventory"
                 onSearch={(value) => updateParameters({ search: value })}
-                placeholder={`${selectedInventoryLabel}, code, category, store or description`}
+                placeholder={
+                  selectedInventoryType === 'SERIALIZED'
+                    ? 'Serial no., asset tag, model, configuration, code or store'
+                    : 'Consumable, model, code, category, store or description'
+                }
                 value={search}
               />
               <FilterPopover
@@ -766,137 +1015,7 @@ export function InventoryPage() {
                 }
                 panelClassName="w-[min(94vw,720px)] p-5"
               >
-                <div className="rounded-[8px] bg-[var(--color-surface-tint)] p-3">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <FilterField label={selectedInventoryLabel}>
-                      <MultiFilterSelect
-                        anyLabel={`Any ${selectedInventoryLabel}`}
-                        id="inventory-category-filter"
-                        label={`Filter by ${selectedInventoryLabel}`}
-                        onChange={(value) => updateParameters({ category: value })}
-                        options={categoryOptions}
-                        values={categories}
-                      />
-                    </FilterField>
-                    <FilterField label="Store">
-                      <MultiFilterSelect
-                        anyLabel="Any store"
-                        id="inventory-store-filter"
-                        label="Filter by store"
-                        onChange={(value) => updateParameters({ store: value })}
-                        options={storeOptions}
-                        values={stores}
-                      />
-                    </FilterField>
-                    <FilterField label="Location">
-                      <MultiFilterSelect
-                        anyLabel="Any location"
-                        id="inventory-location-filter"
-                        label="Filter by location"
-                        onChange={(value) => updateParameters({ location: value })}
-                        options={locationOptions}
-                        values={locations}
-                      />
-                    </FilterField>
-                    <FilterField label="Block">
-                      <MultiFilterSelect
-                        anyLabel="Any block"
-                        id="inventory-block-filter"
-                        label="Filter by block"
-                        onChange={(value) => updateParameters({ block: value })}
-                        options={blockOptions}
-                        values={blocks}
-                      />
-                    </FilterField>
-                    <FilterField label="Department">
-                      <MultiFilterSelect
-                        anyLabel="Any department"
-                        id="inventory-department-filter"
-                        label="Filter by department"
-                        onChange={(value) => updateParameters({ department: value })}
-                        options={departmentOptions}
-                        values={departments}
-                      />
-                    </FilterField>
-                    <FilterField label="Vendor">
-                      <SearchForm
-                        id="inventory-vendor-filter"
-                        label="Filter by vendor"
-                        onSearch={(value) => updateParameters({ vendorName: value })}
-                        placeholder="Any vendor"
-                        value={vendorName}
-                      />
-                    </FilterField>
-                    <FilterField label="Added date">
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <input
-                          aria-label="Created from date"
-                          className="field-input"
-                          onChange={(event) =>
-                            updateParameters({ createdFrom: event.target.value })
-                          }
-                          type="date"
-                          value={createdFrom}
-                        />
-                        <input
-                          aria-label="Created to date"
-                          className="field-input"
-                          onChange={(event) => updateParameters({ createdTo: event.target.value })}
-                          type="date"
-                          value={createdTo}
-                        />
-                      </div>
-                    </FilterField>
-                  </div>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {user?.role === 'ADMIN' ? (
-                    <FilterField label="Status">
-                      <FilterSelect
-                        id="inventory-status-filter"
-                        label="Filter by status"
-                        onChange={(value) => updateParameters({ status: value })}
-                        value={status ?? ''}
-                      >
-                        <option value="">Any status</option>
-                        <option value="ACTIVE">{inventoryStatusLabel('ACTIVE')}</option>
-                        <option value="UNDER_MAINTENANCE">
-                          {inventoryStatusLabel('UNDER_MAINTENANCE')}
-                        </option>
-                        <option value="SCRAP">{inventoryStatusLabel('SCRAP')}</option>
-                        <option value="NOT_IN_USE">{inventoryStatusLabel('NOT_IN_USE')}</option>
-                        <option value="ARCHIVED">Archived</option>
-                      </FilterSelect>
-                    </FilterField>
-                  ) : null}
-                  <FilterField label="Stats">
-                    <FilterSelect
-                      id="inventory-stock-filter"
-                      label="Filter by stats"
-                      onChange={(value) => updateParameters({ stockState: value })}
-                      value={stock ?? ''}
-                    >
-                      <option value="">Any stats</option>
-                      <option value="AVAILABLE">Available stock</option>
-                      <option value="LOW_STOCK">Low stock</option>
-                      <option value="OUT_OF_STOCK">Out of stock</option>
-                      <option value="ISSUED">Issued stock</option>
-                      <option value="FULLY_ISSUED">Fully issued</option>
-                    </FilterSelect>
-                  </FilterField>
-                  <FilterField label="Return policy">
-                    <FilterSelect
-                      id="inventory-policy-filter"
-                      label="Filter by return policy"
-                      onChange={(value) => updateParameters({ returnPolicy: value })}
-                      value={policy ?? ''}
-                    >
-                      <option value="">Any return policy</option>
-                      <option value="REUSABLE">Reusable</option>
-                      <option value="CONSUMABLE">Consumable</option>
-                    </FilterSelect>
-                  </FilterField>
-                </div>
+                {renderInventoryFilterFields('inventory')}
               </FilterPopover>
               {user?.role === 'ADMIN' ? (
                 <InventoryColumnPicker
@@ -941,6 +1060,14 @@ export function InventoryPage() {
             >
               {actionNotice}
             </div>
+          ) : null}
+          {search && searchHits.length ? (
+            <SearchHitsPanel
+              hits={searchHits}
+              noun="stock record"
+              onReveal={revealMaterial}
+              search={search}
+            />
           ) : null}
           {query.isPending ? (
             <LoadingPanel label="Loading inventory" />
@@ -988,6 +1115,7 @@ export function InventoryPage() {
                         material={material}
                         onDelete={confirmDelete}
                         onAdjustQuantity={setQuantityTarget}
+                        searchView={searchView}
                       />
                     ))
                   ) : (
@@ -996,9 +1124,10 @@ export function InventoryPage() {
                       canDelete={canDeleteInventory}
                       canEdit={canEditInventory}
                       group={group}
-                      key={materialGroupKey(group.category, group.trackingMode)}
+                      key={`${materialGroupKey(group.category, group.trackingMode)}:${search}`}
                       onAdjustQuantity={setQuantityTarget}
                       onDelete={confirmDelete}
+                      searchView={searchView}
                     />
                   ),
                 )}
@@ -1009,6 +1138,7 @@ export function InventoryPage() {
                 canDelete={canDeleteInventory}
                 canEdit={canEditInventory}
                 materials={materials}
+                searchView={searchView}
                 visibleColumns={visibleColumns}
                 onDelete={confirmDelete}
                 onAdjustQuantity={setQuantityTarget}
@@ -1049,6 +1179,45 @@ export function InventoryPage() {
           material={deleteTarget}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => deleteMutation.mutate(deleteTarget)}
+        />
+      ) : null}
+      {exportOpen ? (
+        <ExportSheetDialog
+          activeFilters={exportFilterChips}
+          columns={inventoryExportColumns}
+          defaultColumns={defaultInventoryExportColumns}
+          defaultFileName={`assetdesk-inventory-${new Date().toISOString().slice(0, 10)}`}
+          description="Pick filters and columns. IT assets can be listed one serial number per row."
+          filters={
+            selectedInventoryType ? (
+              renderInventoryFilterFields('inventory-export')
+            ) : (
+              <p className="text-sm text-[var(--color-text-muted)]">
+                Choose IT Asset or IT Consumable on the page to filter by category, store and more.
+              </p>
+            )
+          }
+          layoutOptions={[
+            {
+              value: 'STOCK',
+              label: 'One row per stock record',
+              description: 'Model, configuration and store with total, available and issued counts.',
+            },
+            {
+              value: 'SERIAL',
+              label: 'One row per serial number',
+              description:
+                'Each IT asset unit on its own row with serial, asset tag and status. Consumables stay one row.',
+            },
+          ]}
+          onClearFilters={clearInventoryFilters}
+          onClose={() => setExportOpen(false)}
+          onDownload={downloadSheet}
+          recordCount={query.isFetching ? null : (query.data?.meta.total ?? null)}
+          recordLabel="stock records"
+          requiredColumns={['code']}
+          storageKey="assetdesk:inventory-export-columns"
+          title="Download inventory sheet"
         />
       ) : null}
       {viewMaterial ? (
@@ -2054,6 +2223,7 @@ function MaterialCard({
   onAdjustQuantity,
   onDelete,
   nestedUnderConfiguration = false,
+  searchView,
 }: {
   material: Material;
   canEdit: boolean;
@@ -2062,9 +2232,18 @@ function MaterialCard({
   onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
   nestedUnderConfiguration?: boolean;
+  searchView: InventorySearchView;
 }) {
+  const search = searchView.search;
+  const serialUnits = searchView.serialUnits.get(material.materialCode) ?? [];
   return (
-    <article className="rounded-[14px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]">
+    <article
+      className={cn(
+        'rounded-[14px] border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-card)]',
+        serialUnits.length > 0 && 'search-hit-highlight',
+      )}
+      id={`inventory-card-${material.materialCode}`}
+    >
       <div className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
           <PackageSearch aria-hidden="true" size={20} />
@@ -2072,9 +2251,17 @@ function MaterialCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <h2 className="font-extrabold text-[var(--color-text-strong)]">
-              {nestedUnderConfiguration
-                ? (material.store ?? material.locationBlock ?? material.location ?? 'Stock record')
-                : material.name}
+              <HighlightText
+                search={search}
+                text={
+                  nestedUnderConfiguration
+                    ? (material.store ??
+                      material.locationBlock ??
+                      material.location ??
+                      'Stock record')
+                    : material.name
+                }
+              />
             </h2>
             <div className="flex items-center gap-2">
               <CatalogBadge value={material.status} />
@@ -2090,7 +2277,7 @@ function MaterialCard({
           </div>
           {material.trackingMode === 'SERIALIZED' ? (
             <p className="mt-1 text-xs font-bold text-[var(--color-primary)]">
-              {material.materialCode}
+              <HighlightText search={search} text={material.materialCode} />
             </p>
           ) : null}
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
@@ -2099,6 +2286,11 @@ function MaterialCard({
           <p className="mt-1 text-sm font-bold text-[var(--color-text-strong)]">
             {quantityLabel(material)}
           </p>
+          {serialUnits.map((unit) => (
+            <span className="search-match-chip mr-1" key={unit.assetTag}>
+              Serial: <HighlightText search={search} text={unit.serialNumber ?? unit.assetTag} />
+            </span>
+          ))}
         </div>
       </div>
       <Link className="button-secondary mt-4 w-full" to={`/inventory/${material.materialCode}`}>
@@ -2115,6 +2307,7 @@ function MobileGroupedMaterialCards({
   canAdjustQuantity,
   onAdjustQuantity,
   onDelete,
+  searchView,
 }: {
   group: MaterialGroup;
   canEdit: boolean;
@@ -2122,10 +2315,14 @@ function MobileGroupedMaterialCards({
   canAdjustQuantity: boolean;
   onAdjustQuantity: (material: Material) => void;
   onDelete: (material: Material) => void;
+  searchView: InventorySearchView;
 }) {
   const modelGroups = groupMaterialModels(group.materials);
+  const search = searchView.search;
+  // The parent re-mounts these folders per search, so `open` only sets the starting state.
+  const startOpen = searchView.expandAll;
   return (
-    <details className="group/category space-y-2">
+    <details className="group/category space-y-2" open={Boolean(search)}>
       <summary className="list-none rounded-[10px] border border-[var(--color-primary-border)] bg-[var(--color-primary-soft)] p-3 marker:hidden">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -2135,7 +2332,7 @@ function MobileGroupedMaterialCards({
             />
             <div>
               <h2 className="font-extrabold text-[var(--color-primary-strong)]">
-                {group.category}
+                <HighlightText search={search} text={group.category} />
               </h2>
               <p className="text-xs font-semibold text-[var(--color-text-muted)]">
                 {humanizeCatalogValue(group.trackingMode)} · {modelGroups.length} model
@@ -2151,7 +2348,7 @@ function MobileGroupedMaterialCards({
       {modelGroups.map((model) => {
         const configurations = groupMaterialConfigurations(model.key, model.materials);
         return (
-          <details className="group/model ml-2 space-y-2" key={model.key}>
+          <details className="group/model ml-2 space-y-2" key={model.key} open={startOpen}>
             <summary className="list-none rounded-[10px] border border-[var(--color-border)] bg-white p-3 marker:hidden">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
@@ -2161,7 +2358,7 @@ function MobileGroupedMaterialCards({
                   />
                   <div className="min-w-0">
                     <p className="break-words font-extrabold text-[var(--color-text-strong)]">
-                      {model.label}
+                      <HighlightText search={search} text={model.label} />
                     </p>
                     <p className="text-xs text-[var(--color-text-muted)]">
                       {group.trackingMode === 'SERIALIZED'
@@ -2179,7 +2376,11 @@ function MobileGroupedMaterialCards({
             </summary>
             {group.trackingMode === 'SERIALIZED'
               ? configurations.map((configuration) => (
-                  <details className="group/config ml-2 space-y-2" key={configuration.key}>
+                  <details
+                    className="group/config ml-2 space-y-2"
+                    key={configuration.key}
+                    open={startOpen}
+                  >
                     <summary className="list-none rounded-[10px] border border-[var(--color-border)] bg-[#fbfaff] p-3 marker:hidden">
                       <div className="flex items-center gap-2">
                         <ChevronDown
@@ -2188,7 +2389,7 @@ function MobileGroupedMaterialCards({
                         />
                         <div className="min-w-0">
                           <p className="break-words text-sm font-bold text-[var(--color-text-strong)]">
-                            {configuration.label}
+                            <HighlightText search={search} text={configuration.label} />
                           </p>
                           <p className="text-xs text-[var(--color-text-muted)]">
                             {configuration.materials.length} store/stock record
@@ -2207,6 +2408,7 @@ function MobileGroupedMaterialCards({
                         nestedUnderConfiguration
                         onAdjustQuantity={onAdjustQuantity}
                         onDelete={onDelete}
+                        searchView={searchView}
                       />
                     ))}
                   </details>
@@ -2220,6 +2422,7 @@ function MobileGroupedMaterialCards({
                     material={material}
                     onAdjustQuantity={onAdjustQuantity}
                     onDelete={onDelete}
+                    searchView={searchView}
                   />
                 ))}
           </details>
@@ -2231,6 +2434,7 @@ function MobileGroupedMaterialCards({
 
 function MaterialTable({
   materials,
+  searchView,
   visibleColumns,
   canAdd,
   canEdit,
@@ -2244,6 +2448,7 @@ function MaterialTable({
   onModelCrud,
 }: {
   materials: Material[];
+  searchView: InventorySearchView;
   visibleColumns: InventoryColumnKey[];
   canAdd: boolean;
   canEdit: boolean;
@@ -2288,6 +2493,7 @@ function MaterialTable({
                   canEdit={canEdit}
                   key={material.materialCode}
                   material={material}
+                  searchView={searchView}
                   visibleColumns={visibleColumns}
                   onDelete={onDelete}
                   onAdjustQuantity={onAdjustQuantity}
@@ -2301,8 +2507,10 @@ function MaterialTable({
                 canAdjustQuantity={canAdjustQuantity}
                 canEdit={canEdit}
                 group={group}
+                searchView={searchView}
                 visibleColumns={visibleColumns}
-                key={materialGroupKey(group.category, group.trackingMode)}
+                // Re-mount per search so folders start open around the new matches.
+                key={`${materialGroupKey(group.category, group.trackingMode)}:${searchView.search}`}
                 onDelete={onDelete}
                 onAdjustQuantity={onAdjustQuantity}
                 onAddCategory={onAddCategory}
@@ -2320,6 +2528,7 @@ function MaterialTable({
 
 function GroupedMaterialRows({
   group,
+  searchView,
   visibleColumns,
   canAdd,
   canEdit,
@@ -2333,6 +2542,7 @@ function GroupedMaterialRows({
   onModelCrud,
 }: {
   group: MaterialGroup;
+  searchView: InventorySearchView;
   visibleColumns: InventoryColumnKey[];
   canAdd: boolean;
   canEdit: boolean;
@@ -2350,9 +2560,43 @@ function GroupedMaterialRows({
     action: 'EDIT' | 'DELETE';
   }) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [openModels, setOpenModels] = useState<string[]>([]);
-  const [openConfigurations, setOpenConfigurations] = useState<string[]>([]);
+  const search = searchView.search;
+  const [open, setOpen] = useState(() => Boolean(search));
+  const [openModels, setOpenModels] = useState<string[]>(() =>
+    searchView.expandAll ? groupMaterialModels(group.materials).map((model) => model.key) : [],
+  );
+  const [openConfigurations, setOpenConfigurations] = useState<string[]>(() =>
+    searchView.expandAll
+      ? groupMaterialModels(group.materials).flatMap((model) =>
+          groupMaterialConfigurations(model.key, model.materials).map((item) => item.key),
+        )
+      : [],
+  );
+  const [handledFocus, setHandledFocus] = useState(0);
+
+  // "Show" in the search path panel opens exactly the folders that lead to that stock record.
+  // Adjusting state while rendering (not in an effect) avoids a flash of closed folders.
+  const focus = searchView.focus;
+  if (focus && focus.nonce !== handledFocus) {
+    setHandledFocus(focus.nonce);
+    const model = groupMaterialModels(group.materials).find((entry) =>
+      entry.materials.some((material) => material.materialCode === focus.code),
+    );
+    if (model) {
+      const configuration = groupMaterialConfigurations(model.key, model.materials).find(
+        (entry) => entry.materials.some((material) => material.materialCode === focus.code),
+      );
+      setOpen(true);
+      setOpenModels((current) =>
+        current.includes(model.key) ? current : [...current, model.key],
+      );
+      if (configuration) {
+        setOpenConfigurations((current) =>
+          current.includes(configuration.key) ? current : [...current, configuration.key],
+        );
+      }
+    }
+  }
 
   if (group.category.trim().toLowerCase() === 'consumable') {
     return (
@@ -2364,6 +2608,7 @@ function GroupedMaterialRows({
             canEdit={canEdit}
             key={material.materialCode}
             material={material}
+            searchView={searchView}
             visibleColumns={visibleColumns}
             onAdjustQuantity={onAdjustQuantity}
             onDelete={onDelete}
@@ -2394,7 +2639,7 @@ function GroupedMaterialRows({
               </span>
               <div>
                 <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
-                  {group.category}
+                  <HighlightText search={search} text={group.category} />
                 </p>
                 <p className="text-xs font-semibold text-[var(--color-text-muted)]">
                   {humanizeCatalogValue(group.trackingMode)} · {modelGroups.length} model
@@ -2472,7 +2717,7 @@ function GroupedMaterialRows({
                         />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-extrabold text-[var(--color-text-strong)]">
-                            {model.label}
+                            <HighlightText search={search} text={model.label} />
                           </p>
                           <p className="text-xs text-[var(--color-text-muted)]">
                             {group.trackingMode === 'SERIALIZED'
@@ -2579,7 +2824,7 @@ function GroupedMaterialRows({
                                   />
                                   <div className="min-w-0">
                                     <p className="break-words text-sm font-bold text-[var(--color-text-strong)]">
-                                      {configuration.label}
+                                      <HighlightText search={search} text={configuration.label} />
                                     </p>
                                     <p className="text-xs text-[var(--color-text-muted)]">
                                       {configuration.materials.length} store/stock record
@@ -2617,6 +2862,7 @@ function GroupedMaterialRows({
                                   key={material.materialCode}
                                   material={material}
                                   nestedUnderConfiguration
+                                  searchView={searchView}
                                   visibleColumns={visibleColumns}
                                   onAdjustQuantity={onAdjustQuantity}
                                   onDelete={onDelete}
@@ -2635,6 +2881,7 @@ function GroupedMaterialRows({
                           canEdit={canEdit}
                           key={material.materialCode}
                           material={material}
+                          searchView={searchView}
                           visibleColumns={visibleColumns}
                           onAdjustQuantity={onAdjustQuantity}
                           onDelete={onDelete}
@@ -2660,6 +2907,7 @@ function MaterialVariantRows({
   onDelete,
   onView,
   nestedUnderConfiguration = false,
+  searchView,
 }: {
   material: Material;
   visibleColumns: InventoryColumnKey[];
@@ -2670,18 +2918,50 @@ function MaterialVariantRows({
   onDelete: (material: Material) => void;
   onView: (material: Material) => void;
   nestedUnderConfiguration?: boolean;
+  searchView: InventorySearchView;
 }) {
-  const [open, setOpen] = useState(false);
+  const search = searchView.search;
+  const serialHit = (searchView.serialUnits.get(material.materialCode)?.length ?? 0) > 0;
+  const [open, setOpen] = useState(serialHit);
+  const [showAllUnits, setShowAllUnits] = useState(false);
+  const unitSearch = serialHit && !showAllUnits ? search : '';
   const unitsQuery = useQuery({
-    queryKey: ['inventory-units-inline', material.materialCode],
-    queryFn: ({ signal }) => getAssetUnits(material.materialCode, 1, { pageSize: 100 }, signal),
+    queryKey: ['inventory-units-inline', material.materialCode, unitSearch],
+    queryFn: ({ signal }) =>
+      getAssetUnits(
+        material.materialCode,
+        1,
+        { pageSize: 100, ...(unitSearch ? { search: unitSearch } : {}) },
+        signal,
+      ),
     enabled: open && material.trackingMode === 'SERIALIZED',
   });
   const columnCount = visibleColumns.length + 1;
 
+  // Serial matches resolve after the list renders, and "Show" may target this row later, so
+  // open the serial panel when either first becomes true while still letting the user close it.
+  const [seenSerialHit, setSeenSerialHit] = useState(serialHit);
+  if (serialHit !== seenSerialHit) {
+    setSeenSerialHit(serialHit);
+    if (serialHit) setOpen(true);
+  }
+  const focusNonce =
+    searchView.focus?.code === material.materialCode ? searchView.focus.nonce : 0;
+  const [seenFocusNonce, setSeenFocusNonce] = useState(focusNonce);
+  if (focusNonce !== seenFocusNonce) {
+    setSeenFocusNonce(focusNonce);
+    if (focusNonce && material.trackingMode === 'SERIALIZED') setOpen(true);
+  }
+
   return (
     <>
-      <tr className="h-[72px] border-t border-[var(--color-border)] bg-white hover:bg-[var(--color-surface-tint)]">
+      <tr
+        className={cn(
+          'h-[72px] border-t border-[var(--color-border)] bg-white hover:bg-[var(--color-surface-tint)]',
+          serialHit && 'search-hit-highlight',
+        )}
+        id={`inventory-row-${material.materialCode}`}
+      >
         {visibleColumns.map((column) => (
           <MaterialInventoryCell
             column={column}
@@ -2690,6 +2970,7 @@ function MaterialVariantRows({
             nestedUnderConfiguration={nestedUnderConfiguration}
             onToggle={() => setOpen((value) => !value)}
             open={open}
+            search={search}
           />
         ))}
         <td className="px-4 text-right">
@@ -2726,28 +3007,56 @@ function MaterialVariantRows({
                 </p>
               ) : (
                 <div>
-                  <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <p className="text-sm font-extrabold text-[var(--color-primary-strong)]">
-                      Serial and Asset IDs
+                      {unitSearch ? `Serials matching “${unitSearch}”` : 'Serial and Asset IDs'}
                     </p>
-                    <button className="button-quiet" onClick={() => onView(material)} type="button">
-                      Open full details
-                    </button>
+                    <div className="flex flex-wrap gap-1">
+                      {serialHit ? (
+                        <button
+                          className="button-quiet"
+                          onClick={() => setShowAllUnits((current) => !current)}
+                          type="button"
+                        >
+                          {showAllUnits ? 'Only matching serials' : 'Show all serials'}
+                        </button>
+                      ) : null}
+                      <button
+                        className="button-quiet"
+                        onClick={() => onView(material)}
+                        type="button"
+                      >
+                        Open full details
+                      </button>
+                    </div>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {(unitsQuery.data?.data ?? []).map((unit) => (
-                      <div
-                        className="rounded-[9px] bg-[var(--color-surface-tint)] px-3 py-2"
-                        key={unit.assetTag}
-                      >
-                        <p className="text-xs font-extrabold text-[var(--color-text-strong)]">
-                          {unit.serialNumber ?? 'No serial number'}
-                        </p>
-                        <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                          {unit.assetTag} · {unit.condition} · {unit.status}
-                        </p>
-                      </div>
-                    ))}
+                    {(unitsQuery.data?.data ?? []).map((unit) => {
+                      const matched =
+                        Boolean(search) &&
+                        (textMatches(unit.serialNumber, search) ||
+                          textMatches(unit.assetTag, search));
+                      return (
+                        <div
+                          className={cn(
+                            'rounded-[9px] bg-[var(--color-surface-tint)] px-3 py-2',
+                            matched && 'ring-2 ring-amber-400',
+                          )}
+                          key={unit.assetTag}
+                        >
+                          <p className="text-xs font-extrabold text-[var(--color-text-strong)]">
+                            <HighlightText
+                              search={search}
+                              text={unit.serialNumber ?? 'No serial number'}
+                            />
+                          </p>
+                          <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                            <HighlightText search={search} text={unit.assetTag} /> ·{' '}
+                            {unit.condition} · {unit.status}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
                   {(unitsQuery.data?.meta.total ?? 0) > 100 ? (
                     <p className="mt-3 text-xs font-semibold text-[var(--color-text-muted)]">
@@ -2771,12 +3080,14 @@ function MaterialInventoryCell({
   open,
   onToggle,
   nestedUnderConfiguration,
+  search,
 }: {
   material: Material;
   column: InventoryColumnKey;
   open: boolean;
   onToggle: () => void;
   nestedUnderConfiguration: boolean;
+  search: string;
 }) {
   if (column === 'asset') {
     return (
@@ -2793,17 +3104,27 @@ function MaterialInventoryCell({
           />
           <span className="min-w-0">
             <span className="block truncate text-sm font-bold text-[var(--color-text-strong)]">
-              {nestedUnderConfiguration
-                ? 'Stock record'
-                : material.typeModelName || material.name || 'Inventory item'}
+              <HighlightText
+                search={search}
+                text={
+                  nestedUnderConfiguration
+                    ? 'Stock record'
+                    : material.typeModelName || material.name || 'Inventory item'
+                }
+              />
             </span>
             {!nestedUnderConfiguration && material.configuration ? (
               <span className="mt-0.5 block max-w-64 truncate text-xs text-[var(--color-text-muted)]">
-                {material.configuration}
+                <HighlightText search={search} text={material.configuration} />
               </span>
             ) : nestedUnderConfiguration ? (
               <span className="mt-0.5 block text-xs text-[var(--color-text-muted)]">
-                {material.store ?? material.locationBlock ?? material.location ?? 'Store not set'}
+                <HighlightText
+                  search={search}
+                  text={
+                    material.store ?? material.locationBlock ?? material.location ?? 'Store not set'
+                  }
+                />
               </span>
             ) : null}
           </span>
@@ -2814,14 +3135,17 @@ function MaterialInventoryCell({
   if (column === 'code') {
     return (
       <td className="px-4 text-sm font-bold text-[var(--color-primary)]">
-        {material.materialCode}
+        <HighlightText search={search} text={material.materialCode} />
       </td>
     );
   }
   if (column === 'store') {
     return (
       <td className="max-w-64 px-4 text-sm text-[var(--color-text-muted)]">
-        {material.store ?? material.locationBlock ?? material.location ?? 'Not provided'}
+        <HighlightText
+          search={search}
+          text={material.store ?? material.locationBlock ?? material.location ?? 'Not provided'}
+        />
       </td>
     );
   }

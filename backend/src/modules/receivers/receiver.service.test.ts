@@ -1,7 +1,13 @@
+import { Types } from 'mongoose';
 import { describe, expect, it } from 'vitest';
 
 import { AppError } from '../../middleware/error-handler.js';
-import { buildReceiverListFilter, conflictFromReceiverDuplicate } from './receiver.service.js';
+import {
+  buildReceiverListFilter,
+  conflictFromReceiverDuplicate,
+  createRecordInput,
+  findOrCreateReceiverForIssue,
+} from './receiver.service.js';
 
 describe('Receiver service query policy', () => {
   it('forces Worker-facing searches to ACTIVE even if another status is supplied', () => {
@@ -28,6 +34,46 @@ describe('Receiver service query policy', () => {
     expect(nameExpression).toBeInstanceOf(RegExp);
     expect((nameExpression as RegExp).test('ada.*+91 98')).toBe(true);
     expect((nameExpression as RegExp).test('adaZZ+91 98')).toBe(false);
+  });
+});
+
+describe('lab Receivers', () => {
+  const actor = new Types.ObjectId();
+
+  it('identifies a lab by its name and keeps the in-charge off the unique identity fields', () => {
+    const values = createRecordInput(
+      {
+        type: 'LAB',
+        fullName: ' CSIT  Lab 3 ',
+        inChargeName: 'Dr. Ravi Kumar',
+        inChargeContact: '+91 98765 43210',
+        inChargeEmail: 'Ravi@Example.edu',
+      },
+      actor,
+    );
+    expect(values).toMatchObject({
+      type: 'LAB',
+      fullName: 'CSIT Lab 3',
+      fullNameNormalized: 'csit lab 3',
+      inChargeEmail: 'ravi@example.edu',
+    });
+    expect(values).not.toHaveProperty('emailNormalized');
+    expect(values).not.toHaveProperty('universityIdNormalized');
+  });
+
+  it('refuses to create a lab from the inline Issue path', async () => {
+    await expect(
+      findOrCreateReceiverForIssue(
+        {
+          type: 'LAB',
+          fullName: 'CSIT Lab 3',
+          inChargeName: 'Dr. Ravi Kumar',
+          inChargeContact: '+91 98765 43210',
+          inChargeEmail: 'ravi@example.edu',
+        } as never,
+        actor.toString(),
+      ),
+    ).rejects.toMatchObject({ code: 'ISSUE_LAB_NOT_REGISTERED' });
   });
 });
 

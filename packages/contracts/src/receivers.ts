@@ -18,16 +18,41 @@ const ContactSchema = z
   });
 const EmailSchema = z.string().trim().toLowerCase().email().max(254);
 
-export const CreateReceiverRequestSchema = z
+const InChargeNameSchema = z.string().trim().min(2).max(120);
+
+/** A lab is accountable through a named in-charge; people and departments use contact/email. */
+export const LabInChargeSchema = z
   .object({
-    fullName: FullNameSchema,
-    universityId: UniversityIdSchema.optional(),
-    type: ReceiverTypeSchema,
-    department: DepartmentSchema.optional(),
-    contact: ContactSchema,
-    email: EmailSchema,
+    inChargeName: InChargeNameSchema,
+    inChargeContact: ContactSchema,
+    inChargeEmail: EmailSchema,
   })
   .strict();
+
+const PersonReceiverFields = {
+  fullName: FullNameSchema,
+  universityId: UniversityIdSchema.optional(),
+  department: DepartmentSchema.optional(),
+  contact: ContactSchema,
+  email: EmailSchema,
+};
+
+export const CreateReceiverRequestSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      ...PersonReceiverFields,
+      type: ReceiverTypeSchema.exclude(['LAB']),
+    })
+    .strict(),
+  z
+    .object({
+      fullName: FullNameSchema,
+      department: DepartmentSchema.optional(),
+      type: z.literal('LAB'),
+      ...LabInChargeSchema.shape,
+    })
+    .strict(),
+]);
 
 export const UpdateReceiverRequestSchema = z
   .object({
@@ -37,6 +62,9 @@ export const UpdateReceiverRequestSchema = z
     department: DepartmentSchema.nullable().optional(),
     contact: ContactSchema.optional(),
     email: EmailSchema.optional(),
+    inChargeName: InChargeNameSchema.optional(),
+    inChargeContact: ContactSchema.optional(),
+    inChargeEmail: EmailSchema.optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {
@@ -59,6 +87,9 @@ export const ReceiverSchema = z
     department: z.string().nullable(),
     contact: z.string().nullable(),
     email: z.string().email().nullable(),
+    inChargeName: z.string().nullable().optional().default(null),
+    inChargeContact: z.string().nullable().optional().default(null),
+    inChargeEmail: z.string().email().nullable().optional().default(null),
     status: ReceiverStatusSchema,
     createdAt: z.string().datetime({ offset: true }),
     updatedAt: z.string().datetime({ offset: true }),

@@ -116,6 +116,7 @@ export function ReceiverDetailPage() {
     );
   }
   const receiver = query.data;
+  const isLab = receiver.type === 'LAB';
 
   return (
     <div className="space-y-6">
@@ -172,11 +173,26 @@ export function ReceiverDetailPage() {
           ) : (
             <dl className="mt-5 divide-y divide-[var(--color-border)]">
               <DetailRow label="Receiver code" value={receiver.receiverCode} />
-              <DetailRow label="University ID" value={receiver.universityId ?? 'Not provided'} />
+              {isLab ? null : (
+                <DetailRow label="University ID" value={receiver.universityId ?? 'Not provided'} />
+              )}
               <DetailRow label="Type" value={humanizeCatalogValue(receiver.type)} />
               <DetailRow label="Department" value={receiver.department ?? 'Not provided'} />
-              <DetailRow label="Contact" value={receiver.contact} />
-              <DetailRow label="Email" value={receiver.email} />
+              {isLab ? (
+                <>
+                  <DetailRow label="Lab in-charge" value={receiver.inChargeName ?? 'Not provided'} />
+                  <DetailRow
+                    label="In-charge contact"
+                    value={receiver.inChargeContact ?? 'Not provided'}
+                  />
+                  <DetailRow label="In-charge email" value={receiver.inChargeEmail ?? 'Not provided'} />
+                </>
+              ) : (
+                <>
+                  <DetailRow label="Contact" value={receiver.contact} />
+                  <DetailRow label="Email" value={receiver.email} />
+                </>
+              )}
             </dl>
           )}
         </AppCard>
@@ -225,7 +241,9 @@ export function ReceiverDetailPage() {
             <ul className="mt-4 space-y-3 text-sm text-[var(--color-text-muted)]">
               <li className="flex gap-2">
                 <IdCard aria-hidden="true" size={18} />
-                {receiver.universityId ?? receiver.receiverCode}
+                {isLab
+                  ? (receiver.inChargeName ?? receiver.receiverCode)
+                  : (receiver.universityId ?? receiver.receiverCode)}
               </li>
               <li className="flex gap-2">
                 <Building2 aria-hidden="true" size={18} />
@@ -233,11 +251,11 @@ export function ReceiverDetailPage() {
               </li>
               <li className="flex gap-2">
                 <Phone aria-hidden="true" size={18} />
-                {receiver.contact}
+                {isLab ? receiver.inChargeContact : receiver.contact}
               </li>
               <li className="flex min-w-0 gap-2">
                 <Mail aria-hidden="true" className="shrink-0" size={18} />
-                <span className="break-all">{receiver.email}</span>
+                <span className="break-all">{isLab ? receiver.inChargeEmail : receiver.email}</span>
               </li>
             </ul>
           </AppCard>
@@ -264,7 +282,98 @@ export function ReceiverDetailPage() {
   );
 }
 
+function EditLabForm({
+  receiver,
+  onSaved,
+  onCancel,
+}: {
+  receiver: Receiver;
+  onSaved: (receiver: Receiver) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState({
+    fullName: receiver.fullName,
+    department: receiver.department ?? '',
+    inChargeName: receiver.inChargeName ?? '',
+    inChargeContact: receiver.inChargeContact ?? '',
+    inChargeEmail: receiver.inChargeEmail ?? '',
+  });
+  const [message, setMessage] = useState<string | null>(null);
+  const mutation = useMutation({
+    mutationFn: (input: UpdateReceiverRequest) => updateReceiver(receiver.receiverCode, input),
+    onSuccess: onSaved,
+    onError: (error) =>
+      setMessage(isApiError(error) ? error.message : 'Changes could not be saved.'),
+  });
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    const result = UpdateReceiverRequestSchema.safeParse({
+      fullName: form.fullName,
+      department: form.department.trim() || null,
+      inChargeName: form.inChargeName,
+      inChargeContact: form.inChargeContact,
+      inChargeEmail: form.inChargeEmail,
+    });
+    if (!result.success) {
+      setMessage(result.error.issues[0]?.message ?? 'Check the lab details.');
+      return;
+    }
+    mutation.mutate(result.data);
+  }
+
+  const set = (key: keyof typeof form) => (event: { target: { value: string } }) =>
+    setForm((value) => ({ ...value, [key]: event.target.value }));
+
+  return (
+    <form className="mt-5 space-y-5" noValidate onSubmit={submit}>
+      {message ? <ErrorSummary message={message} /> : null}
+      <div className="grid gap-5 sm:grid-cols-2">
+        <TextField label="Lab name" onChange={set('fullName')} value={form.fullName} />
+        <TextField label="Department" onChange={set('department')} optional value={form.department} />
+        <TextField label="Lab in-charge" onChange={set('inChargeName')} value={form.inChargeName} />
+        <TextField
+          label="In-charge contact"
+          onChange={set('inChargeContact')}
+          type="tel"
+          value={form.inChargeContact}
+        />
+        <TextField
+          label="In-charge email"
+          onChange={set('inChargeEmail')}
+          type="email"
+          value={form.inChargeEmail}
+        />
+      </div>
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button onClick={onCancel} type="button" variant="secondary">
+          Cancel
+        </Button>
+        <Button loading={mutation.isPending} type="submit">
+          Save lab
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 function EditReceiverForm({
+  receiver,
+  onSaved,
+  onCancel,
+}: {
+  receiver: Receiver;
+  onSaved: (receiver: Receiver) => Promise<void>;
+  onCancel: () => void;
+}) {
+  if (receiver.type === 'LAB') {
+    return <EditLabForm onCancel={onCancel} onSaved={onSaved} receiver={receiver} />;
+  }
+  return <EditPersonReceiverForm onCancel={onCancel} onSaved={onSaved} receiver={receiver} />;
+}
+
+function EditPersonReceiverForm({
   receiver,
   onSaved,
   onCancel,

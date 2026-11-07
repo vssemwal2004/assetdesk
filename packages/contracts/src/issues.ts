@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   AssignmentTypeSchema,
   IssueStatusSchema,
+  IssueTargetSchema,
   ReceiverTypeSchema,
   ReturnPolicySchema,
   TrackingModeSchema,
@@ -94,7 +95,8 @@ export const CreateIssueReceiverRequestSchema = z
   .object({
     fullName: z.string().trim().min(2).max(120),
     universityId: z.string().trim().min(1).max(64).optional(),
-    type: ReceiverTypeSchema,
+    // Labs are registered Receivers with an in-charge, so they are chosen by code, never typed in.
+    type: ReceiverTypeSchema.exclude(['LAB']),
     department: z.string().trim().min(1).max(120).optional(),
     contact: OptionalIssueContactSchema,
     email: OptionalIssueEmailSchema,
@@ -104,6 +106,7 @@ export const CreateIssueReceiverRequestSchema = z
 export const CreateCatalogIssueRequestSchema = z
   .object({
     mode: z.literal('CATALOG').optional(),
+    issueTarget: IssueTargetSchema.optional(),
     assignmentType: AssignmentTypeSchema,
     receiverCode: ReceiverCodeSchema.optional(),
     receiver: CreateIssueReceiverRequestSchema.optional(),
@@ -133,6 +136,13 @@ export const CreateCatalogIssueRequestSchema = z
         code: 'custom',
         path: ['receiver'],
         message: 'Provide issued-to details.',
+      });
+    }
+    if (request.issueTarget === 'LAB' && !request.receiverCode) {
+      context.addIssue({
+        code: 'custom',
+        path: ['receiverCode'],
+        message: 'Choose a registered lab.',
       });
     }
     const materialCodes = request.lines.map((line) => line.materialCode);
@@ -245,6 +255,8 @@ export const IssueReceiverSnapshotSchema = z
     department: z.string().nullable(),
     contact: z.string().nullable(),
     email: z.string().email().nullable(),
+    // For labs: the accountable person. contact/email above then reach the in-charge.
+    inChargeName: z.string().nullable().optional().default(null),
   })
   .strict();
 
@@ -431,6 +443,7 @@ const IssueBaseSchema = z
     expectedReturnAt: z.string().datetime({ offset: true }).nullable(),
     duePreset: DuePresetSchema.nullable(),
     assignmentType: AssignmentTypeSchema.default('SHORT_TERM'),
+    issueTarget: IssueTargetSchema.default('PERSON'),
     status: IssueStatusSchema,
     purpose: z.string().nullable(),
     notes: z.string().nullable(),

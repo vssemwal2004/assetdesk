@@ -8,12 +8,14 @@ import {
   IssuePeriodSchema,
   IssueReturnStateSchema,
   IssueStatusSchema,
+  IssueTargetSchema,
   UpdateIssueRequestSchema,
   type CreateInventoryGatePassRequest,
 } from '@assetdesk/contracts';
 
 import { AppError } from '../../middleware/error-handler.js';
 import {
+  hasServerPermission,
   requireAuth,
   requireCsrf,
   requireFullAccess,
@@ -69,6 +71,10 @@ const IssueListQuerySchema = z
     assignmentType: z.preprocess(
       (value) => (value === '' ? undefined : value),
       AssignmentTypeSchema.optional(),
+    ),
+    issueTarget: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      IssueTargetSchema.optional(),
     ),
     store: OptionalQueryTextSchema,
     location: OptionalQueryTextListSchema,
@@ -146,6 +152,7 @@ export function createIssuesRouter(): Router {
           ...(input.period ? { period: input.period } : {}),
           ...(input.returnState ? { returnState: input.returnState } : {}),
           ...(input.assignmentType ? { assignmentType: input.assignmentType } : {}),
+          ...(input.issueTarget ? { issueTarget: input.issueTarget } : {}),
           ...(input.store ? { store: input.store } : {}),
           ...(location ? { location } : {}),
           ...(block ? { block } : {}),
@@ -183,6 +190,7 @@ export function createIssuesRouter(): Router {
           ...(selected.period ? { period: selected.period } : {}),
           ...(selected.returnState ? { returnState: selected.returnState } : {}),
           ...(selected.assignmentType ? { assignmentType: selected.assignmentType } : {}),
+          ...(selected.issueTarget ? { issueTarget: selected.issueTarget } : {}),
           ...(selected.store ? { store: selected.store } : {}),
           ...(location ? { location } : {}),
           ...(block ? { block } : {}),
@@ -250,6 +258,13 @@ export function createIssuesRouter(): Router {
       try {
         const actor = authenticated(request);
         const input = CreateIssueRequestSchema.parse(request.body);
+        if (input.issueTarget === 'LAB' && !hasServerPermission(actor, 'LAB_ISSUE_CREATE')) {
+          throw new AppError(
+            403,
+            'LAB_ISSUE_PERMISSION_REQUIRED',
+            'You do not have permission to issue material to a lab. Ask an Admin to grant it.',
+          );
+        }
         if (
           input.outsideUniversity &&
           actor.role !== 'ADMIN' &&

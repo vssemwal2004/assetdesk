@@ -173,6 +173,9 @@ const ActivityPage = lazy(() =>
 const ReportsPage = lazy(() =>
   import('../pages/reports/reports-page').then((module) => ({ default: module.ReportsPage })),
 );
+const SearchPage = lazy(() =>
+  import('../pages/search/search-page').then((module) => ({ default: module.SearchPage })),
+);
 
 function createQueryClient(): QueryClient {
   return new QueryClient({
@@ -210,6 +213,14 @@ export function App() {
             <Route element={<ProtectedRoute />}>
               <Route element={<AppShell />}>
                 <Route element={<DashboardPage />} path="/dashboard" />
+                <Route
+                  element={
+                    <Suspense fallback={<FeatureRouteFallback />}>
+                      <SearchPage />
+                    </Suspense>
+                  }
+                  path="/search"
+                />
                 <Route element={<PermissionRoute permission="CARTRIDGES_VIEW" />}>
                   <Route element={<CartridgeDashboardPage />} path="/cartridges/dashboard" />
                   <Route element={<CartridgesPage />} path="/cartridges" />

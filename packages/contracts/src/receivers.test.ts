@@ -44,6 +44,35 @@ describe('Receiver contracts', () => {
     });
   });
 
+  it('registers a lab only with a named in-charge and never with person identity fields', () => {
+    const lab = {
+      type: 'LAB',
+      fullName: ' CSIT Lab 3 ',
+      inChargeName: 'Dr. Ravi Kumar',
+      inChargeContact: '+91 98765 43210',
+      inChargeEmail: 'Ravi@Example.edu',
+    };
+    expect(CreateReceiverRequestSchema.parse(lab)).toMatchObject({
+      fullName: 'CSIT Lab 3',
+      inChargeEmail: 'ravi@example.edu',
+    });
+    expect(CreateReceiverRequestSchema.safeParse({ ...lab, inChargeName: undefined }).success).toBe(
+      false,
+    );
+    expect(CreateReceiverRequestSchema.safeParse({ ...lab, universityId: 'GEU-1' }).success).toBe(
+      false,
+    );
+    // A person cannot be registered with the LAB type through the person fields.
+    expect(
+      CreateReceiverRequestSchema.safeParse({
+        fullName: 'Ada',
+        type: 'LAB',
+        contact: '9876543210',
+        email: 'ada@example.edu',
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts only six-digit Receiver codes', () => {
     expect(ReceiverCodeSchema.safeParse('GEU-RCV-000001').success).toBe(true);
     expect(ReceiverCodeSchema.safeParse('GEU-RCV-1').success).toBe(false);

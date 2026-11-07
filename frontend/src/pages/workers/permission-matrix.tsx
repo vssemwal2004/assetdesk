@@ -61,6 +61,13 @@ export const permissionDefinitions: PermissionDefinition[] = [
     description: 'Open Add Issue and issue material to receivers.',
   },
   {
+    permission: 'LAB_ISSUE_CREATE',
+    group: 'Issues',
+    label: 'Issue material to labs',
+    description:
+      'Register labs with an in-charge and issue material to a lab, permanently or for a period. Off by default; an Admin grants it.',
+  },
+  {
     permission: 'ISSUES_EDIT',
     group: 'Issues',
     label: 'Edit issue records',
