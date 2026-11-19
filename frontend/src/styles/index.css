@@ -2141,6 +2141,17 @@ dialog::backdrop {
     margin: 8mm 8mm 8mm 30mm;
   }
 
+  /* Issue/Return receipts: extra 3 cm blank space above the header on every page
+     (for pre-printed letterhead / filing). Other margins stay the same. */
+  @page receipt {
+    size: A4 portrait;
+    margin: 30mm 8mm 8mm 30mm;
+  }
+
+  .receipt-sheet {
+    page: receipt;
+  }
+
   html,
   body {
     background: #fff !important;

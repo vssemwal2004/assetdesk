@@ -46,7 +46,10 @@ export function BillDocument({
   if (returnEvent) return <ReturnBillDocument issue={issue} returnEvent={returnEvent} />;
 
   return (
-    <article className="bill-sheet" aria-label={`Issue/return receipt for ${issue.issueId}`}>
+    <article
+      className="bill-sheet receipt-sheet"
+      aria-label={`Issue/return receipt for ${issue.issueId}`}
+    >
       <ReceiptHeader
         documentLabel={`${receiptMaterialLabel(issue)} ISSUE RECEIPT`}
         documentNumberLabel="Receipt / Issue No."
@@ -216,7 +219,7 @@ function ReturnBillDocument({
   returnEvent: ReturnEvent;
 }) {
   return (
-    <article className="bill-sheet" aria-label={`Return receipt for ${issue.issueId}`}>
+    <article className="bill-sheet receipt-sheet" aria-label={`Return receipt for ${issue.issueId}`}>
       <ReceiptHeader
         documentLabel={`${receiptMaterialLabel(issue)} RETURN RECEIPT`}
         documentNumberLabel="Receipt / Issue No."
