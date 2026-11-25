@@ -10,6 +10,7 @@ import {
   LoginRequestSchema,
 } from '@assetdesk/contracts';
 
+import { AppError } from '../../middleware/error-handler.js';
 import { appendAuditEvent } from '../audit/audit.service.js';
 import {
   changeInitialPassword,
@@ -36,6 +37,10 @@ function context(request: Request): { userAgent?: string; ip?: string } {
     ...(userAgent ? { userAgent } : {}),
     ...(request.ip ? { ip: request.ip } : {}),
   };
+}
+
+function sessionIsInvalid(error: unknown): boolean {
+  return error instanceof AppError && (error.status === 401 || error.code === 'ACCOUNT_DISABLED');
 }
 
 function cookieValue(request: Request, name: string): string | undefined {
@@ -188,7 +193,10 @@ export function createAuthRouter(): Router {
       setSessionCookies(response, result.bundle);
       response.json({ data: { user: result.user, csrfToken: result.bundle.csrfToken } });
     } catch (error) {
-      clearSessionCookies(response);
+      // Clear cookies only when the session itself is gone. A concurrent refresh (409), a
+      // stale CSRF header (403) or a database hiccup (5xx) must not wipe cookies that another
+      // tab has just renewed, which used to sign the user out of every tab.
+      if (sessionIsInvalid(error)) clearSessionCookies(response);
       next(error);
     }
   });

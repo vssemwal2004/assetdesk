@@ -457,6 +457,13 @@ interface UnitSearchRecord {
 
 const UNIT_FIELDS = ['assetTag', 'serialNumber', 'vendorName', 'condition'] as const;
 
+interface HoldingIssueRecord {
+  issueId: string;
+  issuedAt: Date;
+  receiver: { fullName: string };
+  lines: Array<{ assets?: Array<{ assetTag: string }> }>;
+}
+
 async function searchAssetUnits(context: Context): Promise<TypeResult> {
   const { query, matcher } = context;
   const filter: Filter = {};
@@ -488,10 +495,28 @@ async function searchAssetUnits(context: Context): Promise<TypeResult> {
     AssetUnitModel.countDocuments(filtered),
   ]);
   const units = mergeExactFirst(exactRecords, records, context.limit);
-  const materials = await MaterialModel.find({ _id: { $in: units.map((unit) => unit.materialId) } })
-    .select(MATERIAL_SELECT)
-    .lean<MaterialSearchRecord[]>();
+  const issuedTags = units.filter((unit) => unit.status === 'ISSUED').map((unit) => unit.assetTag);
+  const [materials, holdingIssues] = await Promise.all([
+    MaterialModel.find({ _id: { $in: units.map((unit) => unit.materialId) } })
+      .select(MATERIAL_SELECT)
+      .lean<MaterialSearchRecord[]>(),
+    issuedTags.length
+      ? IssueModel.find({ 'lines.assets.assetTag': { $in: issuedTags } })
+          .select('issueId issuedAt receiver.fullName lines.assets.assetTag')
+          .sort({ issuedAt: -1, _id: -1 })
+          .lean<HoldingIssueRecord[]>()
+      : Promise.resolve([] as HoldingIssueRecord[]),
+  ]);
   const byId = new Map(materials.map((material) => [material._id.toString(), material]));
+  // Newest Issue first, so an asset issued again after a return links to its current Issue.
+  const issueByTag = new Map<string, HoldingIssueRecord>();
+  for (const issue of holdingIssues) {
+    for (const line of issue.lines) {
+      for (const asset of line.assets ?? []) {
+        if (!issueByTag.has(asset.assetTag)) issueByTag.set(asset.assetTag, issue);
+      }
+    }
+  }
   return {
     total,
     results: units.map((unit) => {
@@ -506,6 +531,12 @@ async function searchAssetUnits(context: Context): Promise<TypeResult> {
         ],
         matcher,
       );
+      // Open the place the unit actually is: the Issue holding it, or its stock record
+      // filtered to this serial. The old link opened a filtered Inventory list instead.
+      const holdingIssue = unit.status === 'ISSUED' ? issueByTag.get(unit.assetTag) : undefined;
+      const stockHref = material
+        ? `/inventory/${encodeURIComponent(material.materialCode)}?serial=${encodeURIComponent(identifier)}`
+        : `/inventory?trackingMode=SERIALIZED&search=${encodeURIComponent(identifier)}`;
       return {
         type: 'ASSET_UNIT' as const,
         key: `ASSET_UNIT:${unit.assetTag}`,
@@ -513,13 +544,16 @@ async function searchAssetUnits(context: Context): Promise<TypeResult> {
         subtitle: compact([
           unit.serialNumber ? unit.assetTag : null,
           material ? material.typeModelName || material.name : null,
+          holdingIssue ? `Issued to ${holdingIssue.receiver.fullName}` : 'In stock',
           unit.condition,
         ]).join(' · '),
         status: unit.status,
         matchedField: match?.field ?? null,
         matchedValue: match?.value ?? null,
-        path: [...materialPath(material), `Serial ${identifier}`],
-        href: `/inventory?trackingMode=SERIALIZED&search=${encodeURIComponent(identifier)}`,
+        path: holdingIssue
+          ? ['Issues', holdingIssue.issueId, `Serial ${identifier}`]
+          : [...materialPath(material), `Serial ${identifier}`],
+        href: holdingIssue ? `/issues/${encodeURIComponent(holdingIssue.issueId)}` : stockHref,
         occurredAt: unit.createdAt.toISOString(),
       };
     }),
@@ -950,9 +984,20 @@ export async function globalSearch(
   const results = await Promise.all(
     searched.map(async (type) => ({ type, ...(await searchers[type](context)) })),
   );
+  const exactText = query.q?.trim().toLocaleUpperCase('en-US');
+  const hasExactHit = (group: { results: SearchResult[] }) =>
+    Boolean(exactText) &&
+    group.results.some(
+      (result) =>
+        result.matchedValue?.trim().toLocaleUpperCase('en-US') === exactText ||
+        result.title.trim().toLocaleUpperCase('en-US') === exactText,
+    );
   const groups = results
     .filter((group) => group.total > 0)
-    .map((group) => ({ ...group, label: SEARCH_ENTITY_LABELS[group.type] }));
+    .map((group) => ({ ...group, label: SEARCH_ENTITY_LABELS[group.type] }))
+    // A typed serial number or ID that matches exactly should be the first thing shown.
+    // Array.prototype.sort is stable, so the normal type order is kept otherwise.
+    .sort((left, right) => Number(hasExactHit(right)) - Number(hasExactHit(left)));
   return {
     query: query.q ?? '',
     groups,

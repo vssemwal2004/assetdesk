@@ -94,6 +94,8 @@ export function InventoryDetailPage() {
   const queryClient = useQueryClient();
   const [parameters, setParameters] = useSearchParams();
   const unitPage = Math.max(1, Number(parameters.get('unitPage')) || 1);
+  // Set by the global search so a serial-number hit opens straight onto that unit.
+  const serialFocus = parameters.get('serial')?.trim() ?? '';
   const [editing, setEditing] = useState(parameters.get('edit') === '1');
   const [dialog, setDialog] = useState<'status' | 'quantity' | 'add-unit' | 'delete' | null>(null);
   const [nextMaterialStatus, setNextMaterialStatus] = useState<MaterialStatus>('ACTIVE');
@@ -123,12 +125,15 @@ export function InventoryDetailPage() {
   });
 
   const unitsQuery = useQuery({
-    queryKey: ['asset-units', materialCode, unitPage, unitStatus],
+    queryKey: ['asset-units', materialCode, unitPage, unitStatus, serialFocus],
     queryFn: ({ signal }) =>
       getAssetUnits(
         materialCode,
         unitPage,
-        { ...(unitStatus ? { status: unitStatus } : {}) },
+        {
+          ...(unitStatus ? { status: unitStatus } : {}),
+          ...(serialFocus ? { search: serialFocus } : {}),
+        },
         signal,
       ),
     enabled: query.data?.trackingMode === 'SERIALIZED',
@@ -147,7 +152,8 @@ export function InventoryDetailPage() {
         },
         signal,
       ),
-    enabled: Boolean(materialCode),
+    // The audit API requires this permission; without it the panel would always show an error.
+    enabled: Boolean(materialCode) && hasPermission(user, 'DASHBOARD_TOTAL_ACTIVITY'),
   });
   const quantityHistoryQuery = useQuery({
     queryKey: ['inventory-quantity-history', materialCode, quantityHistoryFilters],
@@ -397,8 +403,15 @@ export function InventoryDetailPage() {
             next.set('unitPage', String(page));
             setParameters(next);
           }}
+          onClearSerial={() => {
+            const next = new URLSearchParams(parameters);
+            next.delete('serial');
+            next.set('unitPage', '1');
+            setParameters(next);
+          }}
           page={unitPage}
           query={unitsQuery}
+          serial={serialFocus}
           status={unitStatus}
           onStatusChange={(nextStatus) => {
             setUnitStatus(nextStatus);
@@ -409,12 +422,14 @@ export function InventoryDetailPage() {
         />
       ) : null}
 
-      <InventoryActivityPanel
-        events={activityQuery.data?.data ?? []}
-        loading={activityQuery.isPending}
-        onRetry={() => void activityQuery.refetch()}
-        unavailable={activityQuery.isError}
-      />
+      {hasPermission(user, 'DASHBOARD_TOTAL_ACTIVITY') ? (
+        <InventoryActivityPanel
+          events={activityQuery.data?.data ?? []}
+          loading={activityQuery.isPending}
+          onRetry={() => void activityQuery.refetch()}
+          unavailable={activityQuery.isError}
+        />
+      ) : null}
       {user?.role === 'ADMIN' ? (
         <QuantityHistoryPanel
           entries={quantityHistoryQuery.data?.data ?? []}
@@ -1143,7 +1158,9 @@ function SerializedUnits({
   onAdd,
   onEdit,
   onStatusChange,
+  onClearSerial,
   query,
+  serial,
 }: {
   material: Material;
   canAdd: boolean;
@@ -1156,7 +1173,9 @@ function SerializedUnits({
   onAdd: () => void;
   onEdit: (unit: AssetUnit) => void;
   onStatusChange: (status: AssetUnitStatus | '') => void;
+  onClearSerial: () => void;
   query: ReturnType<typeof useQuery<AssetUnitsListResponse>>;
+  serial: string;
 }) {
   return (
     <AppCard>
@@ -1194,6 +1213,19 @@ function SerializedUnits({
           <option value="SCRAPPED">Scrapped</option>
         </SelectField>
       </div>
+      {serial ? (
+        <div
+          className="mt-3 flex flex-wrap items-center gap-2 rounded-[10px] border border-[var(--color-primary)] bg-[var(--color-primary-soft)] px-3 py-2 text-sm"
+          role="status"
+        >
+          <span className="font-bold text-[var(--color-primary-strong)]">
+            Showing serial number “{serial}”
+          </span>
+          <button className="button-quiet min-h-8 text-xs" onClick={onClearSerial} type="button">
+            Show all units
+          </button>
+        </div>
+      ) : null}
       <div className="mt-5">
         {query.isPending ? (
           <LoadingPanel label="Loading IT Asset units" />

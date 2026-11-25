@@ -13,6 +13,7 @@ import {
   type CreateInventoryGatePassRequest,
 } from '@assetdesk/contracts';
 
+import { logger } from '../../config/logger.js';
 import { AppError } from '../../middleware/error-handler.js';
 import {
   hasServerPermission,
@@ -47,7 +48,8 @@ const OptionalQueryTextSchema = z.preprocess(
 );
 
 const OptionalQueryTextListSchema = z.preprocess(
-  (value) => (value === undefined || value === '' ? undefined : Array.isArray(value) ? value : [value]),
+  (value) =>
+    value === undefined || value === '' ? undefined : Array.isArray(value) ? value : [value],
   z.array(z.string().trim().min(1).max(120)).max(100).optional(),
 );
 
@@ -288,10 +290,13 @@ export function createIssuesRouter(): Router {
           hashIdempotencyKey(key),
           fingerprintRequest(input),
         );
+        let gatePassWarning: string | undefined;
         if (input.outsideUniversity) {
-          const movement = input.outsideUniversity;
-          const gatePassItems = result.issue.lines.reduce<CreateInventoryGatePassRequest['items']>(
-            (all, line) => {
+          try {
+            const movement = input.outsideUniversity;
+            const gatePassItems = result.issue.lines.reduce<
+              CreateInventoryGatePassRequest['items']
+            >((all, line) => {
               if (line.material.trackingMode === 'SERIALIZED')
                 all.push(
                   ...line.assets.map((asset) => ({
@@ -309,39 +314,54 @@ export function createIssuesRouter(): Router {
                   returnRequirement: 'RETURNABLE',
                 });
               return all;
-            },
-            [],
-          );
-          await createInventoryGatePass(
-            {
-              purpose:
-                input.assignmentType === 'LONG_TERM' ? 'ISSUE_PERMANENT' : 'ISSUE_RETURNABLE',
-              issueId: result.issue.issueId,
-              destination: {
-                name: movement.destination,
-                ...(movement.organization ? { organization: movement.organization } : {}),
-                ...(movement.contact ? { contact: movement.contact } : {}),
+            }, []);
+            await createInventoryGatePass(
+              {
+                purpose:
+                  input.assignmentType === 'LONG_TERM' ? 'ISSUE_PERMANENT' : 'ISSUE_RETURNABLE',
+                issueId: result.issue.issueId,
+                destination: {
+                  name: movement.destination,
+                  ...(movement.organization ? { organization: movement.organization } : {}),
+                  ...(movement.contact ? { contact: movement.contact } : {}),
+                },
+                carrier: {
+                  name: movement.personCarryingMaterial,
+                  ...(movement.contact ? { contact: movement.contact } : {}),
+                  ...(movement.vehicleNumber ? { vehicleNumber: movement.vehicleNumber } : {}),
+                },
+                items: gatePassItems,
+                ...(movement.expectedGateInAt
+                  ? { expectedGateInAt: movement.expectedGateInAt }
+                  : {}),
+                ...(movement.remarks ? { remarks: movement.remarks } : {}),
               },
-              carrier: {
-                name: movement.personCarryingMaterial,
-                ...(movement.contact ? { contact: movement.contact } : {}),
-                ...(movement.vehicleNumber ? { vehicleNumber: movement.vehicleNumber } : {}),
+              {
+                userId: actor.userId,
+                workerId: actor.workerId,
+                role: actor.role,
+                requestId: request.requestId,
               },
-              items: gatePassItems,
-              ...(movement.expectedGateInAt ? { expectedGateInAt: movement.expectedGateInAt } : {}),
-              ...(movement.remarks ? { remarks: movement.remarks } : {}),
-            },
-            {
-              userId: actor.userId,
-              workerId: actor.workerId,
-              role: actor.role,
-              requestId: request.requestId,
-            },
-          );
+            );
+          } catch (gatePassError) {
+            // The Issue and its stock movement are already committed. Report the Gate Pass
+            // problem as a warning instead of failing a request that did save the Issue.
+            logger.error(
+              { err: gatePassError, requestId: request.requestId, issueId: result.issue.issueId },
+              'Issue saved but its Gate Pass could not be created',
+            );
+            gatePassWarning =
+              gatePassError instanceof AppError
+                ? `The Issue was saved, but its Gate Pass was not created: ${gatePassError.message} Create it from Inventory › Gate Pass Out.`
+                : 'The Issue was saved, but its Gate Pass was not created. Create it from Inventory › Gate Pass Out.';
+          }
         }
         response.status(result.idempotentReplay ? 200 : 201).json({
           data: { issue: result.issue },
-          meta: { idempotentReplay: result.idempotentReplay },
+          meta: {
+            idempotentReplay: result.idempotentReplay,
+            ...(gatePassWarning ? { gatePassWarning } : {}),
+          },
         });
       } catch (error) {
         next(error);

@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, ClipboardCheck, RotateCcw } from 'lucide-react';
+import { CheckCircle2, ClipboardCheck, Eye, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { useLocation } from 'react-router';
 import type { Cartridge } from '@assetdesk/contracts';
+import { ReviewDrawer } from '../../components/review-drawer';
+import { reviewRows } from '../../lib/review-rows';
+import { isApiError, isUncertainWriteFailure } from '../../lib/api-client';
 import {
   AppCard,
   Button,
@@ -12,7 +15,12 @@ import {
   PageHeader,
   TextField,
 } from '../../components/ui';
-import { getAllCartridges, issueCartridge, returnCartridge } from '../../lib/cartridges-api';
+import {
+  getAllCartridges,
+  getCartridge,
+  issueCartridge,
+  returnCartridge,
+} from '../../lib/cartridges-api';
 export function IssueCartridgePage() {
   const preset = new URLSearchParams(useLocation().search).get('serial') ?? '';
   const queryClient = useQueryClient();
@@ -25,28 +33,74 @@ export function IssueCartridgePage() {
     remarks: '',
   });
   const [done, setDone] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const availableQuery = useQuery({
     queryKey: ['cartridges', { status: 'FILLED_AVAILABLE', page: 1, pageSize: 100 }],
     queryFn: () => getAllCartridges({ status: 'FILLED_AVAILABLE' }),
   });
   const availableCartridges = availableQuery.data?.data ?? [];
   const mutation = useMutation({
-    mutationFn: () => issueCartridge(form),
+    mutationFn: () =>
+      withOutcomeCheck(
+        () => issueCartridge(form),
+        form.serialNumbers,
+        (status) => status === 'ISSUED',
+      ),
     onSuccess: async () => {
       setDone(true);
+      setReviewOpen(false);
       await queryClient.invalidateQueries({ queryKey: ['cartridges'] });
       await queryClient.invalidateQueries({ queryKey: ['cartridge-dashboard'] });
     },
   });
+  const selected = availableCartridges.filter((item) =>
+    form.serialNumbers.includes(item.serialNumber),
+  );
   return (
     <Operation
       title="Issue Cartridge"
       description="Select a filled cartridge and assign it. Only ready-to-issue cartridges appear here."
-      error={mutation.error}
+      error={reviewOpen ? null : mutation.error}
       done={done}
       pending={mutation.isPending}
       submitDisabled={availableQuery.isPending || form.serialNumbers.length === 0}
-      submit={() => mutation.mutate()}
+      submit={() => {
+        mutation.reset();
+        setReviewOpen(true);
+      }}
+      review={
+        reviewOpen ? (
+          <ReviewDrawer
+            confirmLabel={`Confirm & issue ${form.serialNumbers.length} cartridge${form.serialNumbers.length === 1 ? '' : 's'}`}
+            description="Check who receives the cartridges before issuing."
+            error={operationError(mutation.error)}
+            onClose={() => {
+              setReviewOpen(false);
+              mutation.reset();
+            }}
+            onConfirm={() => mutation.mutate()}
+            pending={mutation.isPending}
+            pendingLabel="Issuing…"
+            sections={[
+              {
+                title: 'Issued to',
+                rows: reviewRows([
+                  { label: 'Employee name', value: form.employeeName.trim() },
+                  { label: 'Employee ID', value: form.employeeId.trim() },
+                  { label: 'Department', value: form.department.trim() },
+                  { label: 'Printer / location', value: form.printerLocation.trim() },
+                  { label: 'Remarks', value: form.remarks.trim() },
+                ]),
+              },
+              {
+                title: `Cartridges (${form.serialNumbers.length})`,
+                content: <SelectedCartridgeChips items={selected} serials={form.serialNumbers} />,
+              },
+            ]}
+            title="Review cartridge issue"
+          />
+        ) : null
+      }
     >
       <CartridgeMultiSelect
         items={availableCartridges}
@@ -97,6 +151,7 @@ export function ReturnCartridgePage() {
     remarks: '',
   });
   const [done, setDone] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const issuedQuery = useQuery({
     queryKey: ['cartridges', { status: 'ISSUED', page: 1, pageSize: 100 }],
     queryFn: () => getAllCartridges({ status: 'ISSUED' }),
@@ -106,9 +161,15 @@ export function ReturnCartridgePage() {
     form.serialNumbers.includes(item.serialNumber),
   );
   const mutation = useMutation({
-    mutationFn: () => returnCartridge(form),
+    mutationFn: () =>
+      withOutcomeCheck(
+        () => returnCartridge(form),
+        form.serialNumbers,
+        (status) => status !== 'ISSUED',
+      ),
     onSuccess: async () => {
       setDone(true);
+      setReviewOpen(false);
       await queryClient.invalidateQueries({ queryKey: ['cartridges'] });
       await queryClient.invalidateQueries({ queryKey: ['cartridge-dashboard'] });
     },
@@ -145,12 +206,50 @@ export function ReturnCartridgePage() {
         title="Return Cartridge"
         description="Only cartridges currently marked as issued can be returned."
       />
-      {mutation.error ? <ErrorSummary message={mutation.error.message} /> : null}
+      {mutation.error && !reviewOpen ? (
+        <ErrorSummary message={operationError(mutation.error) ?? ''} />
+      ) : null}
+      {reviewOpen ? (
+        <ReviewDrawer
+          confirmLabel={`Confirm return of ${selectedCartridges.length} cartridge${selectedCartridges.length === 1 ? '' : 's'}`}
+          description="Check the cartridges and their condition before saving the return."
+          error={operationError(mutation.error)}
+          onClose={() => {
+            setReviewOpen(false);
+            mutation.reset();
+          }}
+          onConfirm={() => mutation.mutate()}
+          pending={mutation.isPending}
+          pendingLabel="Saving return…"
+          sections={[
+            {
+              title: 'Return details',
+              rows: reviewRows([
+                { label: 'Returned by', value: form.returnedByName.trim() },
+                { label: 'Condition', value: RETURN_CONDITIONS[form.condition] ?? form.condition },
+                ['DEFECTIVE', 'DAMAGED', 'WRONG_MODEL'].includes(form.condition) && {
+                  label: 'Problem details',
+                  value: form.defectReason.trim(),
+                },
+                { label: 'Remarks', value: form.remarks.trim() },
+              ]),
+            },
+            {
+              title: `Cartridges (${selectedCartridges.length})`,
+              content: (
+                <SelectedCartridgeChips items={selectedCartridges} serials={form.serialNumbers} />
+              ),
+            },
+          ]}
+          title="Review cartridge return"
+        />
+      ) : null}
       <form
         className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]"
         onSubmit={(event) => {
           event.preventDefault();
-          mutation.mutate();
+          mutation.reset();
+          setReviewOpen(true);
         }}
       >
         <AppCard className="max-w-none p-0 sm:p-0">
@@ -270,7 +369,8 @@ export function ReturnCartridgePage() {
                 loading={mutation.isPending}
                 type="submit"
               >
-                Save return
+                <Eye aria-hidden="true" size={18} />
+                Preview &amp; save return
               </Button>
             </div>
           </div>
@@ -375,6 +475,65 @@ function ReturnDetail({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+const RETURN_CONDITIONS: Record<string, string> = {
+  EMPTY: 'Empty',
+  DEFECTIVE: 'Defective / not working',
+  FILLED_UNUSED: 'Filled and unused · ready to issue again',
+  DAMAGED: 'Damaged',
+  WRONG_MODEL: 'Wrong model',
+};
+
+function operationError(error: Error | null): string | null {
+  if (!error) return null;
+  return isApiError(error) ? error.message : 'The transaction could not be saved.';
+}
+
+/**
+ * Runs a cartridge write. If the reply is lost (dropped connection, proxy timeout), checks
+ * whether the cartridges already reached the expected state before reporting a failure.
+ */
+async function withOutcomeCheck<T>(
+  write: () => Promise<T>,
+  serials: string[],
+  reachedExpectedState: (status: string) => boolean,
+): Promise<T | null> {
+  try {
+    return await write();
+  } catch (error) {
+    if (!isUncertainWriteFailure(error) || serials.length === 0) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const statuses = await Promise.all(
+      serials.map((serial) =>
+        getCartridge(serial).then(
+          (result) => result.data.cartridge.status as string,
+          () => null,
+        ),
+      ),
+    );
+    if (statuses.every((status) => status !== null && reachedExpectedState(status))) return null;
+    throw error;
+  }
+}
+
+function SelectedCartridgeChips({ items, serials }: { items: Cartridge[]; serials: string[] }) {
+  const bySerial = new Map(items.map((item) => [item.serialNumber, item]));
+  return (
+    <ul className="flex flex-wrap gap-1.5">
+      {serials.map((serial) => {
+        const item = bySerial.get(serial);
+        return (
+          <li className="review-chip" key={serial}>
+            {serial}
+            {item ? (
+              <span className="ml-1.5 text-[var(--color-text-muted)]">{item.model}</span>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function Operation({
   title,
   description,
@@ -383,6 +542,7 @@ function Operation({
   pending,
   submitDisabled = false,
   submit,
+  review,
   children,
 }: {
   title: string;
@@ -392,6 +552,7 @@ function Operation({
   pending: boolean;
   submitDisabled?: boolean;
   submit: () => void;
+  review?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -408,7 +569,7 @@ function Operation({
         </AppCard>
       ) : (
         <>
-          {error ? <ErrorSummary message={error.message} /> : null}
+          {error ? <ErrorSummary message={operationError(error) ?? ''} /> : null}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -419,11 +580,13 @@ function Operation({
               {children}
               <div className="md:col-span-2 flex justify-end">
                 <Button disabled={submitDisabled} loading={pending} type="submit">
-                  Save transaction
+                  <Eye aria-hidden="true" size={18} />
+                  Preview &amp; save
                 </Button>
               </div>
             </AppCard>
           </form>
+          {review}
         </>
       )}
     </div>

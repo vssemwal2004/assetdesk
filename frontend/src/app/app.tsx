@@ -225,6 +225,10 @@ export function App() {
                   <Route element={<CartridgeDashboardPage />} path="/cartridges/dashboard" />
                   <Route element={<CartridgesPage />} path="/cartridges" />
                   <Route element={<CartridgeActivityPage />} path="/cartridges/activity" />
+                </Route>
+                {/* The API guards these with CARTRIDGE_GATE_PASSES_VIEW; matching it here avoids
+                    opening a page whose data request is always refused. */}
+                <Route element={<PermissionRoute permission="CARTRIDGE_GATE_PASSES_VIEW" />}>
                   <Route element={<GatePassesPage />} path="/cartridges/gate-passes" />
                   <Route
                     element={<GatePassDatabasePage />}

@@ -1,15 +1,13 @@
-import {
-  ApiProblemSchema,
-  AuthResponseSchema,
-  type ApiProblem,
-  type AuthUser,
-} from '@assetdesk/contracts';
+import { ApiProblemSchema, AuthResponseSchema, type ApiProblem } from '@assetdesk/contracts';
 
 const SESSION_EXPIRED_EVENT = 'assetdesk:session-expired';
+const REFRESH_LOCK_NAME = 'assetdesk:session-refresh';
+const REFRESH_ALREADY_ROTATED = 'REFRESH_ALREADY_ROTATED';
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 let csrfToken: string | null = null;
-let refreshRequest: Promise<AuthUser> | null = null;
+let refreshRequest: Promise<void> | null = null;
+let lastActivityPing = 0;
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'body' | 'credentials'> {
   body?: BodyInit;
@@ -49,9 +47,42 @@ export function setCsrfToken(token: string | null): void {
   csrfToken = token;
 }
 
+/**
+ * The CSRF cookie is shared by every tab and is rotated on each session refresh, so it is the
+ * source of truth. The in-memory copy is only a fallback for browsers that hide the cookie.
+ * Reading a stale in-memory token after another tab refreshed caused "security token invalid"
+ * failures and forced sign-outs.
+ */
 export function getCsrfToken(): string | null {
-  csrfToken ??= readCookie('ad_csrf');
+  const cookieToken = readCookie('ad_csrf');
+  if (cookieToken) csrfToken = cookieToken;
   return csrfToken;
+}
+
+function isAuthFailure(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/** Waits briefly for another tab's refresh response to update the shared CSRF cookie. */
+async function waitForCsrfRotation(previous: string | null, timeoutMs = 3_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const current = readCookie('ad_csrf');
+    if (current && current !== previous) return true;
+    await delay(100);
+  }
+  return false;
+}
+
+/** Runs the callback while holding a lock shared by every AssetDesk tab in this browser. */
+async function withRefreshLock<T>(callback: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  if (!locks?.request) return callback();
+  return locks.request(REFRESH_LOCK_NAME, callback);
 }
 
 function announceSessionExpired(): void {
@@ -120,36 +151,99 @@ async function problemFromResponse(response: Response): Promise<ApiError> {
   });
 }
 
-async function refreshSession(): Promise<AuthUser> {
-  if (refreshRequest) return refreshRequest;
+async function performRefresh(): Promise<void> {
+  // Remember the token this tab last used. If it changes while we wait for the lock,
+  // another tab already refreshed the shared cookies and a second rotation is unnecessary
+  // (and would look like a refresh-token replay to the server).
+  const tokenBeforeLock = readCookie('ad_csrf');
 
-  refreshRequest = (async () => {
+  await withRefreshLock(async () => {
+    const tokenInLock = readCookie('ad_csrf');
+    if (tokenInLock && tokenBeforeLock && tokenInLock !== tokenBeforeLock) {
+      setCsrfToken(tokenInLock);
+      return;
+    }
+
     const token = getCsrfToken();
     const headers = new Headers({ Accept: 'application/json' });
     if (token) headers.set('X-CSRF-Token', token);
 
-    const response = await fetch('/api/v1/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch('/api/v1/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+      });
+    } catch {
+      throw new ApiError({
+        status: 503,
+        detail: 'AssetDesk could not reach the server. Check your connection and try again.',
+        code: 'NETWORK_ERROR',
+      });
+    }
 
-    if (!response.ok) throw await problemFromResponse(response);
+    if (!response.ok) {
+      const problem = await problemFromResponse(response);
+      // Another tab (or a parallel request) rotated the session a moment ago. Its response
+      // carries the new cookies, so wait for them instead of treating this as a sign-out.
+      if (problem.code === REFRESH_ALREADY_ROTATED && (await waitForCsrfRotation(token))) {
+        setCsrfToken(readCookie('ad_csrf'));
+        return;
+      }
+      throw problem;
+    }
 
     const result = AuthResponseSchema.parse(await response.json());
     setCsrfToken(result.data.csrfToken);
-    return result.data.user;
-  })();
+  });
+}
+
+async function refreshSession(): Promise<void> {
+  if (refreshRequest) return refreshRequest;
+
+  refreshRequest = performRefresh();
 
   try {
-    return await refreshRequest;
+    await refreshRequest;
   } catch (error) {
-    setCsrfToken(null);
-    announceSessionExpired();
+    // Only a rejected session means the user is signed out. A network error or a
+    // temporarily unavailable server must not end the session.
+    if (isAuthFailure(error)) {
+      setCsrfToken(null);
+      announceSessionExpired();
+    }
     throw error;
   } finally {
     refreshRequest = null;
   }
+}
+
+/**
+ * The server extends the idle timeout only when the session is refreshed. Someone filling a
+ * long form makes no API calls, so ping the session at most every few minutes while the
+ * person is active. An idle user still times out on schedule.
+ */
+export async function keepSessionAlive(minIntervalMs = 4 * 60 * 1000): Promise<void> {
+  const now = Date.now();
+  if (now - lastActivityPing < minIntervalMs) return;
+  lastActivityPing = now;
+  try {
+    await apiRequest<unknown>('/api/v1/auth/me');
+  } catch {
+    // Expiry is announced by apiRequest; other failures are retried after the interval.
+  }
+}
+
+/**
+ * True when a write request failed in a way that does not tell us whether the server saved it:
+ * the connection dropped, a proxy timed out, or the server failed after doing the work.
+ * Callers with an idempotency key can safely resend the same request to learn the outcome.
+ */
+export function isUncertainWriteFailure(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  if (error.code === 'NETWORK_ERROR' || error.code === 'REQUEST_FAILED') return true;
+  return [500, 502, 503, 504].includes(error.status) && error.code === 'INTERNAL_SERVER_ERROR';
 }
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
@@ -210,7 +304,15 @@ export async function apiBlobRequest(path: string, options: ApiRequestOptions = 
   }
   if (requestOptions.retryOnUnauthorized !== false && response.status === 401) {
     await refreshSession();
-    response = await fetch(...buildRequest(path, requestOptions));
+    try {
+      response = await fetch(...buildRequest(path, requestOptions));
+    } catch {
+      throw new ApiError({
+        status: 503,
+        detail: 'AssetDesk could not reach the server. Check your connection and try again.',
+        code: 'NETWORK_ERROR',
+      });
+    }
   }
   if (!response.ok) throw await problemFromResponse(response);
   return response.blob();
@@ -223,4 +325,5 @@ export function isApiError(error: unknown): error is ApiError {
 export function resetApiClientState(): void {
   csrfToken = null;
   refreshRequest = null;
+  lastActivityPing = 0;
 }

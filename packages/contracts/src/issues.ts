@@ -610,7 +610,13 @@ const PaginationMetaSchema = z
 export const CreateIssueResponseSchema = z
   .object({
     data: z.object({ issue: IssueSchema }).strict(),
-    meta: z.object({ idempotentReplay: z.boolean() }).strict(),
+    meta: z
+      .object({
+        idempotentReplay: z.boolean(),
+        /** Set when the Issue was saved but its outside-university Gate Pass was not. */
+        gatePassWarning: z.string().optional(),
+      })
+      .strict(),
   })
   .strict();
 

@@ -20,7 +20,7 @@ vi.mock('../users/user.model.js', () => ({
   },
 }));
 
-import { rotateSession } from './session.service.js';
+import { REFRESH_ROTATION_GRACE_MS, rotateSession } from './session.service.js';
 import {
   createCsrfToken,
   createRefreshToken,
@@ -88,6 +88,7 @@ describe('refresh-token rotation', () => {
     const data = fixture();
     data.session.previousRefreshTokenHashes = [hashToken(data.refreshToken)];
     data.session.refreshTokenHash = hashToken(createRefreshToken(data.sid));
+    data.session.lastUsedAt = new Date(Date.now() - REFRESH_ROTATION_GRACE_MS - 1_000);
     modelMocks.findSession.mockResolvedValue(data.session);
     modelMocks.updateSession.mockResolvedValue({ modifiedCount: 1 });
 
@@ -103,21 +104,48 @@ describe('refresh-token rotation', () => {
     );
   });
 
-  it('fails closed and revokes the session when concurrent rotation loses the CAS', async () => {
+  it('keeps the session when a parallel tab rotated the same token moments ago', async () => {
     const data = fixture();
+    data.session.previousRefreshTokenHashes = [hashToken(data.refreshToken)];
+    data.session.refreshTokenHash = hashToken(createRefreshToken(data.sid));
+    // The winning request also rotated the CSRF token, so the late request's CSRF is stale.
+    data.session.csrfTokenHash = hashToken(createCsrfToken());
+    data.session.lastUsedAt = new Date();
     modelMocks.findSession.mockResolvedValue(data.session);
-    modelMocks.findUser.mockResolvedValue(data.user);
-    modelMocks.updateSession
-      .mockResolvedValueOnce({ modifiedCount: 0 })
-      .mockResolvedValueOnce({ modifiedCount: 1 });
+
+    await expect(
+      rotateSession(data.refreshToken, data.csrfToken, data.csrfToken),
+    ).rejects.toMatchObject({ status: 409, code: 'REFRESH_ALREADY_ROTATED' });
+
+    expect(modelMocks.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('still revokes when an older replaced token is replayed inside the grace window', async () => {
+    const data = fixture();
+    data.session.previousRefreshTokenHashes = [
+      hashToken(data.refreshToken),
+      hashToken(createRefreshToken(data.sid)),
+    ];
+    data.session.refreshTokenHash = hashToken(createRefreshToken(data.sid));
+    data.session.lastUsedAt = new Date();
+    modelMocks.findSession.mockResolvedValue(data.session);
+    modelMocks.updateSession.mockResolvedValue({ modifiedCount: 1 });
 
     await expect(
       rotateSession(data.refreshToken, data.csrfToken, data.csrfToken),
     ).rejects.toMatchObject({ code: 'REFRESH_TOKEN_REPLAY' });
+  });
 
-    expect(modelMocks.updateSession).toHaveBeenCalledTimes(2);
-    expect(modelMocks.updateSession.mock.calls[1]?.[1]).toEqual({
-      $set: expect.objectContaining({ revokedReason: 'REFRESH_TOKEN_REPLAY' }),
-    });
+  it('reports a lost rotation race without revoking the session', async () => {
+    const data = fixture();
+    modelMocks.findSession.mockResolvedValue(data.session);
+    modelMocks.findUser.mockResolvedValue(data.user);
+    modelMocks.updateSession.mockResolvedValueOnce({ modifiedCount: 0 });
+
+    await expect(
+      rotateSession(data.refreshToken, data.csrfToken, data.csrfToken),
+    ).rejects.toMatchObject({ status: 409, code: 'REFRESH_ALREADY_ROTATED' });
+
+    expect(modelMocks.updateSession).toHaveBeenCalledTimes(1);
   });
 });

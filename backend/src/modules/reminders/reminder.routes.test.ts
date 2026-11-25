@@ -26,7 +26,9 @@ vi.mock('../auth/auth.middleware.js', () => {
       mustChangePassword: false,
       purpose: 'FULL_ACCESS',
       csrfTokenHash: 'hash',
-    };
+      permissions: [],
+      dataAccess: { inventory: 'OWN', issues: 'OWN', cartridges: 'OWN' },
+    } as unknown as NonNullable<typeof request.auth>;
     next();
   };
   const pass: RequestHandler = (_request, _response, next) => next();
@@ -155,6 +157,7 @@ describe('Reminder routes', () => {
       ISSUE_ID,
       '507f1f77bcf86cd799439011',
       'WORKER',
+      'OWN',
     );
     expect(reminderService.listIssueReminders).toHaveBeenCalledWith(ISSUE_ID);
     expect(response.body.data.reminders).toHaveLength(1);

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   CheckCircle2,
+  Eye,
   FileSpreadsheet,
   MonitorCog,
   Package,
@@ -13,15 +14,23 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import {
   CreateMaterialRequestSchema,
   type CreateMaterialRequest,
+  type Material,
   type MaterialStatus,
   type ReturnPolicy,
   type TrackingMode,
 } from '@assetdesk/contracts';
 
 import { SelectField } from '../../components/catalog-ui';
+import { ReviewDrawer } from '../../components/review-drawer';
+import { reviewRows, type ReviewSection } from '../../lib/review-rows';
 import { AppCard, Button, ErrorSummary, PageHeader, TextField, cn } from '../../components/ui';
-import { isApiError } from '../../lib/api-client';
-import { createMaterial, getAssetDetails, getInventoryModels } from '../../lib/inventory-api';
+import { isApiError, isUncertainWriteFailure } from '../../lib/api-client';
+import {
+  createMaterial,
+  getAssetDetails,
+  getInventory,
+  getInventoryModels,
+} from '../../lib/inventory-api';
 import { inventoryStatusLabel } from '../../lib/inventory-status';
 import { toIstDateTimeInput } from '../../lib/date-time';
 import {
@@ -211,6 +220,40 @@ export function buildCreateMaterialDraft(
       };
 }
 
+function sameText(left: string | null | undefined, right: string | null | undefined): boolean {
+  return (
+    (left ?? '').trim().toLocaleUpperCase('en-US') ===
+    (right ?? '').trim().toLocaleUpperCase('en-US')
+  );
+}
+
+/** Finds the record this form just created, if the server saved it but the reply was lost. */
+export async function findJustCreatedMaterial(
+  input: CreateMaterialRequest,
+  now = Date.now(),
+): Promise<Material | null> {
+  await new Promise((resolve) => setTimeout(resolve, 1_500));
+  const search =
+    (input.trackingMode === 'SERIALIZED' ? input.serialNumbers[0] : input.typeModelName) ?? '';
+  const result = await getInventory({
+    page: 1,
+    pageSize: 20,
+    trackingMode: input.trackingMode,
+    ...(search ? { search } : {}),
+  });
+  return (
+    result.data.find(
+      (material) =>
+        now - new Date(material.createdAt).getTime() < 10 * 60 * 1000 &&
+        sameText(material.category, input.category) &&
+        sameText(material.typeModelName, input.typeModelName) &&
+        sameText(material.store, input.store) &&
+        (input.trackingMode !== 'SERIALIZED' ||
+          sameText(material.configuration, input.configuration)),
+    ) ?? null
+  );
+}
+
 export function CreateMaterialPage() {
   const navigate = useNavigate();
   const [parameters] = useSearchParams();
@@ -230,6 +273,7 @@ export function CreateMaterialPage() {
   });
   const [materialTypeSelected, setMaterialTypeSelected] = useState(modePreset || categoryPreset);
   const [message, setMessage] = useState<string | null>(null);
+  const [review, setReview] = useState<CreateMaterialRequest | null>(null);
   const detailsQuery = useQuery({
     queryKey: ['asset-details'],
     queryFn: ({ signal }) => getAssetDetails(undefined, signal),
@@ -256,7 +300,18 @@ export function CreateMaterialPage() {
   const selectedModelName = resolveCatalogOption(form.typeModelName, modelOptions);
 
   const mutation = useMutation({
-    mutationFn: (input: CreateMaterialRequest) => createMaterial(input),
+    mutationFn: async (input: CreateMaterialRequest) => {
+      try {
+        return await createMaterial(input);
+      } catch (error) {
+        // A dropped connection or proxy timeout can hide a save that did succeed.
+        // Check before telling the user it failed, so they do not add the stock twice.
+        if (!isUncertainWriteFailure(error)) throw error;
+        const saved = await findJustCreatedMaterial(input).catch(() => null);
+        if (saved) return saved;
+        throw error;
+      }
+    },
     onSuccess: async (material) => {
       await queryClient.invalidateQueries({ queryKey: ['inventory'] });
       navigate(`/inventory/${material.materialCode}`, {
@@ -265,6 +320,7 @@ export function CreateMaterialPage() {
       });
     },
     onError: (error) => {
+      // Shown inside the review drawer, which stays open so nothing has to be re-entered.
       setMessage(isApiError(error) ? error.message : 'The material could not be added.');
     },
   });
@@ -285,7 +341,9 @@ export function CreateMaterialPage() {
       setMessage(firstIssueMessage(result.error));
       return;
     }
-    mutation.mutate(result.data);
+    // Show every value for a final check; saving happens only from the review.
+    mutation.reset();
+    setReview(result.data);
   }
 
   function setTrackingMode(value: TrackingMode) {
@@ -616,13 +674,91 @@ export function CreateMaterialPage() {
                   Cancel
                 </Link>
                 <Button loading={mutation.isPending} type="submit">
-                  {mutation.isPending ? 'Adding material...' : 'Add material'}
+                  <Eye aria-hidden="true" size={18} />
+                  Preview &amp; add
                 </Button>
               </div>
             </>
           ) : null}
         </form>
       </AppCard>
+      {review ? (
+        <ReviewDrawer
+          confirmLabel={
+            review.trackingMode === 'SERIALIZED'
+              ? `Confirm & add ${review.serialNumbers.length} IT Asset${review.serialNumbers.length === 1 ? '' : 's'}`
+              : 'Confirm & add stock'
+          }
+          description="This is exactly what will be added to Inventory."
+          error={mutation.isError ? message : null}
+          onClose={() => {
+            setReview(null);
+            setMessage(null);
+            mutation.reset();
+          }}
+          onConfirm={() => {
+            setMessage(null);
+            mutation.mutate(review);
+          }}
+          pending={mutation.isPending}
+          pendingLabel="Adding to Inventory…"
+          sections={materialReviewSections(review)}
+          title="Review new stock"
+        />
+      ) : null}
     </div>
   );
+}
+
+export function materialReviewSections(input: CreateMaterialRequest): ReviewSection[] {
+  const serialized = input.trackingMode === 'SERIALIZED';
+  return [
+    {
+      title: 'What is being added',
+      rows: reviewRows([
+        { label: 'Inventory type', value: serialized ? 'IT Asset (serialized)' : 'IT Consumable' },
+        { label: 'Asset type', value: input.category },
+        { label: 'Model', value: input.typeModelName },
+        serialized && { label: 'Configuration', value: input.configuration },
+        {
+          label: 'Quantity',
+          value: serialized
+            ? `${input.serialNumbers.length} unit${input.serialNumbers.length === 1 ? '' : 's'}`
+            : `${input.totalQuantity.toLocaleString('en-IN')} ${input.unitLabel}`,
+        },
+        !serialized && {
+          label: 'Return policy',
+          value: input.returnPolicy === 'REUSABLE' ? 'Reusable' : 'Consumable',
+        },
+        { label: 'Status', value: inventoryStatusLabel(input.status) },
+      ]),
+    },
+    {
+      title: 'Where and from whom',
+      rows: reviewRows([
+        { label: 'Store', value: input.store },
+        { label: 'Department', value: input.department },
+        { label: 'Vendor', value: input.vendorName },
+        { label: 'Entry date', value: input.entryDate },
+        { label: 'Description', value: input.description },
+      ]),
+    },
+    ...(serialized
+      ? [
+          {
+            title: `Serial numbers (${input.serialNumbers.length})`,
+            content: (
+              <ol className="flex flex-wrap gap-1.5">
+                {input.serialNumbers.map((serial, index) => (
+                  <li className="review-chip" key={`${index}:${serial}`}>
+                    <span className="mr-1.5 text-[var(--color-text-muted)]">{index + 1}.</span>
+                    {serial}
+                  </li>
+                ))}
+              </ol>
+            ),
+          },
+        ]
+      : []),
+  ];
 }

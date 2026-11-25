@@ -34,7 +34,7 @@ import {
   type UpdateMaterialRequest,
 } from '@assetdesk/contracts';
 
-import { ApiError, apiRequest } from './api-client';
+import { ApiError, apiBlobRequest, apiRequest } from './api-client';
 
 export type { AssetTypeImportPreviewResponse, AssetTypeImportResponse };
 export type { InventoryModel };
@@ -240,11 +240,8 @@ export async function downloadInventoryCsv(
   if (filters.vendorName) parameters.set('vendorName', filters.vendorName);
   if (filters.createdFrom) parameters.set('createdFrom', filters.createdFrom);
   if (filters.createdTo) parameters.set('createdTo', filters.createdTo);
-  const response = await fetch(`/api/v1/inventory/export?${parameters.toString()}`, {
-    credentials: 'include',
-  });
-  if (!response.ok) throw new Error('Inventory data could not be downloaded.');
-  return response.blob();
+  // Through the API client so an expired access token is refreshed instead of failing.
+  return apiBlobRequest(`/api/v1/inventory/export?${parameters.toString()}`);
 }
 
 export async function getAssetTypes(signal?: AbortSignal): Promise<AssetType[]> {

@@ -80,7 +80,7 @@ export function createReminderRouter(): Router {
       try {
         const actor = authenticated(request);
         const issueId = IssueIdSchema.parse(request.params.issueId);
-        await getIssueDetail(issueId, actor.userId, actor.role);
+        await getIssueDetail(issueId, actor.userId, actor.role, actor.dataAccess.issues);
         response.json({ data: { reminders: await listIssueReminders(issueId) } });
       } catch (error) {
         next(error);

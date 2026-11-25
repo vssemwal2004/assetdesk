@@ -32,6 +32,23 @@ interface SessionContext {
   ip?: string;
 }
 
+/**
+ * Several tabs (or parallel requests) can refresh with the same token at nearly the same
+ * moment. The first one rotates the session; the others arrive with the token that was just
+ * replaced. Within this short window that is a benign race, not a stolen-token replay, so the
+ * late request is told to reuse the new cookies instead of revoking the whole session.
+ * No tokens are issued on that path, so the window grants nothing to an attacker.
+ */
+export const REFRESH_ROTATION_GRACE_MS = 30_000;
+
+function concurrentRotation(): AppError {
+  return new AppError(
+    409,
+    'REFRESH_ALREADY_ROTATED',
+    'This session was refreshed by another request. Retry with the latest cookies.',
+  );
+}
+
 export interface ActiveSessionRecord {
   sid: string;
   userId: Types.ObjectId;
@@ -127,11 +144,24 @@ export async function rotateSession(
   if (!csrfHeader || !csrfCookie || !valuesMatch(csrfHeader, csrfCookie)) {
     throw new AppError(403, 'CSRF_VALIDATION_FAILED', 'The security token is invalid.');
   }
+
+  const incomingHash = hashToken(refreshToken);
+  const latestReplacedHash = session.previousRefreshTokenHashes.at(-1);
+  if (
+    !valuesMatch(incomingHash, session.refreshTokenHash) &&
+    latestReplacedHash &&
+    valuesMatch(incomingHash, latestReplacedHash) &&
+    now.getTime() - session.lastUsedAt.getTime() <= REFRESH_ROTATION_GRACE_MS
+  ) {
+    // The CSRF token was rotated together with the refresh token, so this request's CSRF
+    // value is also one step old. Check the race before the CSRF hash for that reason.
+    throw concurrentRotation();
+  }
+
   if (!valuesMatch(hashToken(csrfHeader), session.csrfTokenHash)) {
     throw new AppError(403, 'CSRF_VALIDATION_FAILED', 'The security token is invalid.');
   }
 
-  const incomingHash = hashToken(refreshToken);
   if (!valuesMatch(incomingHash, session.refreshTokenHash)) {
     if (session.previousRefreshTokenHashes.some((hash) => valuesMatch(hash, incomingHash))) {
       await revokeSession(session.sid, 'REFRESH_TOKEN_REPLAY');
@@ -176,12 +206,9 @@ export async function rotateSession(
   );
 
   if (rotation.modifiedCount !== 1) {
-    await revokeSession(session.sid, 'REFRESH_TOKEN_REPLAY');
-    throw new AppError(
-      401,
-      'REFRESH_TOKEN_REPLAY',
-      'Your session was revoked because the refresh token was reused.',
-    );
+    // Another request rotated this exact token between our read and our write. That is the
+    // same benign race as above; a real replay is caught by the previous-token check.
+    throw concurrentRotation();
   }
 
   const accessToken = await signAccessToken({

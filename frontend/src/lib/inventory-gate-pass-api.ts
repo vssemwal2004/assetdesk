@@ -12,7 +12,7 @@ import {
   type RecordInventoryGateInRequest,
   type UpdateInventoryGatePassRequest,
 } from '@assetdesk/contracts';
-import { apiRequest } from './api-client';
+import { apiBlobRequest, apiRequest } from './api-client';
 
 export async function getInventoryGatePasses(
   filters: {
@@ -157,9 +157,6 @@ export async function downloadInventoryGatePassCsv(filters: {
   if (filters.purpose) query.set('purpose', filters.purpose);
   if (filters.trackingMode) query.set('trackingMode', filters.trackingMode);
   if (filters.search) query.set('search', filters.search);
-  const response = await fetch(`/api/v1/inventory-gate-passes/export?${query}`, {
-    credentials: 'include',
-  });
-  if (!response.ok) throw new Error('Gate Pass data could not be exported.');
-  return response.blob();
+  // Through the API client so an expired access token is refreshed instead of failing.
+  return apiBlobRequest(`/api/v1/inventory-gate-passes/export?${query.toString()}`);
 }

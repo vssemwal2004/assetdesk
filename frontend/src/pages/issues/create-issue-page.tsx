@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ClipboardCheck,
+  Eye,
   ListChecks,
   MapPin,
   Minus,
@@ -21,6 +22,7 @@ import { Link } from 'react-router';
 import {
   CreateIssueRequestSchema,
   type AssetUnit,
+  type AssetUnitsListResponse,
   type AssignmentType,
   type CreateIssueRequest,
   type Issue,
@@ -40,8 +42,10 @@ import {
   SuccessMark,
   cn,
 } from '../../components/ui';
+import { ReviewDrawer } from '../../components/review-drawer';
+import { reviewRows, type ReviewSection } from '../../lib/review-rows';
 import { StickyWorkflowActions, WorkflowSteps } from '../../components/workflow-ui';
-import { isApiError } from '../../lib/api-client';
+import { isApiError, isUncertainWriteFailure } from '../../lib/api-client';
 import { calculatePresetReturnInIst, formatIstDateTime } from '../../lib/date-time';
 import { createPendingSubmission } from '../../lib/idempotent-submission';
 import { getAssetDetails, getAvailableAssetUnits, getInventory } from '../../lib/inventory-api';
@@ -134,6 +138,11 @@ export function CreateIssuePage() {
   });
   const [message, setMessage] = useState<string | null>(null);
   const [created, setCreated] = useState<Issue | null>(null);
+  const [createdWarning, setCreatedWarning] = useState<string | null>(null);
+  const [issueReview, setIssueReview] = useState<{
+    input: CreateIssueRequest;
+    key: string;
+  } | null>(null);
 
   const inventoryQuery = useQuery({
     queryKey: [
@@ -258,10 +267,21 @@ export function CreateIssuePage() {
     (inventoryQuery.data?.meta.total ?? 0) > (inventoryQuery.data?.data.length ?? 0);
 
   const mutation = useMutation({
-    mutationFn: ({ input, key }: { input: CreateIssueRequest; key: string }) =>
-      createIssue(input, key),
+    mutationFn: async ({ input, key }: { input: CreateIssueRequest; key: string }) => {
+      try {
+        return await createIssue(input, key);
+      } catch (error) {
+        // The connection dropped or a proxy timed out, so the Issue may already be saved.
+        // Resending with the same idempotency key returns the saved Issue instead of a
+        // duplicate, so the user is not told "failed" for an Issue that exists.
+        if (!isUncertainWriteFailure(error)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        return createIssue(input, key);
+      }
+    },
     onSuccess: async (response) => {
       setCreated(response.data.issue);
+      setCreatedWarning(response.meta.gatePassWarning ?? null);
       window.scrollTo({ top: 0 });
       const materialCodes = new Set(
         response.data.issue.lines.map((line) => line.material.materialCode),
@@ -445,8 +465,126 @@ export function CreateIssuePage() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
+    // Open the review first. The idempotency key is fixed here, so confirming twice or
+    // retrying after a dropped connection can never create a second Issue.
     const submission = createPendingSubmission(input);
-    mutation.mutate({ input: submission.input, key: submission.key });
+    mutation.reset();
+    setIssueReview({ input: submission.input, key: submission.key });
+  }
+
+  function issueReviewSections(input: CreateIssueRequest): ReviewSection[] {
+    const serialByTag = new Map<string, string>();
+    for (const line of input.lines) {
+      if (line.trackingMode !== 'SERIALIZED') continue;
+      const cached = queryClient.getQueryData<AssetUnitsListResponse>([
+        'asset-units',
+        line.materialCode,
+        'available',
+      ]);
+      for (const unit of cached?.data ?? []) {
+        if (unit.serialNumber) serialByTag.set(unit.assetTag, unit.serialNumber);
+      }
+    }
+    const receiver = 'receiver' in input && input.receiver ? input.receiver : null;
+    const due = 'due' in input ? input.due : undefined;
+    const expected = expectedReturn();
+    const outside = input.outsideUniversity;
+    return [
+      {
+        title: 'Issued to',
+        rows: reviewRows(
+          receiver
+            ? [
+                { label: 'Name', value: receiver.fullName },
+                { label: 'Type', value: receiver.type },
+                { label: 'University ID', value: receiver.universityId },
+                { label: 'Department', value: receiver.department },
+                { label: 'Contact', value: receiver.contact },
+                { label: 'Email', value: receiver.email },
+              ]
+            : [
+                { label: 'Lab', value: selectedLab?.fullName ?? labCode },
+                { label: 'Lab code', value: labCode },
+              ],
+        ),
+      },
+      {
+        title: 'Issue details',
+        rows: reviewRows([
+          { label: 'Location', value: input.destinationLocation },
+          { label: 'Block', value: input.destinationBlock },
+          {
+            label: 'Type',
+            value: input.assignmentType === 'LONG_TERM' ? 'Permanent issue' : 'Return by date',
+          },
+          due && {
+            label: 'Expected return',
+            value: expected ? formatIstDateTime(expected.toISOString()) : 'Not set',
+          },
+          { label: 'Purpose', value: input.purpose },
+          { label: 'Notes', value: input.notes },
+        ]),
+      },
+      {
+        title: `Materials (${input.lines.length})`,
+        content: (
+          <ul className="space-y-2">
+            {input.lines.map((line) => {
+              const material = materialByCode.get(line.materialCode);
+              return (
+                <li
+                  className="rounded-[10px] bg-[var(--color-surface-tint)] px-3 py-2 text-sm"
+                  key={line.materialCode}
+                >
+                  <strong className="block text-[var(--color-text-strong)]">
+                    {material?.name ?? line.materialCode}
+                  </strong>
+                  <span className="text-xs font-bold text-[var(--color-text-muted)]">
+                    {material?.category ? `${material.category} · ` : ''}
+                    {line.materialCode}
+                    {material?.store ? ` · from ${material.store}` : ''}
+                  </span>
+                  {line.trackingMode === 'SERIALIZED' ? (
+                    <span className="mt-1.5 flex flex-wrap gap-1.5">
+                      {line.assetTags.map((tag) => (
+                        <span className="review-chip" key={tag}>
+                          {serialByTag.get(tag) ? `S/N ${serialByTag.get(tag)}` : tag}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="mt-1 block font-extrabold text-[var(--color-primary-strong)]">
+                      Quantity: {line.quantity} {material?.unitLabel ?? 'units'}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ),
+      },
+      ...(outside
+        ? [
+            {
+              title: 'Leaving the university (Gate Pass)',
+              rows: reviewRows([
+                { label: 'Destination', value: outside.destination },
+                { label: 'Organisation', value: outside.organization },
+                { label: 'Carried by', value: outside.personCarryingMaterial },
+                { label: 'Contact', value: outside.contact },
+                { label: 'Vehicle', value: outside.vehicleNumber },
+                outside.expectedGateInAt
+                  ? {
+                      label: 'Expected Gate In',
+                      value: formatIstDateTime(outside.expectedGateInAt),
+                    }
+                  : null,
+                { label: 'Remarks', value: outside.remarks },
+              ]),
+            },
+          ]
+        : []),
+    ];
   }
 
   if (created) {
@@ -457,6 +595,14 @@ export function CreateIssuePage() {
           <h1 className="mt-4 text-2xl font-extrabold text-[var(--color-primary-strong)]">
             Material issued on one receipt
           </h1>
+          {createdWarning ? (
+            <p
+              className="mt-3 rounded-[10px] border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900"
+              role="status"
+            >
+              {createdWarning}
+            </p>
+          ) : null}
           <dl className="mt-5 divide-y divide-[var(--color-border)] rounded-[12px] border border-[var(--color-border)] px-4">
             <Summary label="Receipt / Issue No." value={created.issueId} />
             <Summary label="Issued To" value={created.receiver.fullName} />
@@ -832,9 +978,7 @@ export function CreateIssuePage() {
                     }}
                     value={labCode}
                   >
-                    <option value="">
-                      {labQuery.isPending ? 'Loading labs…' : 'Choose lab'}
-                    </option>
+                    <option value="">{labQuery.isPending ? 'Loading labs…' : 'Choose lab'}</option>
                     {labs.map((lab) => (
                       <option key={lab.receiverCode} value={lab.receiverCode}>
                         {lab.fullName}
@@ -845,7 +989,10 @@ export function CreateIssuePage() {
                 {labQuery.isSuccess && labs.length === 0 ? (
                   <p className="text-sm font-semibold text-[var(--color-text-muted)]">
                     No labs are registered yet.{' '}
-                    <Link className="font-extrabold text-[var(--color-primary)]" to="/receivers/new">
+                    <Link
+                      className="font-extrabold text-[var(--color-primary)]"
+                      to="/receivers/new"
+                    >
                       Register a lab
                     </Link>{' '}
                     with its in-charge first.
@@ -859,7 +1006,9 @@ export function CreateIssuePage() {
                       ['In-charge email', selectedLab.inChargeEmail],
                     ].map(([label, value]) => (
                       <div className="min-w-0" key={label}>
-                        <dt className="text-xs font-bold text-[var(--color-text-muted)]">{label}</dt>
+                        <dt className="text-xs font-bold text-[var(--color-text-muted)]">
+                          {label}
+                        </dt>
                         <dd className="mt-1 break-words text-sm font-extrabold text-[var(--color-text-strong)]">
                           {value ?? '—'}
                         </dd>
@@ -869,7 +1018,9 @@ export function CreateIssuePage() {
                 ) : null}
               </div>
             ) : null}
-            <div className={cn('mt-3 grid gap-3 sm:grid-cols-2', issueTarget === 'LAB' && 'hidden')}>
+            <div
+              className={cn('mt-3 grid gap-3 sm:grid-cols-2', issueTarget === 'LAB' && 'hidden')}
+            >
               <Field
                 label="Name / Department"
                 onChange={(value) => setIssuedTo((current) => ({ ...current, fullName: value }))}
@@ -1133,12 +1284,31 @@ export function CreateIssuePage() {
               Back to quantities
             </Button>
             <Button loading={mutation.isPending} onClick={submit}>
-              {mutation.isPending
-                ? 'Issuing...'
-                : `Issue ${lines.length} material${lines.length === 1 ? '' : 's'}`}
+              <Eye aria-hidden="true" size={18} />
+              Preview &amp; issue
             </Button>
           </StickyWorkflowActions>
         </>
+      ) : null}
+      {issueReview ? (
+        <ReviewDrawer
+          confirmLabel={`Confirm & issue ${issueReview.input.lines.length} material${issueReview.input.lines.length === 1 ? '' : 's'}`}
+          description="Check the receiver, location and every item before issuing."
+          error={mutation.isError ? message : null}
+          onClose={() => {
+            setIssueReview(null);
+            setMessage(null);
+            mutation.reset();
+          }}
+          onConfirm={() => {
+            setMessage(null);
+            mutation.mutate(issueReview, { onSuccess: () => setIssueReview(null) });
+          }}
+          pending={mutation.isPending}
+          pendingLabel="Issuing…"
+          sections={issueReviewSections(issueReview.input)}
+          title="Review Issue"
+        />
       ) : null}
     </div>
   );

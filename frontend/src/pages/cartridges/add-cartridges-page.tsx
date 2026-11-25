@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Eye } from 'lucide-react';
 import { Link } from 'react-router';
+import { ReviewDrawer } from '../../components/review-drawer';
+import { reviewRows } from '../../lib/review-rows';
 import { Button, ErrorSummary, PageHeader, TextField, AppCard } from '../../components/ui';
-import { addCartridges, getCartridgeDashboard } from '../../lib/cartridges-api';
+import { isApiError, isUncertainWriteFailure } from '../../lib/api-client';
+import { addCartridges, getCartridge, getCartridgeDashboard } from '../../lib/cartridges-api';
 import { getAssetDetails } from '../../lib/inventory-api';
 export function AddCartridgesPage() {
   const queryClient = useQueryClient();
@@ -34,19 +38,50 @@ export function AddCartridgesPage() {
     status: 'FILLED_AVAILABLE',
   });
   const [result, setResult] = useState(0);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const serialNumbers = form.serials
+    .split(/\r?\n|,/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  const duplicateSerials = [
+    ...new Set(
+      serialNumbers.filter(
+        (serial, index) =>
+          serialNumbers.findIndex(
+            (other) => other.toLocaleUpperCase('en-US') === serial.toLocaleUpperCase('en-US'),
+          ) !== index,
+      ),
+    ),
+  ];
   const mutation = useMutation({
-    mutationFn: () => {
-      const serialNumbers = form.serials
-        .split(/\r?\n|,/)
-        .map((value) => value.trim())
-        .filter(Boolean);
-      return addCartridges({
-        ...form,
-        quantity: Number(form.quantity),
-        serialNumbers,
-        status: form.status as 'FILLED_AVAILABLE' | 'EMPTY',
-        colour: form.colour as 'BLACK',
-      });
+    mutationFn: async () => {
+      try {
+        return await addCartridges({
+          ...form,
+          quantity: Number(form.quantity),
+          serialNumbers,
+          status: form.status as 'FILLED_AVAILABLE' | 'EMPTY',
+          colour: form.colour as 'BLACK',
+        });
+      } catch (error) {
+        // The save may have succeeded even though the reply was lost. Cartridges are added
+        // all together, so finding the first and last serial means the batch was saved.
+        if (!isUncertainWriteFailure(error)) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        const edges = [serialNumbers[0], serialNumbers.at(-1)].filter((serial): serial is string =>
+          Boolean(serial),
+        );
+        const found = await Promise.all(
+          edges.map((serial) =>
+            getCartridge(serial).then(
+              () => true,
+              () => false,
+            ),
+          ),
+        );
+        if (found.length && found.every(Boolean)) return serialNumbers;
+        throw error;
+      }
     },
     onSuccess: async (items) => {
       setResult(items.length);
@@ -56,10 +91,12 @@ export function AddCartridgesPage() {
       ]);
     },
   });
-  const serialCount = form.serials
-    .split(/\r?\n|,/)
-    .map((value) => value.trim())
-    .filter(Boolean).length;
+  const serialCount = serialNumbers.length;
+  const errorMessage = mutation.isError
+    ? isApiError(mutation.error)
+      ? mutation.error.message
+      : 'The cartridges could not be added.'
+    : null;
   if (result)
     return (
       <div className="space-y-6">
@@ -96,11 +133,17 @@ export function AddCartridgesPage() {
           <CartridgeStat label="Refilled" value={dashboardQuery.data.data.refilled ?? 0} />
         </div>
       ) : null}
-      {mutation.isError ? <ErrorSummary message={(mutation.error as Error).message} /> : null}
+      {errorMessage && !reviewOpen ? <ErrorSummary message={errorMessage} /> : null}
+      {duplicateSerials.length ? (
+        <ErrorSummary
+          message={`These serial numbers are entered more than once: ${duplicateSerials.join(', ')}`}
+        />
+      ) : null}
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          mutation.mutate();
+          mutation.reset();
+          setReviewOpen(true);
         }}
       >
         <AppCard className="space-y-5">
@@ -179,6 +222,7 @@ export function AddCartridgesPage() {
             <Button
               disabled={
                 serialCount !== form.quantity ||
+                duplicateSerials.length > 0 ||
                 !form.model ||
                 !form.location ||
                 !form.department ||
@@ -187,11 +231,60 @@ export function AddCartridgesPage() {
               loading={mutation.isPending}
               type="submit"
             >
-              Add cartridges
+              <Eye aria-hidden="true" size={18} />
+              Preview &amp; add
             </Button>
           </div>
         </AppCard>
       </form>
+      {reviewOpen ? (
+        <ReviewDrawer
+          confirmLabel={`Confirm & add ${serialCount} cartridge${serialCount === 1 ? '' : 's'}`}
+          description="This is exactly what will be added to the cartridge register."
+          error={errorMessage}
+          onClose={() => {
+            setReviewOpen(false);
+            mutation.reset();
+          }}
+          onConfirm={() => mutation.mutate()}
+          pending={mutation.isPending}
+          pendingLabel="Adding cartridges…"
+          sections={[
+            {
+              title: 'Cartridge details',
+              rows: reviewRows([
+                { label: 'Model', value: form.model.trim() },
+                { label: 'Colour', value: form.colour },
+                { label: 'Condition', value: form.status === 'EMPTY' ? 'Empty' : 'Filled / ready' },
+                { label: 'Compatible printer', value: form.compatiblePrinter.trim() },
+                { label: 'Quantity', value: String(serialCount) },
+              ]),
+            },
+            {
+              title: 'Where and from whom',
+              rows: reviewRows([
+                { label: 'Storage location', value: form.location },
+                { label: 'Department', value: form.department },
+                { label: 'Vendor', value: form.vendorName.trim() },
+              ]),
+            },
+            {
+              title: `Serial numbers (${serialCount})`,
+              content: (
+                <ol className="flex flex-wrap gap-1.5">
+                  {serialNumbers.map((serial, index) => (
+                    <li className="review-chip" key={`${index}:${serial}`}>
+                      <span className="mr-1.5 text-[var(--color-text-muted)]">{index + 1}.</span>
+                      {serial}
+                    </li>
+                  ))}
+                </ol>
+              ),
+            },
+          ]}
+          title="Review new cartridges"
+        />
+      ) : null}
     </div>
   );
 }

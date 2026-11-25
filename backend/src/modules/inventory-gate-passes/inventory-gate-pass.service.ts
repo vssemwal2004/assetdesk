@@ -11,6 +11,7 @@ import { AppError } from '../../middleware/error-handler.js';
 import { appendAuditEvent } from '../audit/audit.service.js';
 import { AssetUnitModel } from '../inventory/asset-unit.model.js';
 import { MaterialModel } from '../inventory/material.model.js';
+import { IssueModel } from '../issues/issue.model.js';
 import { UserModel } from '../users/user.model.js';
 import { InventoryGatePassCounterModel } from './inventory-gate-pass-counter.model.js';
 import {
@@ -217,10 +218,24 @@ export async function createInventoryGatePass(
       });
       if (!unit)
         throw new AppError(404, 'ASSET_NOT_FOUND', `Asset ${requested.assetTag} was not found.`);
+      // An Issue that leaves the university marks its units ISSUED before its Gate Pass is
+      // created. Rejecting them returned a 409 after the Issue was already saved, so the user
+      // saw an error for a successful Issue. Accept them only when this Issue holds the unit.
+      const sourceIssueId = input.issueId;
+      const issuedOnThisIssue =
+        sourceIssueId !== undefined &&
+        unit.status === 'ISSUED' &&
+        Boolean(
+          await IssueModel.exists({
+            issueId: sourceIssueId,
+            'lines.assets.assetTag': unit.assetTag,
+          }),
+        );
       if (
-        input.purpose === 'REPAIR'
+        !issuedOnThisIssue &&
+        (input.purpose === 'REPAIR'
           ? !isRepairEligibleUnit(unit)
-          : !movableAssetStatuses.includes(unit.status as (typeof movableAssetStatuses)[number])
+          : !movableAssetStatuses.includes(unit.status as (typeof movableAssetStatuses)[number]))
       )
         throw new AppError(
           409,
@@ -251,7 +266,12 @@ export async function createInventoryGatePass(
         ...(unit.serialNumber ? { serialNumber: unit.serialNumber } : {}),
         quantity: 1,
         conditionOut: unit.condition,
-        assetStatusOut: unit.status as 'AVAILABLE' | 'RETURNED' | 'UNDER_REPAIR' | 'DAMAGED',
+        // Issue-sourced passes never change unit status at Gate Out, so ISSUED needs no record.
+        ...(issuedOnThisIssue
+          ? {}
+          : {
+              assetStatusOut: unit.status as 'AVAILABLE' | 'RETURNED' | 'UNDER_REPAIR' | 'DAMAGED',
+            }),
         ...(requested.movementCondition ? { movementCondition: requested.movementCondition } : {}),
         ...(requested.faultDescription ? { faultDescription: requested.faultDescription } : {}),
         receivedQuantity: 0,

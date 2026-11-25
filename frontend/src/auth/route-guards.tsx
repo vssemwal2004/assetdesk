@@ -94,7 +94,7 @@ export function ProtectedRoute() {
   return (
     <AuthStateBoundary>
       {auth.status !== 'authenticated' ? (
-        <Navigate to="/login" replace state={{ from: location.pathname }} />
+        <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />
       ) : auth.user?.mustChangePassword ? (
         <Navigate to="/change-initial-password" replace />
       ) : (
@@ -111,5 +111,9 @@ export function AdminRoute() {
 
 export function PermissionRoute({ permission }: { permission: WorkerPermission }) {
   const auth = useAuth();
-  return hasPermission(auth.user, permission) ? <Outlet /> : <Navigate to="/access-denied" replace />;
+  return hasPermission(auth.user, permission) ? (
+    <Outlet />
+  ) : (
+    <Navigate to="/access-denied" replace />
+  );
 }
